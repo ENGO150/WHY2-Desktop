@@ -1,9 +1,11 @@
+use tauri::AppHandle;
+
 use std::
 {
     thread,
     time::Duration,
     net::TcpStream,
-    sync::mpsc,
+    sync::mpsc::{ self, Receiver },
 };
 
 use why2::chat::
@@ -12,8 +14,17 @@ use why2::chat::
     network::client::{ self, ClientEvent },
 };
 
+//PRIVATE
+fn handle_client_events(rx: Receiver<ClientEvent>, app: AppHandle)
+{
+    while let Ok(event) = rx.recv()
+    {
+    }
+}
+
+//PUBLIC
 #[tauri::command]
-pub fn try_connect(mut address: String) -> Result<(), String>
+pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
 {
     //ADD PORT TO IP IF MISSING
     if !address.contains(':')
@@ -42,11 +53,7 @@ pub fn try_connect(mut address: String) -> Result<(), String>
     });
 
     //SPAWN READER THREAD
-    thread::spawn(move ||
-    {
-        while let Ok(event) = rx.recv()
-        {}
-    });
+    thread::spawn(move || handle_client_events(rx, app));
 
     Ok(())
 }
