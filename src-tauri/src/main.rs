@@ -9,9 +9,18 @@ use std::
     net::TcpStream
 };
 
+use why2::chat::config;
+
 #[tauri::command]
-fn try_connect(address: String) -> Result<(), String>
+fn try_connect(mut address: String) -> Result<(), String>
 {
+    //ADD PORT TO IP IF MISSING
+    if !address.contains(':')
+    {
+        //APPEND DEFAULT PORT TO connecting_ip
+        address.push_str(&format!(":{}", config::client_config::<u16>("default_port")));
+    }
+
     let stream = TcpStream::connect_timeout
     (
         &address.parse().map_err(|e| format!("Invalid address: {e}"))?,
