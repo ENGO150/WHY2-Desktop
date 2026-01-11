@@ -10,7 +10,6 @@ function App() {
   const handleDisconnect = () => {
     setIsConnected(false);
     setServerAddress('');
-    // Ideally, tell backend to kill connection here too
   };
 
   if (isConnected) {

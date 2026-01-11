@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{ AppHandle, State };
 
 use std::
 {
@@ -14,10 +14,10 @@ use why2::chat::
     network::client::{ self, ClientEvent },
 };
 
-use crate::ui;
+use crate::{ ui, AppState };
 
 #[tauri::command]
-pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
+pub fn try_connect(app: AppHandle, state: State<'_, AppState>, mut address: String) -> Result<(), String>
 {
     //ADD PORT TO IP IF MISSING
     if !address.contains(':')
@@ -27,7 +27,7 @@ pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
     }
 
     //CONNECT
-    let mut stream = TcpStream::connect_timeout
+    let stream = TcpStream::connect_timeout
     (
         &address.parse().map_err(|e| format!("Invalid address: {e}"))?,
         Duration::from_secs(5),
@@ -36,13 +36,19 @@ pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
     //ENABLE TCP_NODELAY
     stream.set_nodelay(true).map_err(|e| e.to_string())?;
 
+    //CLONE STREAM
+    let mut stream_listener = stream.try_clone().map_err(|e| e.to_string())?;
+
+    //SAVE TO STATE
+    *state.stream.lock().map_err(|_| "Lock error")? = Some(stream);
+
     //CREATE CHANNEL
     let (tx, rx) = mpsc::channel::<ClientEvent>();
 
     //SPAWN LISTENER THREAD
     thread::spawn(move ||
     {
-        client::listen_server(&mut stream, tx);
+        client::listen_server(&mut stream_listener, tx);
     });
 
     //SPAWN READER THREAD

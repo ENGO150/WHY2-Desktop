@@ -377,3 +377,71 @@ body {
   color: var(--danger);
   border-color: rgba(239, 68, 68, 0.2);
 }
+
+/* ---------------------------------------------------- */
+/* MODAL / POPUP STYLES */
+/* ---------------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0; /* Top, Right, Bottom, Left: 0 */
+  background-color: rgba(0, 0, 0, 0.75); /* Dark dimming */
+  backdrop-filter: blur(4px); /* Blur effect behind modal */
+  display: flex;
+  align-items: center; /* Center Vertically */
+  justify-content: center; /* Center Horizontally */
+  z-index: 100; /* Ensure it is above Header (z-index: 10) */
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 400px; /* Max width of the popup */
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); /* Deep shadow */
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: scaleIn 0.2s ease-out;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+.modal-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.modal-form .input-container {
+  flex: 1; /* Input takes available space */
+}
+
+/* Button inside modal */
+.small-btn {
+  padding: 0 16px;
+  min-height: 100%; /* Match input height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
