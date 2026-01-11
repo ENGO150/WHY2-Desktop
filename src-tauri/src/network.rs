@@ -1,10 +1,16 @@
 use std::
 {
+    thread,
     time::Duration,
-    net::TcpStream
+    net::TcpStream,
+    sync::mpsc,
 };
 
-use why2::chat::config;
+use why2::chat::
+{
+    config,
+    network::client::{ self, ClientEvent },
+};
 
 #[tauri::command]
 pub fn try_connect(mut address: String) -> Result<(), String>
@@ -16,11 +22,31 @@ pub fn try_connect(mut address: String) -> Result<(), String>
         address.push_str(&format!(":{}", config::client_config::<u16>("default_port")));
     }
 
-    let stream = TcpStream::connect_timeout
+    //CONNECT
+    let mut stream = TcpStream::connect_timeout
     (
         &address.parse().map_err(|e| format!("Invalid address: {e}"))?,
         Duration::from_secs(5),
     ).map_err(|e| format!("Failed: {e}"))?;
+
+    //ENABLE TCP_NODELAY
+    stream.set_nodelay(true).map_err(|e| e.to_string())?;
+
+    //CREATE CHANNEL
+    let (tx, rx) = mpsc::channel::<ClientEvent>();
+
+    //SPAWN LISTENER THREAD
+    thread::spawn(move ||
+    {
+        client::listen_server(&mut stream, tx);
+    });
+
+    //SPAWN READER THREAD
+    thread::spawn(move ||
+    {
+        while let Ok(event) = rx.recv()
+        {}
+    });
 
     Ok(())
 }
