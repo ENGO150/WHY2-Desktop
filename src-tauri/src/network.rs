@@ -1,14 +1,12 @@
-use tauri::{ AppHandle, Emitter };
+use tauri::AppHandle;
 
 use std::
 {
     thread,
     time::Duration,
     net::TcpStream,
-    sync::mpsc::{ self, Receiver },
+    sync::mpsc,
 };
-
-use serde::Serialize;
 
 use why2::chat::
 {
@@ -16,55 +14,8 @@ use why2::chat::
     network::client::{ self, ClientEvent },
 };
 
-//STRUCTS
-#[derive(Clone, Serialize)]
-struct FrontendPayload
-{
-    event_type: String,
-    content: String,
-    username: Option<String>,
-    extra: Option<String>,
-    clear_count: Option<usize>,
-}
+use crate::ui;
 
-//PRIVATE
-fn handle_client_events(rx: Receiver<ClientEvent>, app: AppHandle)
-{
-    while let Ok(event) = rx.recv()
-    {
-        let payload = match event
-        {
-            ClientEvent::Connected(server_name) =>
-            {
-                //UPDATE HEADER
-                let _ = app.emit("server-payload", FrontendPayload
-                {
-                    event_type: "status".into(),
-                    content: "".into(),
-                    username: None,
-                    extra: Some(server_name.clone()), // This string goes to Header
-                    clear_count: None,
-                });
-
-                //PRINT LOG
-                FrontendPayload
-                {
-                    event_type: "info".into(),
-                    content: format!("Successfully connected to {}.\n", server_name),
-                    username: None,
-                    extra: None,
-                    clear_count: None,
-                }
-            },
-
-            _ => continue
-        };
-
-        let _ = app.emit("server-payload", payload);
-    }
-}
-
-//PUBLIC
 #[tauri::command]
 pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
 {
@@ -95,7 +46,7 @@ pub fn try_connect(app: AppHandle, mut address: String) -> Result<(), String>
     });
 
     //SPAWN READER THREAD
-    thread::spawn(move || handle_client_events(rx, app));
+    thread::spawn(move || ui::handle_client_events(rx, app));
 
     Ok(())
 }
