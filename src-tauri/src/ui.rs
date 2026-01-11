@@ -9,7 +9,7 @@ use std::sync::mpsc::Receiver;
 
 use serde::Serialize;
 
-use why2::chat:
+use why2::chat::
 {
     options,
     network::
