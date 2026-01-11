@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Rss, XCircle } from 'lucide-react';
 import LogDisplay, { LogEntry } from './LogDisplay';
+import InputBar from './InputBar';
 import ModalPrompt from './ModalPrompt';
 
 interface ServerPayload {
@@ -22,18 +23,27 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [status, setStatus] = useState("Connected");
 
-    // UI STATE: Only for Modal Configuration
+    // UI STATES
     const [modalConfig, setModalConfig] = useState<{label: string, type: 'text'|'password'} | null>(null);
+    const [isChatActive, setIsChatActive] = useState(false);
 
     useEffect(() => {
         const unlisten = listen<ServerPayload>('server-payload', (event) => {
             const p = event.payload;
 
-            // 1. HANDLE UI CONTROLS (Prompt for Username)
+            // 1. HANDLE UI CONTROLS
             if (p.event_type === 'ui_control') {
+                // Check if this is a command to enable chat
+                if (p.content === 'chat_input' && p.state_bool === true) {
+                    setIsChatActive(true);
+                    setModalConfig(null); // Ensure modal is closed
+                    return;
+                }
+
+                // Otherwise, it's a modal request (Username/Password)
                 if (p.state_bool === true) {
                     setModalConfig({
-                        label: p.content, // e.g., "Enter username:"
+                        label: p.content,
                         type: (p.extra as 'text' | 'password') || 'text'
                     });
                 } else {
@@ -42,7 +52,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
                 return;
             }
 
-            // 2. HANDLE STATUS UPDATES (Header)
+            // 2. HANDLE STATUS UPDATES
             if (p.event_type === 'status' && p.extra) {
                 setStatus(p.extra);
                 return;
@@ -54,7 +64,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
                 return;
             }
 
-            // 4. HANDLE LOGS
+            // 4. HANDLE LOGS & MESSAGES
             if (['info', 'message', 'error'].includes(p.event_type)) {
                  setLogs(prev => [...prev, {
                     type: p.event_type as any,
@@ -71,10 +81,9 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
     const handleSendInput = async (value: string) => {
         try {
-            // Send input to Rust backend
             await invoke('send_input', { text: value });
-            // Close modal immediately after sending
-            setModalConfig(null);
+            // If we are still in modal mode (auth), close it optimistically
+            if (modalConfig) setModalConfig(null);
         } catch (err) {
             console.error("Failed to send:", err);
             setLogs(prev => [...prev, { type: 'error', content: `Error sending: ${err}` }]);
@@ -83,7 +92,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
     return (
         <div className="server-view">
-            {/* Modal for Username Input */}
+            {/* Modal for Auth */}
             {modalConfig && (
                 <ModalPrompt
                     label={modalConfig.label}
@@ -109,11 +118,15 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
                 <LogDisplay logs={logs} />
             </main>
 
-            {/* Footer / Input Area - Placeholder only for now */}
+            {/* Footer / Input Area */}
             <footer className="input-area">
-                <div className="input-placeholder">
-                    {modalConfig ? "Waiting for input..." : "Connected"}
-                </div>
+                {isChatActive ? (
+                    <InputBar onSend={handleSendInput} />
+                ) : (
+                    <div className="input-placeholder">
+                        {modalConfig ? "Waiting for input..." : "Authenticating..."}
+                    </div>
+                )}
             </footer>
         </div>
     );
