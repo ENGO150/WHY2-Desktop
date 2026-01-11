@@ -1,9 +1,13 @@
 [package]
 name = "why2-desktop"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+description = "Lightweight, fast, secure, and easy to use chat application."
+authors = ["Václav Šmejkal <engo@satan.red>"]
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://git.satan.red/ENGO150/WHY2-Desktop"
+keywords = ["encryption", "chat", "security", "rust"]
+categories = ["cryptography", "network-programming"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
