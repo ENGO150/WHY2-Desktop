@@ -276,16 +276,15 @@ body {
   color: var(--text-secondary);
 }
 
+/* --- CHAT AREA (Replaces old console-area styles) --- */
 .console-area {
+  background: transparent;
+  padding: 0;
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  overflow-y: auto;
-  padding: 1.5rem;
-  font-family: 'JetBrains Mono', monospace;
-  /* subtle grid pattern for console area */
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 32px 32px;
+  scroll-behavior: smooth;
 }
 
 /* Scrollbar styling for console */
@@ -303,20 +302,6 @@ body {
 .console-area::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }
-
-.log-entry {
-  margin-bottom: 6px;
-  line-height: 1.5;
-  white-space: pre-wrap; /* Preserve newlines from server */
-  word-break: break-word;
-  font-size: 0.9rem;
-}
-
-.log-entry.info { color: var(--info); }
-.log-entry.error { color: var(--danger); font-weight: 500; }
-.log-entry.message { color: var(--text-primary); }
-.log-entry.status { color: var(--success); font-style: italic; opacity: 0.8; }
-.log-username { font-weight: 600; color: var(--primary); }
 
 .input-area {
   padding: 1.25rem;
@@ -384,13 +369,13 @@ body {
 
 .modal-overlay {
   position: fixed;
-  inset: 0; /* Top, Right, Bottom, Left: 0 */
-  background-color: rgba(0, 0, 0, 0.75); /* Dark dimming */
-  backdrop-filter: blur(4px); /* Blur effect behind modal */
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
   display: flex;
-  align-items: center; /* Center Vertically */
-  justify-content: center; /* Center Horizontally */
-  z-index: 100; /* Ensure it is above Header (z-index: 10) */
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -400,8 +385,8 @@ body {
   border-radius: var(--radius);
   padding: 1.75rem;
   width: 100%;
-  max-width: 400px; /* Max width of the popup */
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); /* Deep shadow */
+  max-width: 400px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -423,19 +408,17 @@ body {
 }
 
 .modal-form .input-container {
-  flex: 1; /* Input takes available space */
+  flex: 1;
 }
 
-/* Button inside modal */
 .small-btn {
   padding: 0 16px;
-  min-height: 100%; /* Match input height */
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -444,4 +427,123 @@ body {
 @keyframes scaleIn {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------- */
+/* DISCORD-LIKE CHAT STYLES */
+/* ---------------------------------------------------- */
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 2rem;
+  padding-top: 1rem;
+}
+
+/* --- SYSTEM MESSAGES --- */
+.system-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 16px 4px 50px;
+  margin: 2px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  position: relative;
+}
+
+.system-message::before {
+  content: '';
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--border);
+  opacity: 0.3;
+}
+
+.system-message.error { color: var(--danger); }
+.system-message.info { color: var(--info); }
+.system-message.status { color: var(--success); }
+
+/* --- CHAT MESSAGES --- */
+.chat-message {
+  display: flex;
+  padding: 2px 16px;
+  margin-right: 8px; /* Space for scrollbar */
+  gap: 16px;
+}
+
+.chat-message:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.chat-message.full {
+  margin-top: 1rem;
+}
+
+/* AVATAR COLUMN */
+.msg-avatar-col {
+  width: 40px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  background: var(--border);
+  user-select: none;
+  transition: transform 0.2s;
+}
+
+.user-avatar:hover {
+  transform: scale(1.05);
+}
+
+/* CONTENT COLUMN */
+.msg-content-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.msg-username {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.msg-username:hover {
+  text-decoration: underline;
+}
+
+.msg-text {
+  color: #dcddde;
+  font-size: 0.95rem;
+  line-height: 1.375rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
