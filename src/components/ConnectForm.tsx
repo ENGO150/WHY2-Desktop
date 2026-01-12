@@ -59,7 +59,7 @@ function ConnectForm({ onConnect }: ConnectFormProps) {
 
             <input
               type="text"
-              placeholder="e.g. 127.0.0.1:8080"
+              placeholder="e.g. 127.0.0.1:1204"
               value={addressInput}
               onChange={(e) => {
                 setAddressInput(e.target.value);
