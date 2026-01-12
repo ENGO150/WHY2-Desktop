@@ -17,6 +17,7 @@ use why2::chat::
         self,
         MessagePacket,
         MessageColors,
+        MessageCode,
         client::ClientEvent,
     },
 };
@@ -47,6 +48,28 @@ pub fn send_input(state: State<'_, AppState>, text: String) -> Result<(), String
             text: Some(text),
             // Default colors (server will handle logic if these are None/Default)
             colors: MessageColors { username_color: None, message_color: None },
+            ..Default::default()
+        };
+
+        // USE GLOBAL KEYS
+        // The library handles encryption automatically using these keys
+        network::send(stream, packet, options::get_keys().as_ref());
+        Ok(())
+    } else {
+        Err("Not connected".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn disconnect(state: State<'_, AppState>) -> Result<(), String>
+{
+    let mut stream_guard = state.stream.lock().map_err(|_| "Failed to lock stream")?;
+
+    if let Some(stream) = stream_guard.as_mut()
+    {
+        let packet = MessagePacket
+        {
+            code: Some(MessageCode::Disconnect),
             ..Default::default()
         };
 

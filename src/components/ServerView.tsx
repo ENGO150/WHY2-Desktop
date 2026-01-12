@@ -90,6 +90,16 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
         }
     };
 
+    const handleDisconnectClick = async () => {
+        try {
+            await invoke('disconnect');
+        } catch (err) {
+            console.error("Failed to send disconnect packet:", err);
+        } finally {
+            onDisconnect();
+        }
+    }
+
     return (
         <div className="server-view">
             {/* Modal for Auth */}
@@ -108,7 +118,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
                     <span>{serverAddress}</span>
                 </div>
                 <div className="channel-indicator">{status}</div>
-                <button onClick={onDisconnect} className="disconnect-btn">
+                <button onClick={handleDisconnectClick} className="disconnect-btn">
                     <XCircle size={18} />
                 </button>
             </header>

@@ -27,6 +27,7 @@ pub fn run()
         [
             network::try_connect,
             ui::send_input,
+            ui::disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
