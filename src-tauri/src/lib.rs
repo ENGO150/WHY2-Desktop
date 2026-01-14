@@ -15,6 +15,7 @@ pub struct AppState
 //MODULES
 pub mod network;
 pub mod ui;
+pub mod command;
 
 //FUNCTIONS
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -28,6 +29,7 @@ pub fn run()
             network::try_connect,
             ui::send_input,
             ui::disconnect,
+            command::get_commands,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
