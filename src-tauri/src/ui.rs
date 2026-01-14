@@ -12,6 +12,7 @@ use serde::Serialize;
 use why2::chat::
 {
     options,
+    command::{ self, Command },
     network::
     {
         self,
@@ -40,24 +41,48 @@ struct FrontendPayload
 pub fn send_input(state: State<'_, AppState>, text: String) -> Result<(), String>
 {
     let mut stream_guard = state.stream.lock().map_err(|_| "Failed to lock stream")?;
-
-    if let Some(stream) = stream_guard.as_mut()
+    let stream = match stream_guard.as_mut()
     {
-        let packet = MessagePacket
-        {
-            text: Some(text),
-            // Default colors (server will handle logic if these are None/Default)
-            colors: MessageColors { username_color: None, message_color: None },
-            ..Default::default()
-        };
+        Some(s) => s,
+        None => return Err("Not connected".to_string())
+    };
 
-        // USE GLOBAL KEYS
-        // The library handles encryption automatically using these keys
-        network::send(stream, packet, options::get_keys().as_ref());
-        Ok(())
-    } else {
-        Err("Not connected".to_string())
+    let (command, parameters) = command::get_command(&text);
+
+    //HANDLE COMMANDS
+    if let Some(command) = command
+    {
+        let sent = command::send_command_code(stream, &command, &parameters);
+
+        if !sent
+        {
+            match command
+            {
+                Command::Exit =>
+                {
+                    drop(stream_guard);
+                    return disconnect(state);
+                },
+
+                _ => {} //NON IMPLEMENTED COMMANDS
+            }
+        }
+
+        return Ok(()); //DO NO FORWARD COMMANDS
     }
+
+    let packet = MessagePacket
+    {
+        text: Some(text),
+        // Default colors (server will handle logic if these are None/Default)
+        colors: MessageColors { username_color: None, message_color: None },
+        ..Default::default()
+    };
+
+    // USE GLOBAL KEYS
+    // The library handles encryption automatically using these keys
+    network::send(stream, packet, options::get_keys().as_ref());
+    Ok(())
 }
 
 #[tauri::command]
