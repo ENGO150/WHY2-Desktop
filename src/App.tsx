@@ -23,7 +23,7 @@ function App() {
 
   return (
     <div className="container">
-      <div className="bg-grid" />
+      {/* BACKGROUND GRID REMOVED FOR CLEANER LOOK */}
       <ConnectForm
         onConnect={(address) => {
           setServerAddress(address);
