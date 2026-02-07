@@ -244,6 +244,7 @@ body {
   width: 100vw;
   background-color: var(--bg-color); /* Matches Login BG */
   color: var(--text-primary);
+  position: relative;
 }
 
 .server-header {
@@ -620,4 +621,36 @@ body {
     color: #71717a;
     font-style: italic;
     font-size: 0.85rem;
+}
+
+/* --- WARNING TOAST NOTIFICATION --- */
+.warning-toast {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background-color: rgba(40, 10, 10, 0.95);
+    border: 1px solid #ff4444;
+    color: #ffcccc;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    animation: slideIn 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    max-width: 350px;
+    backdrop-filter: blur(8px);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }

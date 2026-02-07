@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Rss, XCircle } from 'lucide-react';
+import { Rss, XCircle, AlertTriangle } from 'lucide-react';
 import LogDisplay, { LogEntry } from './LogDisplay';
 import InputBar from './InputBar';
 import ModalPrompt from './ModalPrompt';
@@ -26,6 +26,10 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
     // UI STATES
     const [modalConfig, setModalConfig] = useState<{label: string, type: 'text'|'password'} | null>(null);
     const [isChatActive, setIsChatActive] = useState(false);
+
+    // WARNING TOAST STATE
+    const [warningMsg, setWarningMsg] = useState<string | null>(null);
+    const warningTimer = useRef<number | null>(null);
 
     useEffect(() => {
         const unlisten = listen<ServerPayload>('server-payload', (event) => {
@@ -64,7 +68,25 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
                 return;
             }
 
-            // 4. HANDLE LOGS & MESSAGES
+            // 4. HANDLE WARNING TOAST
+            if (p.event_type === 'warning') {
+                // CLEAR PREVIOUS TIMER IF EXISTS
+                if (warningTimer.current) {
+                    window.clearTimeout(warningTimer.current);
+                }
+
+                // SHOW WARNING
+                setWarningMsg(p.content);
+
+                // AUTO HIDE AFTER 5 SECONDS
+                warningTimer.current = window.setTimeout(() => {
+                    setWarningMsg(null);
+                }, 5000);
+
+                return;
+            }
+
+            // 5. HANDLE LOGS & MESSAGES
             if (['info', 'message', 'error'].includes(p.event_type)) {
                  setLogs(prev => [...prev, {
                     type: p.event_type as any,
@@ -76,6 +98,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
         return () => {
             unlisten.then(f => f());
+            if (warningTimer.current) window.clearTimeout(warningTimer.current);
         };
     }, [onDisconnect]);
 
@@ -102,6 +125,14 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
     return (
         <div className="server-view">
+            {/* WARNING TOAST POPUP */}
+            {warningMsg && (
+                <div className="warning-toast">
+                    <AlertTriangle size={20} />
+                    <span>{warningMsg}</span>
+                </div>
+            )}
+
             {/* Modal for Auth */}
             {modalConfig && (
                 <ModalPrompt

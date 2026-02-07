@@ -29,7 +29,7 @@ use crate::AppState;
 #[derive(Clone, Serialize)]
 struct FrontendPayload
 {
-    event_type: String,         // "status", "info", "ui_control", "message"
+    event_type: String,         // "status", "info", "ui_control", "message", "warning"
     content: String,            // Text content
     username: Option<String>,   // For chat messages
     extra: Option<String>,      // For header status or input type
@@ -220,6 +220,19 @@ pub fn handle_client_events(rx: Receiver<ClientEvent>, app: AppHandle)
                         state_bool: None,
                     });
                 }
+            },
+
+            ClientEvent::Warn(text, _, _) =>
+            {
+                //EMIT WARNING POPUP EVENT
+                let _ = app.emit("server-payload", FrontendPayload
+                {
+                    event_type: "warning".into(),
+                    content: text,
+                    username: None,
+                    extra: None,
+                    state_bool: None,
+                });
             },
 
             ClientEvent::Quit =>
