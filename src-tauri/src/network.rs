@@ -8,7 +8,7 @@ use std::
     sync::mpsc,
 };
 
-use why2::chat::
+use why2_chat::
 {
     config,
     network::client::{ self, ClientEvent },
@@ -23,7 +23,7 @@ pub fn try_connect(app: AppHandle, state: State<'_, AppState>, mut address: Stri
     if !address.contains(':')
     {
         //APPEND DEFAULT PORT TO connecting_ip
-        address.push_str(&format!(":{}", config::client_config::<u16>("default_port")));
+        address.push_str(&format!(":{}", config::read_config::<u16>("default_port")));
     }
 
     //CONNECT

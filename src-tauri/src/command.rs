@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use why2::chat::command::{ self, Command };
+use why2_chat::command::{ self, Command };
 
 #[derive(Serialize)]
 pub struct CommandArgDto
