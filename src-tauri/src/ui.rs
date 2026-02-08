@@ -90,6 +90,11 @@ pub fn disconnect(state: State<'_, AppState>) -> Result<(), String>
 {
     let mut stream_guard = state.stream.lock().map_err(|_| "Failed to lock stream")?;
 
+    // RESET GLOBAL FLAGS
+    // Ensure that if we disconnect, the state is cleared for the next attempt
+    options::set_sending_messages(false);
+    options::set_asking_password(false);
+
     if let Some(stream) = stream_guard.as_mut()
     {
         let packet = MessagePacket

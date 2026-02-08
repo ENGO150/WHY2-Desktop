@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import './App.css';
 import ConnectForm from './components/ConnectForm';
 import ServerView from './components/ServerView';
@@ -7,10 +7,11 @@ function App() {
   const [serverAddress, setServerAddress] = useState('');
   const [isConnected, setIsConnected] = useState(false);
 
-  const handleDisconnect = () => {
+  // Use callback to ensure stable function reference
+  const handleDisconnect = useCallback(() => {
     setIsConnected(false);
     setServerAddress('');
-  };
+  }, []);
 
   if (isConnected) {
     return (

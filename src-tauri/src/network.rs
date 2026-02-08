@@ -4,13 +4,14 @@ use std::
 {
     thread,
     time::Duration,
-    net::TcpStream,
+    net::{TcpStream, Shutdown},
     sync::mpsc,
 };
 
 use why2_chat::
 {
     config,
+    options, // ADDED: Import options to access state setters
     network::client::{ self, ClientEvent },
 };
 
@@ -25,6 +26,21 @@ pub fn try_connect(app: AppHandle, state: State<'_, AppState>, mut address: Stri
         //APPEND DEFAULT PORT TO connecting_ip
         address.push_str(&format!(":{}", config::read_config::<u16>("default_port")));
     }
+
+    // SHUTDOWN EXISTING STREAM IF ANY
+    {
+        let mut stream_guard = state.stream.lock().map_err(|_| "Lock error")?;
+        if let Some(old_stream) = stream_guard.take() {
+            // Ignore error on shutdown as connection might already be dead
+            let _ = old_stream.shutdown(Shutdown::Both);
+        }
+    }
+
+    // RESET GLOBAL STATE
+    // Crucial: Reset the chat flags so the UI knows we are not authenticated yet.
+    // This fixes the issue where reconnecting immediately shows the chat input.
+    options::set_sending_messages(false);
+    options::set_asking_password(false);
 
     //CONNECT
     let stream = TcpStream::connect_timeout

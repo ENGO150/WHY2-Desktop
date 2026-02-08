@@ -32,7 +32,11 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
     const warningTimer = useRef<number | null>(null);
 
     useEffect(() => {
+        let isMounted = true;
+
         const unlisten = listen<ServerPayload>('server-payload', (event) => {
+            if (!isMounted) return;
+
             const p = event.payload;
 
             // 1. HANDLE UI CONTROLS
@@ -80,7 +84,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
                 // AUTO HIDE AFTER 5 SECONDS
                 warningTimer.current = window.setTimeout(() => {
-                    setWarningMsg(null);
+                    if (isMounted) setWarningMsg(null);
                 }, 5000);
 
                 return;
@@ -97,6 +101,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
         });
 
         return () => {
+            isMounted = false;
             unlisten.then(f => f());
             if (warningTimer.current) window.clearTimeout(warningTimer.current);
         };
@@ -115,6 +120,7 @@ function ServerView({ serverAddress, onDisconnect }: ServerViewProps) {
 
     const handleDisconnectClick = async () => {
         try {
+            // Attempt to tell the backend/server we are leaving
             await invoke('disconnect');
         } catch (err) {
             console.error("Failed to send disconnect packet:", err);
