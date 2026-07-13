@@ -58,7 +58,12 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                     app_handle.emit("why2-event", format!("PasswordRejected:{}", min_pass)).unwrap();
                 }
                 ClientEvent::Message(msg) => {
-                    app_handle.emit("why2-event", format!("Message:{}:{}", msg.username.unwrap_or_default(), msg.text.unwrap_or_default())).unwrap();
+                    let payload = serde_json::json!({
+                        "username": msg.username.unwrap_or_default(),
+                        "text": msg.text.unwrap_or_default(),
+                        "id": msg.id.unwrap_or_default(),
+                    });
+                    app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
                 }
                 ClientEvent::Username(disabled_registration, _, _) => {
                     // Triggers when the server expects a username, though Register/Login are usually what prompts first.
@@ -66,6 +71,9 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 }
                 ClientEvent::Quit => {
                     app_handle.emit("why2-event", "Quit").unwrap();
+                }
+                ClientEvent::SpamWarning => {
+                    app_handle.emit("why2-event", "SpamWarning").unwrap();
                 }
                 _ => {}
             }
