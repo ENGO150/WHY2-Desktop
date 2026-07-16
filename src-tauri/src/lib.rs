@@ -147,6 +147,15 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                     let json_str = serde_json::to_string(&files_json).unwrap_or_else(|_| "[]".to_string());
                     app_handle.emit("why2-event", format!("Modal:Files:{}", json_str)).unwrap();
                 }
+                ClientEvent::Download(filename) => {
+                    app_handle.emit("why2-event", format!("Popup:Downloading {}...", filename)).unwrap();
+                }
+                ClientEvent::Downloaded(filename) => {
+                    app_handle.emit("why2-event", format!("Popup:Downloaded {} successfully!", filename)).unwrap();
+                }
+                ClientEvent::DownloadFailed(filename) => {
+                    app_handle.emit("why2-event", format!("Popup:Failed to download {}!", filename)).unwrap();
+                }
                 _ => {}
             }
         }
@@ -163,6 +172,57 @@ fn accept_tofu(ip: String, hash: String) -> Result<(), String> {
 }
 
 use why2_chat::command::{self, Command};
+
+fn upload_file_logic(path_str: &str, stream: &mut std::net::TcpStream) -> Result<(), String> {
+    let path = std::path::Path::new(path_str.trim());
+    if let Ok(mut file) = std::fs::File::open(path) {
+        if path.metadata().map(|m| m.is_file()).unwrap_or(false) && path.file_name().and_then(|n| n.to_str()).is_some() {
+            use sha2::{Sha256, Digest};
+            use std::io::Read;
+            let mut hasher = Sha256::new();
+            let mut buffer = vec![0; 1024 * 1024];
+
+            let success = loop {
+                match file.read(&mut buffer) {
+                    Ok(0) => break true,
+                    Ok(bytes) => hasher.update(&buffer[..bytes]),
+                    Err(_) => break false,
+                }
+            };
+
+            if success {
+                let hash: [u8; 32] = hasher.finalize().into();
+                why2_chat::network::client::ACTIVE_UPLOADS.lock().unwrap().insert(hash.clone(), path.canonicalize().map_err(|e| e.to_string())?);
+                
+                network::send(stream, MessagePacket {
+                    code: Command::Upload.to_code(),
+                    text: Some(serde_json::to_string(&hash).unwrap()),
+                    ..Default::default()
+                }, options::get_keys().as_ref());
+                
+                return Ok(());
+            } else {
+                return Err("Error reading file!".to_string());
+            }
+        }
+    }
+    Err("File not found!".to_string())
+}
+
+#[tauri::command]
+fn upload_file_from_path(path: String, state: State<'_, AppState>, app_handle: AppHandle) -> Result<(), String> {
+    if let Some(stream_arc) = state.write_stream.lock().unwrap().as_ref() {
+        let mut stream = stream_arc.lock().unwrap();
+        if let Err(e) = upload_file_logic(&path, &mut *stream) {
+            app_handle.emit("why2-event", format!("Popup:{}", e)).unwrap();
+            return Err(e);
+        }
+        Ok(())
+    } else {
+        Err("Not connected".to_string())
+    }
+}
+
 
 #[tauri::command]
 fn send_input(input: String, state: State<'_, AppState>, app_handle: AppHandle) -> Result<(), String> {
@@ -187,6 +247,21 @@ fn send_input(input: String, state: State<'_, AppState>, app_handle: AppHandle) 
                     }
                     Command::Help => {
                         app_handle.emit("why2-event", "Popup:Start typing / to see available commands!").unwrap();
+                    }
+                    Command::Upload => {
+                        if let Some(path_str) = parameters {
+                            if let Err(e) = upload_file_logic(&path_str, &mut *stream) {
+                                app_handle.emit("why2-event", format!("Popup:{}", e)).unwrap();
+                            } else {
+                                let filename = std::path::Path::new(&path_str)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or(&path_str);
+                                app_handle.emit("why2-event", format!("Popup:Uploading {}...", filename)).unwrap();
+                            }
+                        } else {
+                            app_handle.emit("why2-event", "Popup:Usage: /upload <PATH>").unwrap();
+                        }
                     }
                     _ => {
                         app_handle.emit("why2-event", format!("Popup:Command '{}' not fully supported in desktop UI yet.", input)).unwrap();
@@ -214,10 +289,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             write_stream: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands, accept_tofu])
+        .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands, accept_tofu, upload_file_from_path])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send } from "lucide-react";
+import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send, Paperclip, Download, Folder } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import "./index.css";
 
 type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
@@ -57,6 +58,15 @@ function App() {
   const [serverName, setServerName] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [popupMessage, setPopupMessage] = useState("");
+
+  useEffect(() => {
+    if (popupMessage) {
+      const timer = setTimeout(() => {
+        setPopupMessage("");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [popupMessage]);
   const [slashCommands, setSlashCommands] = useState<CommandInfo[]>([]);
   const [modal, setModal] = useState<{type: string, data: any} | null>(null);
   const [tofuPrompt, setTofuPrompt] = useState<{hash: string, ip: string} | null>(null);
@@ -143,6 +153,8 @@ function App() {
     };
   }, []);
 
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue) return;
@@ -216,7 +228,7 @@ function App() {
         </header>
 
         {popupMessage && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-card border border-border text-muted-foreground px-6 py-2 rounded-md shadow-lg backdrop-blur-md animate-fade-in z-50 text-sm whitespace-nowrap">
+          <div className="absolute top-16 right-6 bg-card border border-border text-muted-foreground px-6 py-2 rounded-md shadow-lg backdrop-blur-md animate-fade-in z-50 text-sm whitespace-nowrap">
             {popupMessage}
           </div>
         )}
@@ -239,10 +251,23 @@ function App() {
                             <div className="font-semibold text-sm mb-2">{u.username} (ID: {u.id})</div>
                             <div className="space-y-2 pl-3 border-l-2 border-primary/20">
                                {u.uploads.map((f: any, j: number) => (
-                                  <div key={j} className="flex justify-between text-xs items-center">
-                                     <span className="text-foreground/90 font-medium">{f[0]}</span>
-                                     <span className="text-muted-foreground ml-4">ID: {f[1]}</span>
-                                  </div>
+                                   <div key={j} className="flex justify-between text-xs items-center py-0.5">
+                                      <span className="text-foreground/90 font-medium">{f[0]}</span>
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-muted-foreground">ID: {f[1]}</span>
+                                        <button 
+                                          className="text-primary hover:text-primary/80 transition-colors p-1 rounded-sm hover:bg-primary/10"
+                                          onClick={() => {
+                                            invoke("send_input", { input: `/download ${u.id} ${f[1]}` })
+                                              .catch((e: any) => setPopupMessage(e.toString()));
+                                            setModal(null);
+                                          }}
+                                          title="Download File"
+                                        >
+                                          <Download size={14} />
+                                        </button>
+                                      </div>
+                                   </div>
                                ))}
                             </div>
                          </div>
@@ -338,12 +363,42 @@ function App() {
           )}
 
           <form onSubmit={handleChatSubmit} className="flex w-full max-w-6xl mx-auto relative items-center">
+            <div className="absolute left-2 flex items-center gap-1 z-10">
+              <button
+                type="button"
+                onClick={async () => {
+                  const selected = await open({ multiple: false });
+                  if (selected) {
+                    const path = typeof selected === 'string' ? selected : (selected as any).path || (Array.isArray(selected) ? selected[0] : null);
+                    if (path) {
+                      const fileName = path.split(/[\\/]/).pop() || path;
+                      setPopupMessage(`Uploading ${fileName}...`);
+                      invoke("upload_file_from_path", { path }).catch((e: any) => setPopupMessage(e.toString()));
+                    }
+                  }
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                title="Upload File"
+              >
+                <Paperclip size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  invoke("send_input", { input: "/files" }).catch((e: any) => setPopupMessage(e.toString()));
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                title="View Files"
+              >
+                <Folder size={18} />
+              </button>
+            </div>
             <input
               id="chat-input"
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              className="w-full rounded-md border border-input bg-card/50 pl-4 pr-12 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all shadow-sm"
+              className="w-full rounded-md border border-input bg-card/50 pl-20 pr-12 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all shadow-sm"
               placeholder="Type your message..."
               autoFocus
             />
