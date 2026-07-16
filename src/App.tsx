@@ -59,7 +59,7 @@ function App() {
   const [popupMessage, setPopupMessage] = useState("");
   const [slashCommands, setSlashCommands] = useState<CommandInfo[]>([]);
   const [modal, setModal] = useState<{type: string, data: any} | null>(null);
-  
+  const [tofuPrompt, setTofuPrompt] = useState<{hash: string, ip: string} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -98,9 +98,19 @@ function App() {
         invoke<CommandInfo[]>("get_commands").then(setSlashCommands).catch(console.error);
       } else if (payload === "Quit") {
         setUiState("server_select");
-        setErrorMsg("Disconnected from server.");
+        setErrorMsg((prev) => prev.startsWith("SECURITY WARNING") ? prev : "Disconnected from server.");
         setInputValue("");
         setMessages([]);
+      } else if (payload === "TofuMismatch") {
+        setUiState("server_select");
+        setErrorMsg("SECURITY WARNING: Identity key mismatch! Connection aborted.");
+        setConnecting(false);
+      } else if (payload.startsWith("TofuUnknown:")) {
+        const parts = payload.split(":");
+        const hash = parts[1];
+        const ip = parts.slice(2).join(":");
+        setTofuPrompt({ hash, ip });
+        setConnecting(false);
       } else if (payload.startsWith("Popup:")) {
         const text = payload.substring("Popup:".length);
         setPopupMessage(text);
@@ -352,6 +362,41 @@ function App() {
 
   return (
     <main className="dark flex h-screen w-screen items-center justify-center bg-background text-foreground noise-overlay">
+      {tofuPrompt && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm animate-fade-in px-4">
+           <div className="bg-card border border-border rounded-md shadow-2xl p-6 min-w-[300px] max-w-md w-full">
+              <h2 className="text-lg font-bold mb-4 text-destructive">Unknown Server Identity</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                The server's identity key is not stored in local configuration.
+              </p>
+              <div className="bg-background border border-border rounded-md p-3 mb-6 break-all font-mono text-xs text-foreground/80">
+                {tofuPrompt.hash}
+              </div>
+              <p className="text-sm font-medium mb-6">Do you trust this server?</p>
+              <div className="flex space-x-3">
+                <button 
+                   onClick={async () => {
+                      await invoke("accept_tofu", { ip: tofuPrompt.ip, hash: tofuPrompt.hash });
+                      const ipToConnect = tofuPrompt.ip;
+                      setTofuPrompt(null);
+                      setConnecting(true);
+                      setErrorMsg("");
+                      invoke("connect_to_server", { ip: ipToConnect }).catch((err: any) => { setErrorMsg(err.toString()); setConnecting(false); });
+                   }} 
+                   className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors shadow-sm focus:outline-none"
+                >
+                   Yes, Connect
+                </button>
+                <button 
+                   onClick={() => { setTofuPrompt(null); setErrorMsg("Connection aborted."); }}
+                   className="flex-1 py-2.5 bg-secondary text-secondary-foreground rounded-md font-medium hover:bg-secondary/90 transition-colors shadow-sm focus:outline-none"
+                >
+                   No, Abort
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
       <div className="animate-fade-in-up relative z-10 w-full max-w-md rounded-md border border-border bg-card/50 p-8 shadow-2xl backdrop-blur-sm">
         <div className="mb-8 flex flex-col items-center justify-center text-center">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-md bg-primary/10 text-primary transition-all duration-300">

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use why2_chat::network::{self, client::{self, ClientEvent}, MessagePacket};
 use why2_chat::options;
-use why2_chat::config;
+use why2_chat::config::{self, TofuCode};
 
 struct AppState {
     write_stream: Mutex<Option<Arc<Mutex<TcpStream>>>>,
@@ -100,6 +100,13 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 ClientEvent::Quit => {
                     app_handle.emit("why2-event", "Quit").unwrap();
                 }
+                ClientEvent::TofuError(TofuCode::Mismatch) => {
+                    app_handle.emit("why2-event", "TofuMismatch").unwrap();
+                }
+                ClientEvent::TofuError(TofuCode::Unknown(hash, ip)) => {
+                    app_handle.emit("why2-event", format!("TofuUnknown:{}:{}", hash, ip)).unwrap();
+                }
+                ClientEvent::TofuError(_) => {}
                 ClientEvent::SpamWarning => {
                     app_handle.emit("why2-event", "Popup:Please slow down. You are sending messages too fast.").unwrap();
                 }
@@ -146,6 +153,12 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
         let _ = app_handle.emit("why2-event", "Quit");
     });
     
+    Ok(())
+}
+
+#[tauri::command]
+fn accept_tofu(ip: String, hash: String) -> Result<(), String> {
+    config::server_keys_save(&ip, &hash);
     Ok(())
 }
 
@@ -204,7 +217,7 @@ pub fn run() {
         .manage(AppState {
             write_stream: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands])
+        .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands, accept_tofu])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
