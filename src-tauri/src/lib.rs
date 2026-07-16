@@ -29,6 +29,7 @@ struct CommandInfo {
 fn get_commands() -> Vec<CommandInfo> {
     why2_chat::command::COMMAND_LIST
         .iter()
+        .filter(|info| info.command != why2_chat::command::Command::Help && info.command != why2_chat::command::Command::Info)
         .map(|info| CommandInfo {
             name: info.triggers[0].to_lowercase(),
             description: info.description.to_string(),
@@ -245,8 +246,8 @@ fn send_input(input: String, state: State<'_, AppState>, app_handle: AppHandle) 
                     Command::Exit => {
                         app_handle.emit("why2-event", "Quit").unwrap();
                     }
-                    Command::Help => {
-                        app_handle.emit("why2-event", "Popup:Start typing / to see available commands!").unwrap();
+                    Command::Help | Command::Info => {
+                        app_handle.emit("why2-event", "Popup:Invalid command!").unwrap();
                     }
                     Command::Upload => {
                         if let Some(path_str) = parameters {

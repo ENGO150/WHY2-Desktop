@@ -215,8 +215,9 @@ function App() {
 
   const inputType = uiState === "password_prompt" ? "password" : "text";
 
+  const parsedCommand = chatInput.startsWith("/") ? chatInput.substring(1).split(" ")[0].toLowerCase() : "";
   const filteredCommands = chatInput.startsWith("/") 
-    ? slashCommands.filter(c => c.name.startsWith(chatInput.substring(1).toLowerCase()))
+    ? slashCommands.filter(c => c.name.startsWith(parsedCommand))
     : [];
 
   if (uiState === "connected") {
