@@ -22,7 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-why2-chat = { path = "../../WHY2/chat", features = ["client_base"] }
+why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

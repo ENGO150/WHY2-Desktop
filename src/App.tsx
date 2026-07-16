@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Server, ArrowRight, User, Lock, Send } from "lucide-react";
+import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./index.css";
@@ -12,6 +12,17 @@ interface ChatMessage {
   id: number;
   username_color?: number;
   message_color?: number;
+}
+
+interface CommandArgInfo {
+  name: string;
+  required: boolean;
+}
+
+interface CommandInfo {
+  name: string;
+  description: string;
+  args: CommandArgInfo[];
 }
 
 function getAnsiColor(code?: number) {
@@ -45,7 +56,9 @@ function App() {
   const [errorMsg, setErrorMsg] = useState("");
   const [serverName, setServerName] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [showSpamWarning, setShowSpamWarning] = useState(false);
+  const [popupMessage, setPopupMessage] = useState("");
+  const [slashCommands, setSlashCommands] = useState<CommandInfo[]>([]);
+  const [modal, setModal] = useState<{type: string, data: any} | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -82,13 +95,28 @@ function App() {
         setErrorMsg(`Password rejected! Min length: ${payload.split(":")[1]}`);
       } else if (payload === "Authenticated") {
         setUiState("connected");
+        invoke<CommandInfo[]>("get_commands").then(setSlashCommands).catch(console.error);
       } else if (payload === "Quit") {
         setUiState("server_select");
         setErrorMsg("Disconnected from server.");
         setInputValue("");
-      } else if (payload === "SpamWarning") {
-        setShowSpamWarning(true);
-        setTimeout(() => setShowSpamWarning(false), 3000);
+        setMessages([]);
+      } else if (payload.startsWith("Popup:")) {
+        const text = payload.substring("Popup:".length);
+        setPopupMessage(text);
+        setTimeout(() => {
+          setPopupMessage(prev => prev === text ? "" : prev);
+        }, 3500);
+      } else if (payload.startsWith("Modal:")) {
+        const parts = payload.split(":");
+        const type = parts[1];
+        const jsonStr = parts.slice(2).join(":");
+        try {
+          const data = JSON.parse(jsonStr);
+          setModal({ type, data });
+        } catch (e) {
+          console.error("Failed to parse modal JSON");
+        }
       } else if (payload.startsWith("Message:")) {
         try {
           const jsonStr = payload.substring("Message:".length);
@@ -165,6 +193,10 @@ function App() {
 
   const inputType = uiState === "password_prompt" ? "password" : "text";
 
+  const filteredCommands = chatInput.startsWith("/") 
+    ? slashCommands.filter(c => c.name.startsWith(chatInput.substring(1).toLowerCase()))
+    : [];
+
   if (uiState === "connected") {
     return (
       <main className="dark flex h-screen w-screen flex-col bg-background text-foreground noise-overlay">
@@ -173,37 +205,83 @@ function App() {
           <h1 className="text-sm font-medium text-foreground/90">{serverName}</h1>
         </header>
 
-        {showSpamWarning && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-card border border-border text-muted-foreground px-6 py-2 rounded-md shadow-lg backdrop-blur-md animate-fade-in z-50 text-sm">
-            Please slow down. You are sending messages too fast.
+        {popupMessage && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-card border border-border text-muted-foreground px-6 py-2 rounded-md shadow-lg backdrop-blur-md animate-fade-in z-50 text-sm whitespace-nowrap">
+            {popupMessage}
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-2 z-10 custom-scrollbar">
+        {modal && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm animate-fade-in px-4">
+             <div className="bg-card border border-border rounded-md shadow-2xl p-6 min-w-[300px] max-w-md w-full">
+                <h2 className="text-lg font-bold mb-4">{modal.type === "List" ? "Users Online" : "Available Files"}</h2>
+                <div className="max-h-64 overflow-y-auto space-y-2 mb-6 custom-scrollbar pr-2">
+                   {modal.type === "List" ? (
+                      modal.data.length > 0 ? modal.data.map((u: any, i: number) => (
+                         <div key={i} className="flex justify-between items-center text-sm py-1 border-b border-border/50 last:border-0">
+                            <span className="font-semibold">{u.username}</span>
+                            <span className="text-muted-foreground text-xs">ID: {u.id}</span>
+                         </div>
+                      )) : <div className="text-muted-foreground text-sm">No users online.</div>
+                   ) : (
+                      modal.data.length > 0 ? modal.data.map((u: any, i: number) => (
+                         <div key={i} className="mb-4 last:mb-0">
+                            <div className="font-semibold text-sm mb-2">{u.username} (ID: {u.id})</div>
+                            <div className="space-y-2 pl-3 border-l-2 border-primary/20">
+                               {u.uploads.map((f: any, j: number) => (
+                                  <div key={j} className="flex justify-between text-xs items-center">
+                                     <span className="text-foreground/90 font-medium">{f[0]}</span>
+                                     <span className="text-muted-foreground ml-4">ID: {f[1]}</span>
+                                  </div>
+                               ))}
+                            </div>
+                         </div>
+                      )) : <div className="text-muted-foreground text-sm">No files available.</div>
+                   )}
+                </div>
+                <button onClick={() => setModal(null)} className="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors shadow-sm focus:outline-none">Close</button>
+             </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-6 z-10 custom-scrollbar">
           {messages.map((msg, idx) => {
             const isSystem = !msg.username;
             const uColor = getAnsiColor(msg.username_color) || "var(--primary)";
             const mColor = getAnsiColor(msg.message_color) || "inherit";
 
+            const prevMsg = idx > 0 ? messages[idx - 1] : null;
+            const isConsecutive = !isSystem && prevMsg && !(!prevMsg.username) && prevMsg.username === msg.username;
+
             return (
-              <div key={idx} className={`flex w-full ${isSystem ? "justify-center my-4" : "items-start space-x-4 my-1 hover:bg-white/5 p-2 rounded-md transition-colors"}`}>
+              <div key={idx} className={`flex w-full ${isSystem ? "items-center justify-center px-2 my-2" : `items-start space-x-4 hover:bg-white/5 rounded-md transition-colors px-2 ${isConsecutive ? "py-0 mt-0 mb-0" : "pt-2 pb-0 mt-4 mb-0"}`}`}>
                 {isSystem ? (
-                  <span className="text-sm text-muted-foreground italic" style={{ color: mColor }}>
-                    {msg.text}
-                  </span>
+                  <>
+                    <div className="h-[1px] bg-border/60 flex-1"></div>
+                    <span className="text-sm text-muted-foreground italic px-4 whitespace-nowrap" style={{ color: mColor }}>
+                      {msg.text}
+                    </span>
+                    <div className="h-[1px] bg-border/60 flex-1"></div>
+                  </>
                 ) : (
                   <>
-                    <div 
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold text-background uppercase shadow-sm"
-                      style={{ backgroundColor: uColor }}
-                    >
-                      {msg.username.charAt(0)}
+                    <div className={`shrink-0 ${isConsecutive ? "w-10" : "flex h-10 w-10 items-center justify-center"}`}>
+                      {!isConsecutive && (
+                        <div 
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold text-background uppercase shadow-sm"
+                          style={{ backgroundColor: uColor }}
+                        >
+                          {msg.username.charAt(0)}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-col flex-1 min-w-0 pt-0.5">
-                      <span className="text-sm font-semibold mb-0.5" style={{ color: uColor }}>
-                        {msg.username}
-                      </span>
-                      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: mColor }}>
+                    <div className={`flex flex-col flex-1 min-w-0 ${isConsecutive ? "pt-0" : "pt-0.5"}`}>
+                      {!isConsecutive && (
+                        <span className="text-sm font-semibold mb-0.5" style={{ color: uColor }}>
+                          {msg.username}
+                        </span>
+                      )}
+                      <span className="text-sm leading-snug whitespace-pre-wrap break-words" style={{ color: mColor }}>
                         {msg.text}
                       </span>
                     </div>
@@ -215,9 +293,43 @@ function App() {
           <div ref={messagesEndRef} className="h-4" />
         </div>
 
-        <div className="border-t border-border bg-background/80 p-4 backdrop-blur-md z-10">
+        <div className="border-t border-border bg-background/80 p-4 backdrop-blur-md z-10 relative">
+          {chatInput.startsWith("/") && (
+            <div className="absolute bottom-full left-0 right-0 w-full max-w-6xl mx-auto pb-4 z-50">
+              <div className="bg-card border border-border rounded-md shadow-2xl backdrop-blur-md overflow-hidden max-h-64 overflow-y-auto custom-scrollbar animate-fade-in-up">
+                {filteredCommands.length > 0 ? (
+                  <ul className="py-2">
+                    {filteredCommands.map((cmd) => (
+                      <li 
+                        key={cmd.name} 
+                        className="px-6 py-2 hover:bg-white/5 cursor-pointer transition-colors"
+                        onClick={() => {
+                          setChatInput("/" + cmd.name + " ");
+                          document.getElementById("chat-input")?.focus();
+                        }}
+                      >
+                        <div className="flex items-baseline space-x-2">
+                          <span className="font-bold text-primary">/{cmd.name}</span>
+                          {cmd.args.map((arg, i) => (
+                            <span key={i} className={`text-xs font-semibold ${arg.required ? 'text-foreground/80' : 'text-muted-foreground'}`}>
+                              {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{cmd.description}</div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-6 py-4 text-sm text-muted-foreground">No matching commands found.</div>
+                )}
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleChatSubmit} className="flex w-full max-w-6xl mx-auto relative items-center">
             <input
+              id="chat-input"
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
