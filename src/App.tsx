@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send, Paperclip, Download, Folder } from "lucide-react";
+import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send, Paperclip, Download, Folder, LogOut } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -223,9 +223,22 @@ function App() {
   if (uiState === "connected") {
     return (
       <main className="dark flex h-screen w-screen flex-col bg-background text-foreground noise-overlay">
-        <header className="flex flex-col items-end justify-center border-b border-border bg-card/50 px-6 py-3 backdrop-blur-md z-10">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-0.5">Connected to</span>
-          <h1 className="text-sm font-medium text-foreground/90">{serverName}</h1>
+        <header className="flex items-center justify-between border-b border-border bg-card/50 px-6 py-3 backdrop-blur-md z-10">
+          <div></div>
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-0.5">Connected to</span>
+              <h1 className="text-sm font-medium text-foreground/90">{serverName}</h1>
+            </div>
+            <div className="h-8 w-px bg-border mx-1"></div>
+            <button 
+              onClick={() => invoke("send_input", { input: "/exit" }).catch((e: any) => setPopupMessage(e.toString()))}
+              className="p-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors flex items-center justify-center"
+              title="Disconnect"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </header>
 
         {popupMessage && (
