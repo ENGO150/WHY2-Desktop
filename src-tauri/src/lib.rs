@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use std::thread;
 use std::sync::mpsc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 
 use why2_chat::network::{self, client::{self, ClientEvent}, MessagePacket};
 use why2_chat::options;
@@ -10,6 +10,7 @@ use why2_chat::config::{self, TofuCode};
 
 struct AppState {
     write_stream: Mutex<Option<Arc<Mutex<TcpStream>>>>,
+    last_list_request: Mutex<std::time::Instant>,
 }
 
 #[derive(serde::Serialize)]
@@ -79,6 +80,13 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 }
                 ClientEvent::Connected(server_name) => {
                     app_handle.emit("why2-event", format!("Connected:{}", server_name)).unwrap();
+                    if let Some(stream_arc) = app_handle.state::<AppState>().write_stream.lock().unwrap().as_ref() {
+                        let mut stream = stream_arc.lock().unwrap();
+                        why2_chat::network::send(&mut *stream, why2_chat::network::MessagePacket {
+                            code: why2_chat::command::Command::List.to_code(),
+                            ..Default::default()
+                        }, why2_chat::options::get_keys().as_ref());
+                    }
                 }
                 ClientEvent::UsernameRejected => {
                     app_handle.emit("why2-event", "UsernameRejected").unwrap();
@@ -120,14 +128,7 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 ClientEvent::DisabledFeature => {
                     app_handle.emit("why2-event", "Popup:This feature is disabled on this server!").unwrap();
                 }
-                ClientEvent::Join(user) => {
-                    let payload = serde_json::json!({ "username": "", "text": format!("{} joined the server", user), "id": 0 });
-                    app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
-                }
-                ClientEvent::Leave(user) => {
-                    let payload = serde_json::json!({ "username": "", "text": format!("{} left the server", user), "id": 0 });
-                    app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
-                }
+                // Join and Leave are handled in the catch-all below to trigger List update
                 ClientEvent::Uploaded(user, file) => {
                     let payload = serde_json::json!({ "username": "", "text": format!("{} uploaded file: {}", user, file), "id": 0 });
                     app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
@@ -142,7 +143,7 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 }
                 ClientEvent::List(users_json) => {
                     let json_str = serde_json::to_string(&users_json).unwrap_or_else(|_| "[]".to_string());
-                    app_handle.emit("why2-event", format!("Modal:List:{}", json_str)).unwrap();
+                    app_handle.emit("why2-event", format!("UserList:{}", json_str)).unwrap();
                 }
                 ClientEvent::Files(files_json) => {
                     let json_str = serde_json::to_string(&files_json).unwrap_or_else(|_| "[]".to_string());
@@ -156,6 +157,34 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 }
                 ClientEvent::DownloadFailed(filename) => {
                     app_handle.emit("why2-event", format!("Popup:Failed to download {}!", filename)).unwrap();
+                }
+                ClientEvent::ChannelEvent | ClientEvent::Join(_) | ClientEvent::Leave(_) | ClientEvent::Clear(1) => {
+                    let app_state = app_handle.state::<AppState>();
+                    let mut last_req = app_state.last_list_request.lock().unwrap();
+                    if last_req.elapsed() > std::time::Duration::from_millis(1000) {
+                        *last_req = std::time::Instant::now();
+                        if let Some(stream_arc) = app_state.write_stream.lock().unwrap().as_ref() {
+                            let stream_clone = stream_arc.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(800));
+                                let mut stream = stream_clone.lock().unwrap();
+                                why2_chat::network::send(&mut *stream, why2_chat::network::MessagePacket {
+                                    code: why2_chat::command::Command::List.to_code(),
+                                    ..Default::default()
+                                }, why2_chat::options::get_keys().as_ref());
+                            });
+                        }
+                    }
+                    
+                    if let ClientEvent::Join(user) = event {
+                        let payload = serde_json::json!({ "username": "", "text": format!("{} joined the server", user), "id": 0 });
+                        app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
+                    } else if let ClientEvent::Leave(user) = event {
+                        let payload = serde_json::json!({ "username": "", "text": format!("{} left the server", user), "id": 0 });
+                        app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
+                    } else if let ClientEvent::Clear(1) = event {
+                        app_handle.emit("why2-event", format!("ChannelChanged:{}", why2_chat::options::get_channel())).unwrap();
+                    }
                 }
                 _ => {}
             }
@@ -293,6 +322,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             write_stream: Mutex::new(None),
+            last_list_request: Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(10)),
         })
         .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands, accept_tofu, upload_file_from_path])
         .run(tauri::generate_context!())
