@@ -104,6 +104,18 @@ function App()
     const [newChannelName, setNewChannelName] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const currentChannelRef = useRef(currentChannel);
+    const loginInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() =>
+    {
+        if (!connecting && uiState !== "connected" && loginInputRef.current)
+        {
+            setTimeout(() =>
+            {
+                loginInputRef.current?.focus();
+            }, 10);
+        }
+    }, [uiState, connecting]);
 
     useEffect(() =>
     {
@@ -731,6 +743,7 @@ function App()
                         </label>
                         <input
                             id="inputField"
+                            ref={loginInputRef}
                             type={inputType}
                             value={inputValue}
                             onChange={(e) => setInputValue(e.currentTarget.value)}
