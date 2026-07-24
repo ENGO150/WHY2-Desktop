@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send, Paperclip, Download, Folder, LogOut, Hash, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -71,6 +71,7 @@ function App() {
   const [modal, setModal] = useState<{type: string, data: any} | null>(null);
   const [tofuPrompt, setTofuPrompt] = useState<{hash: string, ip: string} | null>(null);
   const [users, setUsers] = useState<any[]>([]);
+  const [activeChannels, setActiveChannels] = useState<string[]>([]);
   const [currentChannel, setCurrentChannel] = useState("");
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
@@ -153,13 +154,15 @@ function App() {
           const data = JSON.parse(payload.substring("UserList:".length));
           setUsers(data);
           
-          const activeChannels = new Set(data.map((u: any) => u.channel));
-          activeChannels.add(""); // lobby
+          const activeChans = new Set(data.map((u: any) => u.channel || ""));
+          activeChans.add(""); // lobby
+          setActiveChannels(Array.from(activeChans));
+          
           setMessagesByChannel(prev => {
             const next = { ...prev };
             let changed = false;
             for (const ch in next) {
-              if (!activeChannels.has(ch)) {
+              if (!activeChans.has(ch)) {
                 delete next[ch];
                 changed = true;
               }
@@ -169,6 +172,23 @@ function App() {
         } catch (e) {
           console.error("Failed to parse UserList JSON");
         }
+      } else if (payload.startsWith("ChannelCreated:")) {
+        const channelName = payload.substring("ChannelCreated:".length);
+        setActiveChannels(prev => {
+          if (prev.includes(channelName)) return prev;
+          return [...prev, channelName];
+        });
+      } else if (payload.startsWith("ChannelDestroyed:")) {
+        const channelName = payload.substring("ChannelDestroyed:".length);
+        setActiveChannels(prev => prev.filter(c => c !== channelName));
+        setMessagesByChannel(prev => {
+          const next = { ...prev };
+          if (next[channelName]) {
+            delete next[channelName];
+            return next;
+          }
+          return prev;
+        });
       } else if (payload.startsWith("ChannelChanged:")) {
         setCurrentChannel(payload.substring("ChannelChanged:".length));
       } else if (payload.startsWith("Message:")) {
@@ -258,13 +278,15 @@ function App() {
     ? slashCommands.filter(c => c.name.startsWith(parsedCommand))
     : [];
 
-  const channels = Array.from(new Set(users.map(u => u.channel || "")));
-  if (!channels.includes(currentChannel)) {
-    channels.push(currentChannel);
-  }
-  if (!channels.includes("")) {
-    channels.unshift("");
-  }
+  const channelSet = new Set(activeChannels);
+  channelSet.add(currentChannel);
+  channelSet.add("");
+
+  const channels = Array.from(channelSet).sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
 
   if (uiState === "connected") {
     return (
@@ -534,19 +556,23 @@ function App() {
               const isCurrent = c === currentChannel;
               const display = c === "" ? "chat lobby" : c;
               return (
-                <button
-                  key={display}
-                  onClick={() => invoke("send_input", { input: c === "" ? "/channel" : `/channel ${c}` }).catch((e: any) => setPopupMessage(e.toString()))}
-                  className={`w-full text-left px-3 py-2 rounded-md flex items-center gap-2 text-sm transition-colors ${
-                    isCurrent 
-                      ? "bg-primary/20 text-primary font-medium" 
-                      : "text-foreground/70 hover:bg-white/5 hover:text-foreground"
-                  }`}
-                >
-                  <Hash size={14} className={isCurrent ? "text-primary" : "text-muted-foreground"} />
-                  <span className="truncate">{display}</span>
-                  {isCurrent && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
-                </button>
+                <React.Fragment key={display}>
+                  <button
+                    onClick={() => invoke("send_input", { input: c === "" ? "/channel" : `/channel ${c}` }).catch((e: any) => setPopupMessage(e.toString()))}
+                    className={`w-full text-left px-3 py-2 rounded-md flex items-center gap-2 text-sm transition-colors ${
+                      isCurrent 
+                        ? "bg-primary/20 text-primary font-medium" 
+                        : "text-foreground/70 hover:bg-white/5 hover:text-foreground"
+                    }`}
+                  >
+                    <Hash size={14} className={isCurrent ? "text-primary" : "text-muted-foreground"} />
+                    <span className="truncate">{display}</span>
+                    {isCurrent && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
+                  </button>
+                  {c === "" && channels.length > 1 && (
+                    <div className="my-2 border-b border-border/50 mx-2" />
+                  )}
+                </React.Fragment>
               );
             })}
           </div>

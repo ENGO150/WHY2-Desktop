@@ -10,7 +10,6 @@ use why2_chat::config::{self, TofuCode};
 
 struct AppState {
     write_stream: Mutex<Option<Arc<Mutex<TcpStream>>>>,
-    last_list_request: Mutex<std::time::Instant>,
 }
 
 #[derive(serde::Serialize)]
@@ -84,7 +83,12 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                         let mut stream = stream_arc.lock().unwrap();
                         why2_chat::network::send(&mut *stream, why2_chat::network::MessagePacket {
                             code: why2_chat::command::Command::List.to_code(),
-                            ..Default::default()
+                            text: None,
+                            username: None,
+                            id: None,
+                            colors: why2_chat::network::MessageColors { username_color: None, message_color: None },
+                            seq: 0,
+                            token: None,
                         }, why2_chat::options::get_keys().as_ref());
                     }
                 }
@@ -99,6 +103,8 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                         "username": msg.username.unwrap_or_default(),
                         "text": msg.text.unwrap_or_default(),
                         "id": msg.id.unwrap_or_default(),
+                        "username_color": msg.colors.username_color,
+                        "message_color": msg.colors.message_color,
                     });
                     app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
                 }
@@ -158,34 +164,25 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 ClientEvent::DownloadFailed(filename) => {
                     app_handle.emit("why2-event", format!("Popup:Failed to download {}!", filename)).unwrap();
                 }
-                ClientEvent::ChannelEvent | ClientEvent::Join(_) | ClientEvent::Leave(_) | ClientEvent::Clear(1) => {
-                    let app_state = app_handle.state::<AppState>();
-                    let mut last_req = app_state.last_list_request.lock().unwrap();
-                    if last_req.elapsed() > std::time::Duration::from_millis(1000) {
-                        *last_req = std::time::Instant::now();
-                        if let Some(stream_arc) = app_state.write_stream.lock().unwrap().as_ref() {
-                            let stream_clone = stream_arc.clone();
-                            std::thread::spawn(move || {
-                                std::thread::sleep(std::time::Duration::from_millis(800));
-                                let mut stream = stream_clone.lock().unwrap();
-                                why2_chat::network::send(&mut *stream, why2_chat::network::MessagePacket {
-                                    code: why2_chat::command::Command::List.to_code(),
-                                    ..Default::default()
-                                }, why2_chat::options::get_keys().as_ref());
-                            });
-                        }
-                    }
-                    
-                    if let ClientEvent::Join(user) = event {
-                        let payload = serde_json::json!({ "username": "", "text": format!("{} joined the server", user), "id": 0 });
-                        app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
-                    } else if let ClientEvent::Leave(user) = event {
-                        let payload = serde_json::json!({ "username": "", "text": format!("{} left the server", user), "id": 0 });
-                        app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
-                    } else if let ClientEvent::Clear(1) = event {
-                        app_handle.emit("why2-event", format!("ChannelChanged:{}", why2_chat::options::get_channel())).unwrap();
-                    }
+                ClientEvent::Join(user) => {
+                    let payload = serde_json::json!({ "username": "", "text": format!("{} joined the server", user), "id": 0 });
+                    app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
                 }
+                ClientEvent::Leave(user) => {
+                    let payload = serde_json::json!({ "username": "", "text": format!("{} left the server", user), "id": 0 });
+                    app_handle.emit("why2-event", format!("Message:{}", payload.to_string())).unwrap();
+                }
+                ClientEvent::Clear(1) => {
+                    app_handle.emit("why2-event", format!("ChannelChanged:{}", why2_chat::options::get_channel())).unwrap();
+                }
+                ClientEvent::ChannelCreated(channel) => {
+                    app_handle.emit("why2-event", format!("ChannelCreated:{}", channel)).unwrap();
+                }
+                ClientEvent::ChannelDestroyed(channel) => {
+                    app_handle.emit("why2-event", format!("ChannelDestroyed:{}", channel)).unwrap();
+                }
+                    
+
                 _ => {}
             }
         }
@@ -202,6 +199,60 @@ fn accept_tofu(ip: String, hash: String) -> Result<(), String> {
 }
 
 use why2_chat::command::{self, Command};
+
+fn to_color(color: &str) -> Result<(u8, String), ()> {
+    let mut formatted_color = color.replace(" ", "_").to_lowercase();
+    if formatted_color.starts_with("dark") && !formatted_color.starts_with("dark_") {
+        formatted_color = formatted_color.replacen("dark", "dark_", 1);
+    }
+    
+    let code = match formatted_color.as_str() {
+        "black" => Some(0),
+        "dark_red" => Some(1),
+        "dark_green" => Some(2),
+        "dark_yellow" => Some(3),
+        "dark_blue" => Some(4),
+        "dark_magenta" => Some(5),
+        "dark_cyan" => Some(6),
+        "grey" | "gray" => Some(7),
+        "dark_grey" | "dark_gray" => Some(8),
+        "red" => Some(9),
+        "green" => Some(10),
+        "yellow" => Some(11),
+        "blue" => Some(12),
+        "magenta" => Some(13),
+        "cyan" => Some(14),
+        "white" => Some(15),
+        _ => if let Ok(c) = color.parse::<u8>() {
+             if c <= 15 { Some(c) } else { None }
+        } else { None }
+    };
+    
+    if let Some(c) = code {
+        let name = match c {
+            0 => "black",
+            1 => "dark_red",
+            2 => "dark_green",
+            3 => "dark_yellow",
+            4 => "dark_blue",
+            5 => "dark_magenta",
+            6 => "dark_cyan",
+            7 => "grey",
+            8 => "dark_grey",
+            9 => "red",
+            10 => "green",
+            11 => "yellow",
+            12 => "blue",
+            13 => "magenta",
+            14 => "cyan",
+            15 => "white",
+            _ => "white",
+        };
+        Ok((c, name.to_string()))
+    } else {
+        Err(())
+    }
+}
 
 fn upload_file_logic(path_str: &str, stream: &mut std::net::TcpStream) -> Result<(), String> {
     let path = std::path::Path::new(path_str.trim());
@@ -293,6 +344,26 @@ fn send_input(input: String, state: State<'_, AppState>, app_handle: AppHandle) 
                             app_handle.emit("why2-event", "Popup:Usage: /upload <PATH>").unwrap();
                         }
                     }
+                    Command::UsernameColor => {
+                        if let Some(color_str) = parameters {
+                            if let Ok((_, formatted_name)) = to_color(&color_str) {
+                                why2_chat::config::client_write("username_color", &formatted_name);
+                                app_handle.emit("why2-event", format!("Popup:Username color set successfully.")).unwrap();
+                            } else {
+                                app_handle.emit("why2-event", "Popup:Invalid color").unwrap();
+                            }
+                        }
+                    }
+                    Command::MessageColor => {
+                        if let Some(color_str) = parameters {
+                            if let Ok((_, formatted_name)) = to_color(&color_str) {
+                                why2_chat::config::client_write("message_color", &formatted_name);
+                                app_handle.emit("why2-event", format!("Popup:Message color set successfully.")).unwrap();
+                            } else {
+                                app_handle.emit("why2-event", "Popup:Invalid color").unwrap();
+                            }
+                        }
+                    }
                     _ => {
                         app_handle.emit("why2-event", format!("Popup:Command '{}' not fully supported in desktop UI yet.", input)).unwrap();
                     }
@@ -305,9 +376,20 @@ fn send_input(input: String, state: State<'_, AppState>, app_handle: AppHandle) 
     if let Some(stream_arc) = state.write_stream.lock().unwrap().as_ref() {
         let mut stream = stream_arc.lock().unwrap();
         
+        let u_color = to_color(&why2_chat::config::read_config::<String>("username_color")).ok().map(|(c, _)| c);
+        let m_color = to_color(&why2_chat::config::read_config::<String>("message_color")).ok().map(|(c, _)| c);
+
         network::send(&mut *stream, MessagePacket {
             text: Some(input),
-            ..Default::default()
+            colors: why2_chat::network::MessageColors {
+                username_color: u_color,
+                message_color: m_color,
+            },
+            username: None,
+            id: None,
+            code: None,
+            seq: 0,
+            token: None,
         }, options::get_keys().as_ref());
     }
     Ok(())
@@ -322,7 +404,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             write_stream: Mutex::new(None),
-            last_list_request: Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(10)),
         })
         .invoke_handler(tauri::generate_handler![connect_to_server, send_input, get_commands, accept_tofu, upload_file_from_path])
         .run(tauri::generate_context!())
