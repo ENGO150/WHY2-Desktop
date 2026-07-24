@@ -76,9 +76,6 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                 }
                 ClientEvent::Authenticated => {
                     app_handle.emit("why2-event", "Authenticated").unwrap();
-                }
-                ClientEvent::Connected(server_name) => {
-                    app_handle.emit("why2-event", format!("Connected:{}", server_name)).unwrap();
                     if let Some(stream_arc) = app_handle.state::<AppState>().write_stream.lock().unwrap().as_ref() {
                         let mut stream = stream_arc.lock().unwrap();
                         why2_chat::network::send(&mut *stream, why2_chat::network::MessagePacket {
@@ -91,6 +88,9 @@ fn connect_to_server(ip: String, app_handle: AppHandle, state: State<'_, AppStat
                             token: None,
                         }, why2_chat::options::get_keys().as_ref());
                     }
+                }
+                ClientEvent::Connected(server_name) => {
+                    app_handle.emit("why2-event", format!("Connected:{}", server_name)).unwrap();
                 }
                 ClientEvent::UsernameRejected => {
                     app_handle.emit("why2-event", "UsernameRejected").unwrap();
