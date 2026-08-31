@@ -45,6 +45,10 @@ use tokio::
 
 use sha2::{ Sha256, Digest };
 
+use openh264::{ decoder::Decoder, formats::YUVSource };
+
+use jpeg_encoder::{ Encoder as JpegEncoder, ColorType };
+
 use serde::{ Serialize, Deserialize };
 
 use tauri::
@@ -97,6 +101,10 @@ const EVENT: &str = "why2-event"; //THE ONE EVENT THE WEBVIEW LISTENS ON
 //THE SERVER'S DEFAULT min_message_delay. IT COUNTS EVERY PACKET, NOT ONLY THE ONES THE USER TYPED, AND
 //IT IS NEVER SENT TO US - SO THE ONLY THING A CLIENT CAN DO IS KEEP ITS OWN CHATTER THIS FAR APART
 const ROSTER_GAP: Duration = Duration::from_millis(750);
+
+//WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
+//PHOTOGRAPH: TEXT HAS TO SURVIVE IT, AND THE BYTES ONLY TRAVEL AS FAR AS THE CANVAS IN THE SAME PROCESS
+const JPEG_QUALITY: u8 = 80;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
@@ -164,9 +172,11 @@ struct AppState
     //A MUTE TOGGLED IN A SILENT CALL HAS NOTHING TO REDRAW IT - THE ROSTER IS KEPT HERE AND SENT AGAIN
     voice_users: Mutex<Vec<VoiceUserInfo>>,
 
-    //WHERE AN ATTACHED SHARE'S FRAMES GO. THE CRATE HANDS THEM OVER AS H.264 ACCESS UNITS AND THE WEBVIEW
-    //DECODES THEM, SO THE PICTURE LANDS IN THE CHAT WINDOW RATHER THAN IN A WINDOW OF THE CRATE'S OWN
+    //WHERE AN ATTACHED SHARE'S FRAMES GO. THE CRATE HANDS THEM OVER AS H.264 ACCESS UNITS AND THE PICTURE
+    //LANDS IN THE CHAT WINDOW RATHER THAN IN A WINDOW OF THE CRATE'S OWN - EITHER DECODED BY THE WEBVIEW,
+    //OR, WHERE IT HAS NO DECODER, DECODED HERE AND SENT ON AS JPEG
     screen_channel: Mutex<Option<Channel<InvokeResponseBody>>>,
+    screen_decode: AtomicBool,
 }
 
 //ONE LINE OF THE CHAT PANE. EVERY EVENT THAT HAS SOMETHING TO SAY BECOMES ONE OF THESE, SO THE
@@ -1551,11 +1561,90 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     Ok(())
 }
 
+//SOMEBODY ELSE'S SCREEN, ON ITS WAY TO THE PANE. THE FAST PATH HANDS THE H.264 STRAIGHT OVER AND THE
+//WEBVIEW DECODES IT; WHERE THE WEBVIEW CANNOT (WebCodecs IS NOT EVERYWHERE, AND WHERE IT IS THE H.264
+//DECODER BEHIND IT MAY NOT BE), THE FRAME IS DECODED HERE AND SENT ON AS A JPEG THE CANVAS CAN DRAW
+fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver<Vec<u8>>)
+{
+    let mut decoder: Option<Decoder> = None;
+    let mut rgb: Vec<u8> = Vec::new();
+    let mut said = false; //A DECODER THAT WILL NOT START IS WORTH SAYING ONCE, NOT THIRTY TIMES A SECOND
+
+    while let Some(frame) = frames.blocking_recv()
+    {
+        let state = app.state::<AppState>();
+
+        //NOBODY IS WATCHING (OR THE PANE HAS NOT ASKED FOR THE FRAMES YET) - THIS ONE IS DROPPED RATHER
+        //THAN QUEUED, SINCE A PICTURE NOBODY SEES IS WORTH NOTHING A SECOND LATER
+        let Some(channel) = state.screen_channel.lock().unwrap().clone() else
+        {
+            //AND THE NEXT WATCHER STARTS FROM THEIR OWN KEYFRAME, NOT HALFWAY THROUGH SOMEBODY ELSE'S
+            decoder = None;
+            continue;
+        };
+
+        if !state.screen_decode.load(Ordering::Relaxed)
+        {
+            channel.send(InvokeResponseBody::Raw(frame)).ok();
+            continue;
+        }
+
+        //WHATEVER ELSE HAS PILED UP WHILE THE LAST ONE WAS BEING DECODED COMES ALONG NOW: EVERY FRAME HAS
+        //TO BE DECODED (H.264 IS PREDICTED, AND SKIPPING ONE BREAKS THE ONES AFTER IT), BUT ONLY THE
+        //NEWEST IS WORTH THE RE-ENCODE - THE OLDER ONES ARE ALREADY WRONG BY THE TIME THEY WOULD BE DRAWN
+        let mut pending = vec![frame];
+
+        while let Ok(next) = frames.try_recv() { pending.push(next); }
+
+        let decoder = match decoder
+        {
+            Some(ref mut decoder) => decoder,
+            None => match Decoder::new()
+            {
+                Ok(new) => { said = false; decoder.insert(new) },
+
+                Err(error) =>
+                {
+                    if !said { say(app, ChatMessage::error(format!("Cannot decode the screen share: {error}."))) }
+
+                    said = true;
+                    continue;
+                },
+            },
+        };
+
+        let newest = pending.len() - 1;
+
+        for (index, packet) in pending.iter().enumerate()
+        {
+            let Ok(Some(yuv)) = decoder.decode(packet) else { continue };
+
+            if index != newest { continue }
+
+            let (width, height) = yuv.dimensions();
+
+            rgb.resize(width * height * 3, 0);
+            yuv.write_rgb8(&mut rgb);
+
+            let mut jpeg = Vec::with_capacity(rgb.len() / 8);
+
+            if JpegEncoder::new(&mut jpeg, JPEG_QUALITY)
+                .encode(&rgb, width as u16, height as u16, ColorType::Rgb).is_ok()
+            {
+                channel.send(InvokeResponseBody::Raw(jpeg)).ok();
+            }
+        }
+    }
+}
+
 //THE PANE ASKS FOR THE PICTURE, AND HANDS OVER THE PIPE IT WANTS IT ON. A FRAME IS TENS OF KILOBYTES OF
 //H.264 THIRTY TIMES A SECOND, WHICH IS NOTHING ON A BINARY CHANNEL AND HOPELESS AS A JSON ARRAY OF BYTES -
+//decode IS THE PANE SAYING IT CANNOT DECODE H.264 ITSELF AND WANTS PICTURES INSTEAD OF A BITSTREAM
 #[tauri::command]
-fn watch_frames(channel: Channel<InvokeResponseBody>, state: State<'_, AppState>)
+fn watch_frames(channel: Channel<InvokeResponseBody>, decode: bool, state: State<'_, AppState>)
 {
+    state.screen_decode.store(decode, Ordering::Relaxed);
+
     *state.screen_channel.lock().unwrap() = Some(channel);
 }
 
@@ -1751,31 +1840,20 @@ pub fn run()
             voice_enabled: AtomicBool::new(false),
             voice_users: Mutex::new(Vec::new()),
             screen_channel: Mutex::new(None),
+            screen_decode: AtomicBool::new(false),
         })
         //THE FRAMES OF A WATCHED SHARE ARE PULLED OUT OF THE CRATE ONCE, FOR THE LIFE OF THE PROCESS: THE
-        //SINK IS WHAT KEEPS IT FROM OPENING A WINDOW OF ITS OWN, AND IT MUST BE SET BEFORE ANY ATTACH
+        //SINK IS WHAT KEEPS IT FROM OPENING A WINDOW OF ITS OWN, AND IT MUST BE SET BEFORE ANY ATTACH.
+        //A THREAD AND NOT A TASK, BECAUSE DECODING ONE IS TENS OF MILLISECONDS OF UNBROKEN CPU
         .setup(|app|
         {
-            let (frames_tx, mut frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (frames_tx, frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
             *screen::SCREEN_FRAME_SINK.write().unwrap() = Some(frames_tx);
 
             let handle = app.handle().clone();
 
-            async_runtime::spawn(async move
-            {
-                while let Some(frame) = frames_rx.recv().await
-                {
-                    //NOBODY IS WATCHING (OR THE PANE HAS NOT ASKED FOR THEM YET) - THE FRAME IS DROPPED
-                    //RATHER THAN QUEUED, SINCE A PICTURE NOBODY SEES IS WORTH NOTHING A SECOND LATER
-                    let channel = handle.state::<AppState>().screen_channel.lock().unwrap().clone();
-
-                    if let Some(channel) = channel
-                    {
-                        channel.send(InvokeResponseBody::Raw(frame)).ok();
-                    }
-                }
-            });
+            std::thread::spawn(move || screen_frames(&handle, frames_rx));
 
             Ok(())
         })

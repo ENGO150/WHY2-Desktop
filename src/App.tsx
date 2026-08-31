@@ -384,6 +384,10 @@ function branches(rows: BlockRow[]): string[]
 }
 
 //HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS
+//WHO IS SHARING IS ONLY EVER ANSWERED AND NEVER ANNOUNCED, SO IT IS ASKED AGAIN NOW AND THEN - OFTEN
+//ENOUGH THAT THE WATCH BUTTONS IN THE MEMBER LIST ARE HONEST, RARELY ENOUGH TO BE NOTHING ON THE WIRE
+const SCREENS_POLL = 30000;
+
 const PALETTE_ROWS = 8;
 
 //THE LINE ART. ONE COMPONENT AND A TABLE OF PATHS, BECAUSE AN ICON SET IS NOT WORTH A DEPENDENCY AND A
@@ -442,6 +446,27 @@ function isKeyFrame(bytes: Uint8Array): boolean
     }
 
     return false;
+}
+
+//WHETHER THIS WEBVIEW CAN DECODE THE SHARE ITSELF, AND WITH WHICH SPELLING. THE LEVEL IN THE STRING ONLY
+//HAS TO BE AT LEAST THE STREAM'S, AND THE STREAM'S DEPENDS ON THE MONITOR SOMEBODY ELSE IS SHARING - SO
+//THE HIGHEST SUPPORTED ONE WINS, AND null MEANS THE PICTURE HAS TO ARRIVE ALREADY DECODED
+async function h264Codec(): Promise<string | null>
+{
+    if (typeof VideoDecoder === "undefined") return null;
+
+    for (const codec of ["avc1.42E034", "avc1.42E028", "avc1.42E01E"])
+    {
+        try
+        {
+            const { supported } = await VideoDecoder.isConfigSupported({ codec, optimizeForLatency: true });
+
+            if (supported) return codec;
+        }
+        catch { /* THE NEXT ONE */ }
+    }
+
+    return null;
 }
 
 //WHAT A NAME SAYS THE FILE IS. THE PROTOCOL SENDS NO TYPE AND NO SIZE, SO THE EXTENSION IS THE ONLY
@@ -970,6 +995,9 @@ function App()
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    //WHETHER THE ANSWER ON ITS WAY WAS ASKED FOR BY US RATHER THAN BY SOMEBODY TYPING /screens
+    const pollingRef = useRef(false);
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1252,11 +1280,15 @@ function App()
                     break;
                 }
 
-                //TYPING /screens OPENS THE WINDOW THE ANSWER BELONGS IN, THE WAY /files OPENS ITS OWN
+                //TYPING /screens OPENS THE WINDOW THE ANSWER BELONGS IN, THE WAY /files OPENS ITS OWN -
+                //BUT THE ONE THE ROSTER ASKS FOR EVERY HALF MINUTE ONLY FILLS THE LIST IN
                 case "screens":
                 {
                     setSharers(payload.data.users);
-                    setScreensOpen(true);
+
+                    if (pollingRef.current) pollingRef.current = false;
+                    else setScreensOpen(true);
+
                     break;
                 }
 
@@ -1540,9 +1572,9 @@ function App()
         send("/screens");
     };
 
-    //SOMEBODY ELSE'S SCREEN, DRAWN HERE RATHER THAN IN A WINDOW OF THE CRATE'S OWN. THE FRAMES ARRIVE AS
-    //H.264 ACCESS UNITS ON A BINARY CHANNEL AND THE WEBVIEW DECODES THEM - THE PICTURE NEVER TOUCHES THE
-    //MAIN THREAD'S EVENT LOOP, WHICH IS TAURI'S AND NOT winit'S
+    //SOMEBODY ELSE'S SCREEN, DRAWN HERE RATHER THAN IN A WINDOW OF THE CRATE'S OWN. THE FRAMES ARRIVE ON A
+    //BINARY CHANNEL, AND WHAT IS ON IT DEPENDS ON WHAT THIS WEBVIEW CAN DO: H.264 WHERE IT HAS A DECODER
+    //OF ITS OWN, AND OTHERWISE JPEG, DECODED FOR US ON THE OTHER SIDE OF THE BRIDGE
     useEffect(() =>
     {
         if (!watching) return;
@@ -1552,78 +1584,91 @@ function App()
 
         if (!canvas || !context) return;
 
-        if (typeof VideoDecoder === "undefined")
-        {
-            setViewerError("This webview has no video decoder (WebCodecs is missing).");
-            return;
-        }
-
         let live = true;
-        let ready = false;    //NOTHING IS DECODED BEFORE THE DECODER HAS BEEN TOLD WHAT IT IS DECODING
-        let started = false;  //AND NOTHING BEFORE THE FIRST KEYFRAME, WHICH IS THE ONLY PLACE TO START
+        let decoder: VideoDecoder | null = null;
+        let started = false;  //A DECODER CANNOT START ANYWHERE BUT A KEYFRAME
+        let drawing = false;  //ONE PICTURE AT A TIME - THE NEXT FRAME IS NEWER THAN THE ONE BEING DECODED
         let stamp = 0;
 
-        const decoder = new VideoDecoder(
+        const paint = (frame: CanvasImageSource, width: number, height: number) =>
         {
-            output: (frame) =>
+            //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT DOWN TO THE PANE
+            if (canvas.width !== width || canvas.height !== height)
             {
-                //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT DOWN TO THE PANE
-                if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight)
-                {
-                    canvas.width = frame.displayWidth;
-                    canvas.height = frame.displayHeight;
-                }
-
-                context.drawImage(frame, 0, 0);
-                frame.close();
-            },
-
-            error: (error) => { if (live) setViewerError(String(error)); },
-        });
-
-        //THE LEVEL IN THE CODEC STRING ONLY HAS TO BE AT LEAST THE STREAM'S, AND THE STREAM'S DEPENDS ON
-        //THE MONITOR SOMEBODY ELSE IS SHARING - SO THE HIGHEST ONE THAT IS SUPPORTED IS THE ONE TO ASK FOR
-        void (async () =>
-        {
-            for (const codec of ["avc1.42E034", "avc1.42E028", "avc1.42E01E"])
-            {
-                try
-                {
-                    const { supported } = await VideoDecoder.isConfigSupported({ codec, optimizeForLatency: true });
-
-                    if (!supported || !live) continue;
-
-                    decoder.configure({ codec, optimizeForLatency: true });
-                    ready = true;
-
-                    return;
-                }
-                catch { /* THE NEXT ONE */ }
+                canvas.width = width;
+                canvas.height = height;
             }
 
-            if (live) setViewerError("No H.264 decoder in this webview.");
-        })();
+            context.drawImage(frame, 0, 0);
+        };
 
         const channel = new Channel<ArrayBuffer>();
 
-        channel.onmessage = (data) =>
+        //NOTHING IS DRAWN UNTIL IT IS KNOWN WHAT IS COMING - THE FIRST FRAMES ARE DROPPED, AND THE SHARE
+        //FORCES A KEYFRAME EVERY COUPLE OF SECONDS ANYWAY
+        channel.onmessage = () => {};
+
+        void (async () =>
         {
-            if (!live || !ready || decoder.state !== "configured") return;
+            const codec = await h264Codec();
 
-            const bytes = new Uint8Array(data);
-            const key = isKeyFrame(bytes);
+            if (!live) return;
 
-            //A DELTA FRAME BEFORE THE FIRST KEY ONE IS PREDICTED FROM A PICTURE NOBODY HAS
-            if (!started && !key) return;
+            if (codec)
+            {
+                decoder = new VideoDecoder(
+                {
+                    output: (frame) =>
+                    {
+                        paint(frame, frame.displayWidth, frame.displayHeight);
+                        frame.close();
+                    },
 
-            started = true;
+                    error: (error) => { if (live) setViewerError(String(error)); },
+                });
 
-            decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: stamp, data: bytes }));
+                decoder.configure({ codec, optimizeForLatency: true });
 
-            stamp += 33333;
-        };
+                channel.onmessage = (data) =>
+                {
+                    if (!live || !decoder || decoder.state !== "configured") return;
 
-        invoke("watch_frames", { channel }).catch((error: unknown) => setViewerError(String(error)));
+                    const bytes = new Uint8Array(data);
+                    const key = isKeyFrame(bytes);
+
+                    //A DELTA FRAME BEFORE THE FIRST KEY ONE IS PREDICTED FROM A PICTURE NOBODY HAS
+                    if (!started && !key) return;
+
+                    started = true;
+
+                    decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: stamp, data: bytes }));
+
+                    stamp += 33333;
+                };
+            }
+            else
+            {
+                channel.onmessage = (data) =>
+                {
+                    if (!live || drawing) return;
+
+                    drawing = true;
+
+                    createImageBitmap(new Blob([data], { type: "image/jpeg" }))
+                        .then((bitmap) =>
+                        {
+                            if (live) paint(bitmap, bitmap.width, bitmap.height);
+
+                            bitmap.close();
+                        })
+                        .catch(() => {})
+                        .finally(() => { drawing = false; });
+                };
+            }
+
+            await invoke("watch_frames", { channel, decode: codec === null })
+                .catch((error: unknown) => setViewerError(String(error)));
+        })();
 
         return () =>
         {
@@ -1631,7 +1676,7 @@ function App()
 
             invoke("drop_frames").catch(() => {});
 
-            if (decoder.state !== "closed") decoder.close();
+            if (decoder && decoder.state !== "closed") decoder.close();
         };
     }, [watching]);
 
@@ -1641,6 +1686,20 @@ function App()
         setFilter("");
         chatInputRef.current?.focus();
     };
+
+    //ASK WHO IS SHARING, QUIETLY AND ON A CLOCK. THE FIRST ONE WAITS FOR THE ROSTER TO BE OUT OF THE WAY -
+    //THE SERVER COUNTS PACKETS AND NOT MESSAGES, AND TWO QUESTIONS IN THE SAME BREATH EARN A WARNING
+    useEffect(() =>
+    {
+        if (!connected) return;
+
+        const ask = () => { pollingRef.current = true; send("/screens"); };
+
+        const first = setTimeout(ask, 2500);
+        const clock = setInterval(ask, SCREENS_POLL);
+
+        return () => { clearTimeout(first); clearInterval(clock); };
+    }, [connected]);
 
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
@@ -3265,6 +3324,11 @@ function App()
                                 {
                                     const own = user.username === username;
 
+                                    //WHOEVER WAS SHARING WHEN THE LIST WAS LAST ASKED FOR. IT IS THE ONE
+                                    //THING THE SERVER NEVER ANNOUNCES, SO IT IS AS FRESH AS THE LAST ASK
+                                    const sharing = !own && sharers.some((sharer) => sharer.id === user.id);
+                                    const here = watching === user.username;
+
                                     return (
                                         <div
                                             key={user.id}
@@ -3280,6 +3344,20 @@ function App()
                                                 <div className={`truncate text-sm ${own ? "text-accent" : "text-muted"}`}>{user.username}</div>
                                                 {user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
                                             </div>
+
+                                            {sharing && (
+                                                <button
+                                                    type="button"
+                                                    title={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
+                                                    aria-label={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
+                                                    onClick={() => send(here ? "/deattach" : `/attach ${user.id}`)}
+                                                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-app transition-colors ${here
+                                                        ? "text-online hover:bg-active"
+                                                        : "text-muted hover:bg-active hover:text-online"}`}
+                                                >
+                                                    <Icon name="monitor" className="h-4 w-4" />
+                                                </button>
+                                            )}
 
                                             {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
                                         </div>

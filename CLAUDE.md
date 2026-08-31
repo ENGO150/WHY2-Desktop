@@ -301,19 +301,33 @@ back). A frame is tens of kilobytes thirty times a second — nothing on Tauri's
 JSON array of bytes — and frames arriving while nobody is watching are **dropped rather than queued**, since
 a picture nobody sees is worth nothing a second later.
 
-The webview does the decoding: one `VideoDecoder` (WebCodecs) into a `<canvas>` that sits above the message
-pane, so the chat keeps running underneath the picture. Two things that path insists on, both handled in the
-effect keyed on `watching`: a decoder cannot start anywhere but a **keyframe** (`isKeyFrame` reads the NAL
-type out of the low five bits after each Annex-B start code — an IDR slice or the parameter sets in front of
-one), and the **codec string's level only has to be at least the stream's**, so the highest supported of
-`avc1.42E034`/`42E028`/`42E01E` is the one asked for. A webview without WebCodecs says so in the pane rather
-than drawing nothing. The frames are Annex-B, which is why the decoder is configured with no `description`.
+**Who decodes depends on the webview**, and the pane decides before it asks for anything: `h264Codec` probes
+`VideoDecoder.isConfigSupported` and `watch_frames(channel, decode)` carries the answer.
 
-`/screens` is poll-only — the server answers it and never says that somebody started — so it opens the
-**Screens** window, which is one door for both directions: our monitors (the live one badged, clicking
-another swaps) over everybody else's shares (`Watch` sends `/attach <id>`, `Stop watching` sends
-`/deattach`). The header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to
-swap, and `Refresh` re-asks.
+- **It can** (Chromium, and WebKitGTK with an H.264 decoder behind WebCodecs): the H.264 travels as it
+  arrived and one `VideoDecoder` feeds the canvas. Two things that path insists on: a decoder cannot start
+  anywhere but a **keyframe** (`isKeyFrame` reads the NAL type out of the low five bits after each Annex-B
+  start code — an IDR slice, or the parameter sets in front of one), and the **codec string's level only has
+  to be at least the stream's**, so the highest supported of `avc1.42E034`/`42E028`/`42E01E` wins. The
+  stream is Annex-B, which is why the config carries no `description`.
+- **It cannot** — which is the common case on WebKitGTK, where WebCodecs exists but its H.264 decoder often
+  does not — `screen_frames` decodes with `openh264` (the crate's own decoder) and sends JPEGs the canvas
+  draws through `createImageBitmap`. That runs on a **thread and not a task**: decode plus re-encode is tens
+  of milliseconds of unbroken CPU. Every frame is decoded, because H.264 is predicted and skipping one
+  breaks the frames after it, but only the newest of whatever piled up is re-encoded — the older ones would
+  be wrong by the time they were drawn.
+
+Either way the picture lands in a `<canvas>` above the message pane, so the chat keeps running underneath it.
+
+`/screens` is poll-only — the server answers it and never says that somebody started — so the app asks on a
+clock (`SCREENS_POLL`, and the first ask waits for the roster to be out of the way, since the server counts
+packets and not messages). That keeps the **member list** honest, which is where watching actually starts: a
+green monitor button appears beside anybody who is sharing and sends `/attach <id>`, or `/deattach` while it
+is their screen in the pane. `pollingRef` is what separates the two kinds of answer — the one we asked for
+quietly fills the list in, and the one somebody typed opens the **Screens** window, one door for both
+directions: our monitors (the live one badged, clicking another swaps) over everybody else's shares. The
+header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap, and
+`Refresh` re-asks.
 
 `reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, exactly what
 `tui/state.rs::reset_session` clears: the pick lasts as long as the share does. The session teardown also
