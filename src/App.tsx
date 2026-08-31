@@ -60,6 +60,14 @@ interface FileInfo
     name: string;
 }
 
+//OUR OWN SHARE. THE MONITOR IS PICKED ON THIS MACHINE AND NEVER LEAVES IT, SO IT IS WORTH SAYING BACK
+//TO THE ONE PERSON WHO CAN SEE IT - AND IT ONLY MEANS ANYTHING WHILE THERE IS A SHARE
+interface ScreenState
+{
+    sharing: boolean;
+    monitor: string | null;
+}
+
 interface FileOwner
 {
     id: number;
@@ -283,6 +291,7 @@ type BridgeEvent =
     | { event: "open_settings"; data?: null }
     | { event: "client_settings"; data: { settings: ClientSetting[] } }
     | { event: "voice"; data: { voice: VoiceState } }
+    | { event: "screen"; data: { screen: ScreenState } }
     | { event: "server_settings"; data: { settings: SettingRow[]; saved: boolean } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
@@ -400,6 +409,7 @@ const ICONS: Record<string, string[]> =
     video: ["M3 6h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z", "M16 10.5 22 7v10l-6-3.5z"],
     archive: ["M4 8h16v12H4z", "M3 4h18v4H3z", "M10 12h4"],
     code: ["M9 18l-6-6 6-6", "M15 6l6 6-6 6"],
+    monitor: ["M3 5h18v11H3z", "M9 20h6", "M12 16v4"],
 };
 
 //WHAT A NAME SAYS THE FILE IS. THE PROTOCOL SENDS NO TYPE AND NO SIZE, SO THE EXTENSION IS THE ONLY
@@ -895,6 +905,11 @@ function App()
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
     const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [] });
+    const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null });
+
+    //THE MONITORS, WHILE THE PICKER IS ASKING WHICH ONE TO SHARE. THEY ARE ENUMERATED WHEN IT OPENS AND
+    //NOT KEPT - ONE PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT
+    const [monitors, setMonitors] = useState<string[] | null>(null);
 
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
@@ -1034,6 +1049,8 @@ function App()
         setRole("user");
         setUnread(0);
         setVoice({ enabled: false, mic: false, users: [] });
+        setScreen({ sharing: false, monitor: null });
+        setMonitors(null);
         setCreating(null);
         setFiles(null);
 
@@ -1182,6 +1199,12 @@ function App()
                         ? { ...previous, rows, selected: landRow(rows, previous.selected, 1), edit: null, picker: null }
                         : previous));
 
+                    break;
+                }
+
+                case "screen":
+                {
+                    setScreen(payload.data.screen);
                     break;
                 }
 
@@ -1444,6 +1467,32 @@ function App()
 
     useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
 
+    //THE MONITORS ARE ASKED FOR WHEN THE LIST OPENS AND NOT KEPT, WHICH IS WHAT THE PALETTE DOES FOR THE
+    //SAME PARAMETER - A MONITOR PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT
+    const pickMonitor = () =>
+    {
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors" })
+            .then((values) => setMonitors(values.map((value) => value.value)))
+            .catch(() => setMonitors([]));
+    };
+
+    //THE BUTTON IS THE WHOLE SHARE: IT ENDS THE ONE THAT IS RUNNING, AND OTHERWISE ASKS WHICH SCREEN TO
+    //START ON - UNLESS THERE IS ONLY ONE, WHICH IS NOT A CHOICE ANYBODY NEEDS TO BE SHOWN
+    const shareScreen = () =>
+    {
+        if (screen.sharing) { send("/screen"); return; }
+
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors" })
+            .then((values) =>
+            {
+                const names = values.map((value) => value.value);
+
+                if (names.length < 2) send("/screen");
+                else setMonitors(names);
+            })
+            .catch(() => send("/screen"));
+    };
+
     const closeFiles = () =>
     {
         setFiles(null);
@@ -1456,7 +1505,7 @@ function App()
     //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
     useEffect(() =>
     {
-        if (!connected || settingsOpen || filesOpen || tofu) return;
+        if (!connected || settingsOpen || filesOpen || monitors || tofu) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
@@ -1472,7 +1521,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [connected, settingsOpen, filesOpen, tofu]);
+    }, [connected, settingsOpen, filesOpen, monitors, tofu]);
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
@@ -2495,8 +2544,6 @@ function App()
                                                 <span className="block text-[11px] text-faint">{kind.label}</span>
                                             </span>
 
-                                            <span className="shrink-0 font-mono text-[10px] text-faint">#{file.id}</span>
-
                                             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-app text-faint transition-colors group-hover:bg-active group-hover:text-text">
                                                 <Icon name="download" className="h-4 w-4" />
                                             </span>
@@ -2524,6 +2571,60 @@ function App()
             </div>
         );
     })();
+
+    //WHICH SCREEN TO SHARE. THE PICK NEVER LEAVES THIS MACHINE - THE SERVER ONLY EVER KNOWS *THAT* WE ARE
+    //SHARING - AND NAMING ANOTHER MONITOR WHILE THE SHARE IS UP SWAPS THE CAPTURE OVER WITHOUT STOPPING IT
+    const monitorBox = monitors && (
+        <div
+            onMouseDown={(event) => { if (event.target === event.currentTarget) setMonitors(null); }}
+            className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4"
+        >
+            <div
+                ref={(node) => { node?.focus(); }}
+                tabIndex={-1}
+                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setMonitors(null); } }}
+                className="rise w-full max-w-[420px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none"
+            >
+                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
+                    <Icon name="monitor" className="h-4 w-4 shrink-0 text-muted" />
+                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
+                        {screen.sharing ? "Share a different screen" : "Share a screen"}
+                    </h2>
+
+                    <IconButton icon="close" label="Close" onClick={() => setMonitors(null)} />
+                </header>
+
+                <div className="scroller p-1.5" style={{ maxHeight: "50vh" }}>
+                    {monitors.length === 0 && (
+                        <div className="px-2 py-8 text-center text-sm text-faint">No monitor to share.</div>
+                    )}
+
+                    {monitors.map((name) => (
+                        <button
+                            key={name}
+                            type="button"
+                            onClick={() => { send(`/screen ${name}`); setMonitors(null); }}
+                            className="flex w-full items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover"
+                        >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
+                                <Icon name="monitor" className="h-4 w-4" />
+                            </span>
+
+                            <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+
+                            {screen.monitor === name && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
+                        </button>
+                    ))}
+                </div>
+
+                <footer className="border-t border-border bg-deep/40 px-5 py-3 text-xs text-faint">
+                    {screen.sharing
+                        ? "Swapping keeps the share running - nobody watching is dropped."
+                        : "Everybody on the server can watch what you share."}
+                </footer>
+            </div>
+        </div>
+    );
 
     //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
@@ -2771,6 +2872,26 @@ function App()
                             )}
                         </div>
 
+                        {/* THE SHARE SAYS SO IN THE SAME PLACE THE CALL DOES, AND CARRIES THE TWO THINGS
+                            THERE ARE TO DO WITH IT: POINT IT AT ANOTHER SCREEN, OR STOP IT */}
+                        {screen.sharing && (
+                            <div className="mx-2 mb-1 flex shrink-0 items-center gap-2 rounded-app bg-deep/70 px-2 py-2">
+                                <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
+
+                                <button
+                                    type="button"
+                                    title="Share a different screen"
+                                    onClick={pickMonitor}
+                                    className="min-w-0 flex-1 text-left"
+                                >
+                                    <div className="text-xs font-semibold text-online">Sharing your screen</div>
+                                    <div className="truncate text-[11px] text-faint">{screen.monitor ?? "this screen"}</div>
+                                </button>
+
+                                <IconButton icon="close" label="Stop sharing" tone="error" onClick={() => send("/screen")} />
+                            </div>
+                        )}
+
                         {/* THE CALL'S OWN STRIP, WHERE IT IS IN EVERY OTHER CHAT CLIENT: ABOVE THE PERSON
                             USING THE PROGRAM, AND HOLDING THE ONE BUTTON THAT ENDS IT */}
                         {voice.enabled && (
@@ -2822,6 +2943,13 @@ function App()
                                     label="Files on the server"
                                     active={filesOpen}
                                     onClick={() => (filesOpen ? closeFiles() : send("/files"))}
+                                />
+                                <IconButton
+                                    icon="monitor"
+                                    label={screen.sharing ? "Stop sharing your screen" : "Share your screen"}
+                                    tone={screen.sharing ? "ok" : "default"}
+                                    active={screen.sharing}
+                                    onClick={shareScreen}
                                 />
                                 <IconButton
                                     icon="headset"
@@ -2961,6 +3089,7 @@ function App()
 
             {settingsBox}
             {filesBox}
+            {monitorBox}
             {loginScreen}
             {tofuBox}
         </main>

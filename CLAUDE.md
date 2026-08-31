@@ -9,13 +9,14 @@ hybrid ECC+ML-KEM key exchange, TOFU key pinning, commands, roles, config) lives
 crate, pulled in as a **path dependency**:
 
 ```toml
-why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 ```
 
 That resolves to `/mnt/data/Rust/WHY2` relative to `src-tauri/`. **The sibling checkout must be present or the
 Rust build fails.** `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
-script, not in this code. When behaviour looks wrong, the cause is often in that crate, not here — read
+script, not in this code. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
+own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**. When behaviour looks wrong, the cause is often in that crate, not here — read
 `/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
 assuming a bug in this repo. This app is a thin presentation layer over it.
 
@@ -103,11 +104,11 @@ Three columns, and a screen in front of them while there is no session:
 
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; then the call: the voice roster while there is
-  one, the `Voice connected` strip with the button that hangs up, and at the bottom the person using the
-  program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
+  one, the `Voice connected` strip with the button that hangs up, the `Sharing your screen` strip beside it,
+  and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
-- **Middle** — the channel header (`#name`, how many are online, and the buttons for files, voice and the
-  member column), the messages, and the composer, whose `+` is the one upload button. The command palette
+- **Middle** — the channel header (`#name`, how many are online, and the buttons for files, screen sharing,
+  voice and the member column), the messages, and the composer, whose `+` is the one upload button. The command palette
   floats on the composer.
 - **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
   own button.
@@ -171,7 +172,8 @@ The UI drives itself through this same path rather than adding IPC commands: cli
 `send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
 header gear sends `/server settings` (drawn only when `get_commands` says our role has that action) while the
 gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
-and its headset `/voice`; the microphone button sends `/mute`; a row of the file list sends
+and its headset `/voice`; the monitor button sends `/screen` (bare to stop, with a name to start or swap);
+the microphone button sends `/mute`; a row of the file list sends
 `/download <user_id> <file_id>`, and a row of the voice roster sends `/mute <id>` — or `/mute` on our own
 row, the one the command takes no ID for. Prefer extending the command path over adding a
 `#[tauri::command]`.
@@ -193,8 +195,9 @@ only what is not spelled out already, and otherwise sends the line.
 The vocabularies are not shipped with the command list: `get_vocabulary` is invoked when the caret lands on a
 parameter that has one and dropped when it leaves, because a monitor plugged in mid-session is supposed to
 show up. Colors carry their own code so the row can be painted in it. `/screen` is the only user of
-`ArgValues::Monitors` and lives behind `client_screen`, which this build does not enable — the monitors come
-from Tauri's own `available_monitors()` rather than the crate, so the helper works the day the feature is on.
+`ArgValues::Monitors`, and the names come from the crate's own `screen_capture::monitor_names()` rather than
+Tauri's `available_monitors()` — these are what `/screen` resolves against, and a window manager's idea of
+what a monitor is called is not always the capture backend's.
 
 ### Settings
 
@@ -261,6 +264,38 @@ call nobody else has joined yet still says so.
 
 `reset_session` clears `voice_options::set_use_voice(false)`: the voice client follows that flag, so a lost
 session takes its streams with it.
+
+### Screen sharing
+
+`client_screen` is on, and the split in it is the thing to understand: **sharing is protocol, watching is a
+window.** Capture, H.264 encode and upload happen entirely inside the crate with no surface involved, so
+`/screen [MONITOR]` works here exactly as it does in the terminal. Watching does not: `screen::client::attach`
+hands its decoded frames to a `winit` event loop through `SCREEN_SHARE_PROXY`, and that loop has to own the
+main thread — which in this process belongs to Tauri. `SCREEN_SHARE_PROXY` is therefore never set, so
+`/attach` and `/deattach` are filtered out of `get_commands` next to `Help` and `Info`, and a stray
+`ClientEvent::Attach` says plainly that there is nowhere to draw it. **Getting watching to work here needs a
+change in the crate**, not here: a way to receive the incoming frames (the H.264 access units are the cheap
+form — the webview can decode them with `VideoDecoder`) instead of having them drawn into a window of the
+crate's own. Until then, everything below is the sharing half.
+
+The monitor is picked on this machine and never leaves it — the server only ever knows *that* we are sharing
+— so `emit_screen` reads both halves back out of the crate's globals (`screen_options::get_use_screen`,
+`screen_capture::current_monitor`) rather than keeping any state of its own, and the window draws itself from
+one `UiEvent::Screen` carrying both. A bare `/screen` toggles; a named monitor starts on it, or, **while a
+share is already running, swaps the capture over without telling the server anything at all** — that is the
+one case where `send_command_code` returns `None` for this command, and the pane's line comes from us.
+
+The header's monitor button is the whole feature: it stops a running share, and otherwise asks which screen
+to start on — unless there is only one, which is not a choice worth showing anybody. The picker is the same
+`get_vocabulary("monitors")` the palette uses, asked for when it opens and dropped when it closes. While a
+share is up, the sidebar carries a strip beside the call's own: the monitor's name (clicking it reopens the
+picker to swap) and the button that stops it.
+
+`/screens` is poll-only — the server answers it and says nothing when somebody starts sharing — so it is
+drawn as a list card in the pane like `/list` and the bans, not as a window that could go stale in place.
+
+`reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, which is exactly what
+`tui/state.rs::reset_session` clears: the pick lasts as long as the share does.
 
 ### Input history
 

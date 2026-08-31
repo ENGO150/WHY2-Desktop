@@ -74,6 +74,7 @@ use why2_chat::
     {
         self,
         voice::client::{ self as voice, options as voice_options },
+        screen::client::{ capture as screen_capture, options as screen_options },
         client::{ self, ClientEvent, VoiceUser },
         codes::
         {
@@ -81,6 +82,7 @@ use why2_chat::
             MessageColors,
             BanEntry,
             OnlineUser,
+            UserScreen,
             ServerSetting,
             SettingValue,
             StoredMessage,
@@ -186,6 +188,15 @@ struct BlockRow
     text: String,
     note: Option<String>,             //A DIM TRAILING COLUMN - A CHANNEL, A DESCRIPTION
     accent: bool,
+}
+
+//OUR OWN SHARE AS IT STANDS. THE MONITOR IS PICKED ON THIS MACHINE AND NEVER LEAVES IT - THE SERVER ONLY
+//EVER KNOWS *THAT* WE ARE SHARING, SO THE NAME IS WORTH SAYING BACK TO THE ONE PERSON WHO CAN SEE IT
+#[derive(Serialize, Clone)]
+struct ScreenState
+{
+    sharing: bool,
+    monitor: Option<String>,
 }
 
 //ONE FILE SOMEBODY HAS UP, AND EVERYTHING /download NEEDS TO FETCH IT. THE PROTOCOL CARRIES NOTHING ELSE
@@ -396,6 +407,7 @@ enum UiEvent
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
     Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
+    Screen { screen: ScreenState },                               //OUR OWN SHARE, WHOLE
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
     ClientSettings { settings: Vec<ClientSetting> },              //OUR OWN ROWS AGAIN, WHEN SOMETHING ELSE MOVED THEM
     Voice { voice: VoiceState },                                  //THE CALL, WHOLE - THE PANEL DRAWS ITSELF FROM IT
@@ -496,6 +508,24 @@ fn emit_voice(app: &AppHandle)
     });
 }
 
+//OUR SHARE AS IT STANDS. BOTH HALVES OF IT LIVE IN THE CRATE'S GLOBALS AND MOVE WITHOUT US - THE SERVER
+//TOGGLES THE SHARE, THE COMMAND SWAPS THE MONITOR - SO THEY ARE READ HERE RATHER THAN KEPT
+fn emit_screen(app: &AppHandle)
+{
+    let sharing = screen_options::get_use_screen();
+
+    emit(app, UiEvent::Screen
+    {
+        screen: ScreenState
+        {
+            sharing,
+
+            //WHAT THE CAPTURE IS POINTED AT ONLY MEANS ANYTHING WHILE THERE IS ONE
+            monitor: sharing.then(screen_capture::current_monitor).flatten(),
+        },
+    });
+}
+
 //ONE USER OF THE CALL, WITH THE MUTE READ OFF THE CRATE'S GLOBALS THE WAY tui/draw.rs READS IT: OUR OWN
 //ROW ASKS ABOUT THE MICROPHONE, EVERYBODY ELSE'S ABOUT THEIR ID
 fn voice_user(user: VoiceUser) -> VoiceUserInfo
@@ -529,6 +559,12 @@ fn reset_session()
 
     //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
     voice_options::set_use_voice(false);
+
+    //THE SHARE THE SAME WAY, AND THE MONITOR WITH IT - THE PICK LASTS EXACTLY AS LONG AS THE SHARE DOES,
+    //SO THE NEXT SESSION'S FIRST BARE /screen STARTS ON THE DEFAULT MONITOR (tui/state.rs DOES THE SAME)
+    screen_options::set_use_screen(false);
+    screen_options::set_attach_screen(false);
+    screen_options::set_monitor(None);
 }
 
 fn to_color(color: &str) -> Result<(u8, String), ()> //PARSE A COLOR NAME/NUMBER INTO THE CODE THE WIRE CARRIES
@@ -1067,6 +1103,60 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         {
             say(app, ChatMessage::error("Voice chat cannot be enabled while using SOCKS5."));
         },
+        //THE SHARE ITSELF IS THE CRATE'S: IT CAPTURES, ENCODES AND SENDS, AND THE SERVER ANSWERS THE
+        //TOGGLE. ALL THAT IS LEFT HERE IS TO SAY WHETHER IT IS RUNNING AND WHAT IT IS POINTED AT
+        ClientEvent::Screen(enabled) =>
+        {
+            match enabled
+            {
+                true => say(app, ChatMessage::ok(match screen_capture::current_monitor()
+                {
+                    Some(monitor) => format!("Sharing {monitor}."),
+                    None => String::from("Started screen sharing."),
+                })),
+
+                false => say(app, ChatMessage::system("Stopped screen sharing.")),
+            }
+
+            emit_screen(app);
+        },
+
+        ClientEvent::ScreenFailed(reason) =>
+        {
+            say(app, ChatMessage::error(format!("Screen sharing failed: {reason}.")));
+
+            emit_screen(app);
+        },
+
+        //ASKED FOR AND NEVER PUSHED: THE SERVER ANSWERS /screens AND SAYS NOTHING WHEN SOMEBODY STARTS,
+        //SO IT IS A LIST OF NAMES LIKE /list IS, AND IT GOES INTO THE PANE THE SAME WAY
+        ClientEvent::Screens(users) =>
+        {
+            if users.is_empty() { return say(app, ChatMessage::notice("Nobody is sharing a screen.")) }
+
+            block(app, format!("Screensharing clients ({})", users.len()),
+                users.into_iter().map(|UserScreen { id, username }| BlockRow
+                {
+                    depth: 0,
+                    id: Some(id),
+                    text: username,
+                    note: None,
+                    accent: false,
+                }).collect());
+        },
+
+        //WATCHING SOMEBODY ELSE'S SCREEN NEEDS A SURFACE TO PUT THE FRAMES ON, AND THIS BUILD HAS NONE:
+        //THE TWO COMMANDS FOR IT ARE KEPT OUT OF THE PALETTE, AND A STRAY ONE IS ANSWERED HONESTLY
+        ClientEvent::Attach(username) =>
+        {
+            say(app, ChatMessage::error(format!("Cannot watch {username}'s screen: this app has nowhere to draw it yet.")));
+        },
+
+        ClientEvent::Deattach(username) =>
+        {
+            say(app, ChatMessage::system(format!("Stopped watching {username}'s screen.")));
+        },
+
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
         ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
         ClientEvent::DisabledFeature => popup(app, "Server has disabled the feature you requested."),
@@ -1107,9 +1197,6 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
                 },
             });
         },
-
-        //SCREEN SHARING IS NOT COMPILED IN, SO NOTHING EVER SENDS THE REST
-        _ => {},
     }
 }
 
@@ -1162,7 +1249,8 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
     command::COMMAND_LIST.iter()
         //THE TWO THE TUI PRINTS INTO ITS OWN PANE HAVE NOWHERE TO GO HERE - THE PALETTE IS THE HELP,
         //AND IT SAYS WHAT EVERY COMMAND AND EVERY PARAMETER OF ONE IS FOR WHILE IT IS BEING TYPED
-        .filter(|info| !matches!(info.command, Command::Help | Command::Info))
+        //THE TWO THAT WATCH SOMEBODY ELSE'S SCREEN GO WITH THEM UNTIL THERE IS A SURFACE TO DRAW ON
+        .filter(|info| !matches!(info.command, Command::Help | Command::Info | Command::Attach | Command::Deattach))
         .filter(|info| info.available(role))
         .map(|info| CommandInfo
         {
@@ -1363,7 +1451,7 @@ async fn restart_server(app: AppHandle, state: State<'_, AppState>) -> Result<()
 //ASKED FOR EVERY TIME THE CARET LANDS ON SUCH A PARAMETER RATHER THAN ONCE: A MONITOR PLUGGED IN MID-SESSION
 //IS STILL SUPPOSED TO SHOW UP HERE
 #[tauri::command]
-fn get_vocabulary(values: String, app: AppHandle) -> Vec<VocabularyValue>
+fn get_vocabulary(values: String) -> Vec<VocabularyValue>
 {
     match values.as_str()
     {
@@ -1373,10 +1461,9 @@ fn get_vocabulary(values: String, app: AppHandle) -> Vec<VocabularyValue>
         //THIS LIST, SO OFFERING THE NAMES IS THE ONLY WAY THE TWO CANNOT DRIFT
         "roles" => Role::ALL.iter().map(|role| VocabularyValue { value: role.to_string(), color: None }).collect(),
 
-        //THE CRATE READS THESE OFF THE DISPLAY SERVER ITSELF, BUT ONLY UNDER client_screen, WHICH THIS BUILD
-        //DOES NOT CARRY - THE WINDOW IS OURS TO OWN HERE, SO THE MONITORS ARE ASKED OF TAURI INSTEAD
-        "monitors" => app.available_monitors().unwrap_or_default().iter()
-            .filter_map(|monitor| monitor.name().cloned())
+        //THE CRATE'S OWN LIST AND NOT TAURI'S: THESE ARE THE NAMES /screen RESOLVES AGAINST, AND A WINDOW
+        //MANAGER'S IDEA OF WHAT A MONITOR IS CALLED IS NOT ALWAYS THE CAPTURE BACKEND'S
+        "monitors" => screen_capture::monitor_names().into_iter()
             .map(|name| VocabularyValue { value: name, color: None })
             .collect(),
 
@@ -1407,6 +1494,7 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     //FIRST VOICE EVENT - WHICH IN A CALL NOBODY HAS STARTED NEVER ARRIVES, SO THE FIRST /mute WOULD LOOK
     //LIKE IT DID NOTHING. THE CALL AS IT ACTUALLY STANDS GOES OUT WITH THE CONNECTION
     emit_voice(&app);
+    emit_screen(&app);
 
     //THE RECONNECT AFTER PINNING A SERVER KEY DIALS THIS, SO IT HAS TO BE THE RESOLVED ADDRESS
     options::set_server_address(&connecting_addr);
@@ -1560,6 +1648,19 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
 
                     Command::UsernameColor => color_handler(&app, "username_color", parameters),
                     Command::MessageColor => color_handler(&app, "message_color", parameters),
+
+                    //NOTHING WENT TO THE SERVER BECAUSE NOTHING HAD TO: THE SHARE IS ALREADY UP AND ONLY
+                    //THE MONITOR UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
+                    Command::Screen =>
+                    {
+                        say(&app, ChatMessage::ok(match screen_capture::current_monitor()
+                        {
+                            Some(monitor) => format!("Sharing {monitor} now."),
+                            None => String::from("Swapped the shared monitor."),
+                        }));
+
+                        emit_screen(&app);
+                    },
 
                     //OUR OWN CONFIG, IN A BOX OF ITS OWN - THE TUI'S OVERLAY, WITH THE AUDIO ROWS THIS
                     //BUILD HAS NO FEATURE FOR LEFT OUT
