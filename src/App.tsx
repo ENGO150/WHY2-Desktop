@@ -71,8 +71,7 @@ interface FileOwner
 //WINDOW THAT COVERS IT - IT IS AN ANSWER TO SOMETHING THAT WAS ASKED, AND IT BELONGS WHERE IT WAS ASKED
 type PaneEntry =
     | { entry: "message"; message: ChatMessage }
-    | { entry: "block"; title: string; rows: BlockRow[] }
-    | { entry: "files"; owners: FileOwner[] };
+    | { entry: "block"; title: string; rows: BlockRow[] };
 
 interface OnlineUser
 {
@@ -900,6 +899,10 @@ function App()
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
 
+    //WHAT IS UP FOR DOWNLOAD, WHILE THE WINDOW SHOWING IT IS OPEN, AND WHAT IS BEING LOOKED FOR IN IT
+    const [files, setFiles] = useState<FileOwner[] | null>(null);
+    const [filter, setFilter] = useState("");
+
     //THE NAME OF THE CHANNEL BEING MADE, WHILE ONE IS BEING MADE. THERE IS NO COMMAND FOR CREATING ONE -
     //A CHANNEL IS WHEREVER SOMEBODY IS STANDING, SO THIS IS /channel WITH A NAME NOBODY IS IN YET
     const [creating, setCreating] = useState<string | null>(null);
@@ -911,6 +914,7 @@ function App()
     const paneRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
+    const filesRef = useRef<HTMLDivElement>(null);
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1031,6 +1035,7 @@ function App()
         setUnread(0);
         setVoice({ enabled: false, mic: false, users: [] });
         setCreating(null);
+        setFiles(null);
 
         pinnedRef.current = true;
         historyRef.current = { entries: [], pos: 0, stash: null, prefix: null };
@@ -1130,9 +1135,11 @@ function App()
                     break;
                 }
 
+                //WHAT IS ON THE SERVER IS NOT SOMETHING THAT WAS SAID - IT IS A DRAWER, AND IT OPENS AS ONE
                 case "files":
                 {
-                    push({ entry: "files", owners: payload.data.owners });
+                    setFiles(payload.data.owners);
+                    setFilter("");
                     break;
                 }
 
@@ -1140,6 +1147,9 @@ function App()
                 ///settings IS TYPED - THE PICKER AND THE DEVICE ROWS BOTH READ THAT ONE LIST
                 case "open_settings":
                 {
+                    //TWO WINDOWS OVER THE SAME CHAT IS ONE TOO MANY - THE ONE BEING OPENED WINS
+                    setFiles(null);
+
                     Promise.all([
                         invoke<ClientSetting[]>("get_client_settings"),
                         invoke<AudioDevices>("get_audio_devices"),
@@ -1427,12 +1437,26 @@ function App()
 
     useEffect(() => { if (settingsOpen) settingsRef.current?.focus(); }, [settingsOpen]);
 
+    //THE FILE WINDOW TAKES THE KEYBOARD TOO, SO ESC REACHES IT AND NOTHING TYPED AT IT LANDS IN THE LINE
+    //BEHIND IT. THE DEPENDENCY IS WHETHER IT IS OPEN AND NOT THE LIST ITSELF, WHICH IS A NEW ARRAY EVERY
+    //TIME THE SERVER ANSWERS
+    const filesOpen = files !== null;
+
+    useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
+
+    const closeFiles = () =>
+    {
+        setFiles(null);
+        setFilter("");
+        chatInputRef.current?.focus();
+    };
+
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
     //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
     useEffect(() =>
     {
-        if (!connected || settingsOpen || tofu) return;
+        if (!connected || settingsOpen || filesOpen || tofu) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
@@ -1448,7 +1472,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [connected, settingsOpen, tofu]);
+    }, [connected, settingsOpen, filesOpen, tofu]);
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
@@ -2077,68 +2101,6 @@ function App()
         );
     };
 
-    //THE FILE LIST, DRAWN AS A LIST AND NOT AS A TREE - A TERMINAL HAS GLYPHS WHERE A WINDOW HAS ROWS.
-    //THE OWNER IS A HEADING, THEIR FILES ARE THE ROWS UNDER IT, AND CLICKING ONE SENDS EXACTLY WHAT TYPING
-    ///download <USER> <FILE> WOULD HAVE
-    const renderFiles = (owners: FileOwner[], key: number) =>
-    {
-        const total = owners.reduce((count, owner) => count + owner.files.length, 0);
-
-        return (
-            <div key={key} className="mx-4 mt-4 overflow-hidden rounded-app border border-border bg-raised">
-                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                    <Icon name="folder" className="h-4 w-4 shrink-0 text-faint" />
-                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-muted">Available files</span>
-                    <span className="shrink-0 text-[11px] text-faint">{total} {total === 1 ? "file" : "files"}</span>
-                </div>
-
-                <div className="p-1.5">
-                    {owners.map((owner) => (
-                        <div key={owner.id} className="mb-1 last:mb-0">
-                            <div className="flex items-center gap-2 px-1.5 py-1">
-                                <Avatar name={owner.username} size={20} />
-                                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{owner.username}</span>
-                                {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{owner.id}</span>}
-                            </div>
-
-                            {owner.files.length === 0 && <div className="px-2 pb-1 text-xs text-faint">nothing up</div>}
-
-                            {owner.files.map((file) =>
-                            {
-                                const kind = fileKind(file.name);
-
-                                return (
-                                    <button
-                                        key={file.id}
-                                        type="button"
-                                        title={`Download ${file.name}`}
-                                        onClick={() => send(`/download ${owner.id} ${file.id}`)}
-                                        className="group flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
-                                    >
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
-                                            <Icon name={kind.icon} className="h-4 w-4" />
-                                        </span>
-
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-sm">{file.name}</span>
-                                            <span className="block text-[11px] text-faint">{kind.label}</span>
-                                        </span>
-
-                                        <span className="shrink-0 font-mono text-[10px] text-faint">#{file.id}</span>
-
-                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-app text-faint transition-colors group-hover:bg-active group-hover:text-text">
-                                            <Icon name="download" className="h-4 w-4" />
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    };
-
     //THE WHOLE PANE. THE GROUPING IS DECIDED HERE AND NOT PER MESSAGE, BECAUSE IT IS ABOUT WHAT CAME
     //BEFORE - AND ANYTHING THAT IS NOT SOMEBODY TALKING BREAKS THE RUN
     const paneNodes = (() =>
@@ -2152,13 +2114,6 @@ function App()
                 previous = null;
 
                 return renderBlock(entry.title, entry.rows, index);
-            }
-
-            if (entry.entry === "files")
-            {
-                previous = null;
-
-                return renderFiles(entry.owners, index);
             }
 
             const message = entry.message;
@@ -2444,6 +2399,127 @@ function App()
                             </div>
                         </div>
                     )}
+                </div>
+            </div>
+        );
+    })();
+
+    //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
+    //SCROLLBACK - IT IS A DRAWER THAT IS OPENED, LOOKED THROUGH AND CLOSED, AND IT CLOSES THE WAY EVERY
+    //OTHER MENU HERE DOES: ESC, THE X, OR A PRESS THAT LANDED OUTSIDE IT
+    const filesBox = files && (() =>
+    {
+        const needle = filter.trim().toLowerCase();
+
+        //THE SEARCH LOOKS AT BOTH HALVES OF WHAT A ROW SAYS - THE FILE'S NAME AND WHOSE IT IS - AND AN
+        //OWNER WITH NOTHING LEFT TO SHOW DROPS OUT ALONG WITH THEIR HEADING
+        const shown = files
+            .map((owner) =>
+            ({
+                ...owner,
+                files: owner.files.filter((file) => !needle
+                    || file.name.toLowerCase().includes(needle)
+                    || owner.username.toLowerCase().includes(needle)),
+            }))
+            .filter((owner) => owner.files.length > 0);
+
+        const total = files.reduce((count, owner) => count + owner.files.length, 0);
+        const matching = shown.reduce((count, owner) => count + owner.files.length, 0);
+
+        return (
+            <div
+                onMouseDown={(event) => { if (event.target === event.currentTarget) closeFiles(); }}
+                className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4"
+            >
+                <div
+                    ref={filesRef}
+                    tabIndex={-1}
+                    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); closeFiles(); } }}
+                    className="rise flex max-h-[84vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none"
+                >
+                    <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
+                        <Icon name="folder" className="h-4 w-4 shrink-0 text-muted" />
+                        <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Files on the server</h2>
+
+                        <span className="shrink-0 text-xs text-faint">
+                            {needle ? `${matching} of ${total}` : `${total} ${total === 1 ? "file" : "files"}`}
+                        </span>
+
+                        <IconButton icon="close" label="Close" onClick={closeFiles} />
+                    </header>
+
+                    <div className="shrink-0 px-4 pt-3">
+                        <input
+                            autoFocus
+                            value={filter}
+                            onChange={(event) => setFilter(event.currentTarget.value)}
+                            placeholder="Search files"
+                            className="w-full rounded-app border border-border bg-deep px-3 py-2 text-sm outline-none placeholder:text-faint focus:border-border-strong"
+                            spellCheck={false}
+                        />
+                    </div>
+
+                    <div className="scroller flex-1 px-2.5 py-2">
+                        {shown.length === 0 && (
+                            <div className="px-2 py-8 text-center text-sm text-faint">
+                                {needle ? "Nothing here by that name." : "Nobody has a file up right now."}
+                            </div>
+                        )}
+
+                        {shown.map((owner) => (
+                            <div key={owner.id} className="mb-1 last:mb-0">
+                                <div className="flex items-center gap-2 px-1.5 pb-1 pt-2">
+                                    <Avatar name={owner.username} size={20} />
+                                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{owner.username}</span>
+                                    {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{owner.id}</span>}
+                                </div>
+
+                                {owner.files.map((file) =>
+                                {
+                                    const kind = fileKind(file.name);
+
+                                    return (
+                                        <button
+                                            key={file.id}
+                                            type="button"
+                                            title={`Download ${file.name}`}
+                                            onClick={() => send(`/download ${owner.id} ${file.id}`)}
+                                            className="group flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
+                                        >
+                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
+                                                <Icon name={kind.icon} className="h-4 w-4" />
+                                            </span>
+
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block truncate text-sm">{file.name}</span>
+                                                <span className="block text-[11px] text-faint">{kind.label}</span>
+                                            </span>
+
+                                            <span className="shrink-0 font-mono text-[10px] text-faint">#{file.id}</span>
+
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-app text-faint transition-colors group-hover:bg-active group-hover:text-text">
+                                                <Icon name="download" className="h-4 w-4" />
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* THE LIST IS A PHOTOGRAPH OF THE SERVER AT THE MOMENT IT WAS ASKED, SO THE WAY TO A
+                        NEWER ONE IS TO ASK AGAIN - WHICH IS THE SAME /files THE HEADER'S FOLDER SENDS */}
+                    <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
+                        <span className="flex-1 text-xs text-faint">A download starts where you keep them.</span>
+
+                        <button
+                            type="button"
+                            onClick={() => send("/files")}
+                            className="rounded-app border border-border px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-border-strong hover:text-text"
+                        >
+                            Refresh
+                        </button>
+                    </footer>
                 </div>
             </div>
         );
@@ -2741,7 +2817,12 @@ function App()
                             <span className="hidden min-w-0 truncate text-xs text-faint sm:block">{users.length} online</span>
 
                             <div className="ml-auto flex items-center gap-1">
-                                <IconButton icon="folder" label="Files on the server" onClick={() => send("/files")} />
+                                <IconButton
+                                    icon="folder"
+                                    label="Files on the server"
+                                    active={filesOpen}
+                                    onClick={() => (filesOpen ? closeFiles() : send("/files"))}
+                                />
                                 <IconButton
                                     icon="headset"
                                     label={voice.enabled ? "Leave the call" : "Join the call"}
@@ -2879,6 +2960,7 @@ function App()
             )}
 
             {settingsBox}
+            {filesBox}
             {loginScreen}
             {tofuBox}
         </main>

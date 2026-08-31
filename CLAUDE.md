@@ -72,11 +72,15 @@ prints them — the frontend draws them as a card in the stream, keeping the `�
 the depths, since what they are is a tree.
 
 `/files` used to be one of those and is not any more: it arrives as its own `files` event carrying
-`FileOwnerInfo { id, username, files }`, because a file list is not a tree, it is a list of things you can
-click. `renderFiles` draws the owner as a heading and their files as rows — the kind the extension says it
-is, the name, the file's id, and the button that fetches it — and clicking a row sends the same
-`/download <user> <file>` typing it out would have. Nothing else carries a download, so `BlockRow` no longer
-has that field.
+`FileOwnerInfo { id, username, files }`, because a file list is not a tree and it is not something anybody
+said — it is a drawer. `filesBox` is a window like the settings dialog: the owner is a heading, their files
+are rows (the kind the extension says it is, the name, the file's id, the button that fetches it), there is
+a search over both the file names and the owners, and a `Refresh` that sends `/files` again, since the list
+is a photograph of the moment it was asked for. Clicking a row sends the same `/download <user> <file>`
+typing it out would have. It takes the keyboard while it is up and closes on esc, the X, or a press outside
+it; the header's folder toggles it rather than asking twice. An **empty** answer opens it anyway, saying so
+— where the TUI prints a line, a window that refused to open would look like a button that does nothing.
+Nothing else carries a download, so `BlockRow` no longer has that field.
 
 ### Sessions
 
@@ -110,7 +114,7 @@ Three columns, and a screen in front of them while there is no session:
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
-run** — a system line, a notice, a list card. A line nobody said keeps the avatar column but puts an icon
+run** — a system line, a notice, a `/list` card. A line nobody said keeps the avatar column but puts an icon
 in it, so the text of the whole pane stays under one edge. Private messages take an accent rule down their
 left side and a `private` badge. There are no avatars in this protocol, so a face is the first letter of the
 name over the color the user picked — or, where they picked none, the one `avatarColor` always hashes it to.

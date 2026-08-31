@@ -897,11 +897,11 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         },
 
         //NOT A TREE: THE OWNER IS A HEADING AND THEIR FILES ARE THE ROWS UNDER IT. THE TWO IDS TRAVEL
-        //TOGETHER ALL THE WAY TO THE WINDOW, BECAUSE THEY ARE THE TWO ARGUMENTS TO /download
+        //TOGETHER ALL THE WAY TO THE WINDOW, BECAUSE THEY ARE THE TWO ARGUMENTS TO /download. AN EMPTY
+        //ANSWER OPENS THE WINDOW ALL THE SAME - THE TUI PRINTS A LINE SAYING SO, BUT A WINDOW THAT REFUSED
+        //TO OPEN WOULD LOOK LIKE A BUTTON THAT DOES NOTHING
         ClientEvent::Files(users) =>
         {
-            if users.is_empty() { return say(app, ChatMessage::notice("No available files.")) }
-
             let owners = users.into_iter().map(|user| FileOwnerInfo
             {
                 id: user.id,
