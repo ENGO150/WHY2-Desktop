@@ -109,14 +109,21 @@ interface CommandInfo
     subcommands: SubcommandInfo[];
 }
 
-//ONE ROW OF client.toml THE SETTINGS BOX OFFERS. EVERY ONE OF THEM IS A TOGGLE, AND EVERY ONE IS WRITTEN
-//THROUGH THE MOMENT IT IS FLIPPED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
+//WHAT ONE OF OUR OWN KEYS HOLDS. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE BAR IS
+//DRAWN AGAINST THE VOICE CLIENT'S OWN CEILING RATHER THAN A NUMBER COPIED OVER HERE
+type ClientValueInfo =
+    | { kind: "toggle"; value: boolean }
+    | { kind: "volume"; value: { percent: number; max: number; step: number } }
+    | { kind: "device"; value: { id: string; input: boolean } }; //EMPTY ID = WHATEVER THE SYSTEM PICKS
+
+//ONE ROW OF client.toml THE SETTINGS BOX OFFERS. EVERY ONE OF THEM IS WRITTEN THROUGH THE MOMENT IT IS
+//TOUCHED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
 interface ClientSetting
 {
     label: string;
     key: string;
     section: string;
-    on: boolean;
+    value: ClientValueInfo;
 }
 
 //THE THREE DATATYPES server.toml UNDERSTANDS
@@ -124,6 +131,52 @@ type SettingValueInfo =
     | { kind: "toggle"; value: boolean }
     | { kind: "number"; value: number }
     | { kind: "text"; value: string };
+
+//AND EVERYTHING A ROW OF THE BOX CAN HOLD, WHICHEVER CONFIG IT CAME FROM
+type SettingsValue = SettingValueInfo | ClientValueInfo;
+
+//ONE DEVICE AS THE PICKER SHOWS IT. THE id IS WHAT client.toml HOLDS AND WHAT THE VOICE CLIENT OPENS -
+//THE label IS DISPLAY ONLY, AND IS NOT UNIQUE (ALSA HANDS OUT THE SAME DESCRIPTION TO SEVERAL PCMs)
+interface AudioDevice
+{
+    id: string;
+    label: string;
+}
+
+interface AudioDevices
+{
+    input: AudioDevice[];
+    output: AudioDevice[];
+}
+
+//THE DEVICE LIST, OPENED ON TOP OF THE SETTINGS ROWS BY THE ROW THAT WANTS IT
+interface Picker
+{
+    title: string;
+    entries: AudioDevice[]; //ENTRY 0 IS ALWAYS THE SYSTEM DEFAULT
+    selected: number;
+    row: number;            //THE SETTINGS ROW THAT OPENED IT
+}
+
+//ONE USER OF THE CALL, AS THE Voice PANEL DRAWS THEM
+interface VoiceUser
+{
+    id: number;
+    username: string;
+    speaking: boolean;
+    latency: number;
+    local: boolean; //US - THE ONE ROW WITH NO LATENCY TO SHOW
+    muted: boolean;
+}
+
+//THE WHOLE OF WHAT THE WINDOW KNOWS ABOUT THE CALL. THE THREE MOVE INDEPENDENTLY, AND A PANEL DRAWN
+//FROM HALF OF THEM WOULD LIE ABOUT THE REST, SO THEY ARRIVE TOGETHER
+interface VoiceState
+{
+    enabled: boolean;
+    mic: boolean;
+    users: VoiceUser[];
+}
 
 //ONE ROW OF server.toml, BOTH WAYS - WHAT THE SERVER SENT, AND WHAT A SAVE SENDS BACK
 interface SettingRow
@@ -140,7 +193,7 @@ interface SettingsItem
 {
     label: string;
     key: string;
-    value: SettingValueInfo;
+    value: SettingsValue;
     hint: string;      //THE COMMENT THE SERVER SENT ALONG (EMPTY ON A CLIENT ROW)
     changed: boolean;  //EDITED AND NOT SAVED YET - ONLY A SERVER ROW IS EVER LEFT UNSAVED
     restart: boolean;  //SAVING IT STORES IT, BUT THE RUNNING SERVER KEEPS USING WHAT IT READ AT STARTUP
@@ -160,6 +213,10 @@ interface SettingsBox
     edit: string | null;      //WHAT IS BEING TYPED INTO THE SELECTED ROW
     saving: boolean;          //A SAVE IS ON THE WIRE, WAITING FOR THE SERVER TO ANSWER WITH WHAT IT STORED
     confirm: boolean;         //THE RESTART BUTTON IS ARMED BY ONE PRESS AND FIRED BY THE NEXT
+
+    //WHAT cpal REPORTED, ENUMERATED ONCE WHEN THE BOX OPENS - THE SERVER'S ROWS HAVE NO USE FOR EITHER
+    devices: AudioDevices;
+    picker: Picker | null;
 }
 
 //ONE ANSWER A PARAMETER ACCEPTS, AS THE BRIDGE HANDS IT OVER
@@ -225,6 +282,8 @@ type BridgeEvent =
     | { event: "user_left"; data: { id: number } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
     | { event: "open_settings"; data?: null }
+    | { event: "client_settings"; data: { settings: ClientSetting[] } }
+    | { event: "voice"; data: { voice: VoiceState } }
     | { event: "server_settings"; data: { settings: SettingRow[]; saved: boolean } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
@@ -432,6 +491,22 @@ function analyze(input: string, commands: CommandInfo[]): PaletteShape
 const SAVE_LABEL = "Save";
 const RESTART_LABEL = "Restart server";
 
+const DEFAULT_DEVICE = "System default"; //SHOWN FOR AN EMPTY input_device/output_device
+const SLIDER_WIDTH = 14;                 //CELLS OF VOLUME BAR, AS tui/draw.rs HAS IT
+
+const NO_DEVICES: AudioDevices = { input: [], output: [] };
+
+//THE SYSTEM DEFAULT PLUS EVERY DEVICE cpal REPORTED, WITH THE CONFIGURED ONE GUARANTEED TO BE IN THE LIST -
+//ONE THAT IS CONFIGURED BUT CURRENTLY UNPLUGGED STILL DESERVES A ROW
+function deviceEntries(devices: AudioDevices, id: string, input: boolean): AudioDevice[]
+{
+    const entries: AudioDevice[] = [{ id: "", label: DEFAULT_DEVICE }, ...(input ? devices.input : devices.output)];
+
+    if (id && !entries.some((entry) => entry.id === id)) entries.push({ id, label: id });
+
+    return entries;
+}
+
 //OUR OWN CONFIG, GROUPED THE WAY THE BRIDGE GROUPED IT
 function clientRows(settings: ClientSetting[]): SettingsRow[]
 {
@@ -449,7 +524,7 @@ function clientRows(settings: ClientSetting[]): SettingsRow[]
         rows.push({ row: "item", item: {
             label: setting.label,
             key: setting.key,
-            value: { kind: "toggle", value: setting.on },
+            value: setting.value,
             hint: "",
             changed: false,
             restart: false,
@@ -518,6 +593,78 @@ function landRow(rows: SettingsRow[], index: number, direction: number): number
     const forward = stepRow(rows, target, direction);
 
     return forward === target ? stepRow(rows, target, -direction) : forward;
+}
+
+//THE LINES ALREADY SENT, AND WHERE IN THEM ↑/↓ CURRENTLY STANDS. THIS IS InputBuffer'S HISTORY OUT OF
+//tui/input.rs: pos AT THE END MEANS "NOT SEARCHING", AND A HALF-WRITTEN MESSAGE IS BOTH PARKED WHEN THE
+//SEARCH STARTS AND WHAT IT IS LOCKED TO - SO ↑ WALKS WHAT WAS TYPED BEFORE, NOT EVERYTHING EVER SENT
+interface History
+{
+    entries: string[];
+    pos: number;
+    stash: string | null;  //THE IN-PROGRESS LINE, TO COME BACK TO
+    prefix: string | null; //NEVER A COMMAND - A LINE STARTING WITH / IS THE PALETTE'S SEARCH, NOT THIS ONE
+}
+
+function historyMatches(history: History, entry: string): boolean
+{
+    return history.prefix === null || entry.startsWith(history.prefix);
+}
+
+//ONE STEP BACK THROUGH IT, OR null WHEN THERE IS NOWHERE LEFT TO GO
+function historyUp(history: History, typed: string): string | null
+{
+    if (history.entries.length === 0 || history.pos === 0) return null;
+
+    if (history.pos === history.entries.length)
+    {
+        history.prefix = typed && !typed.startsWith("/") ? typed : null;
+        history.stash = typed;
+    }
+
+    for (let index = history.pos - 1; index >= 0; index--)
+    {
+        if (!historyMatches(history, history.entries[index])) continue;
+
+        history.pos = index;
+
+        return history.entries[index];
+    }
+
+    return null;
+}
+
+//AND ONE STEP FORWARD, THE LAST OF WHICH IS BACK TO THE LINE THAT STARTED THE SEARCH
+function historyDown(history: History): string | null
+{
+    if (history.pos >= history.entries.length) return null;
+
+    for (let index = history.pos + 1; index < history.entries.length; index++)
+    {
+        if (!historyMatches(history, history.entries[index])) continue;
+
+        history.pos = index;
+
+        return history.entries[index];
+    }
+
+    history.pos = history.entries.length;
+    history.prefix = null;
+
+    const stash = history.stash ?? "";
+    history.stash = null;
+
+    return stash;
+}
+
+//A SENT LINE JOINS IT, AND ENDS WHATEVER SEARCH WAS RUNNING. THE SAME LINE TWICE IN A ROW IS ONE ENTRY
+function pushHistory(history: History, input: string)
+{
+    if (history.entries[history.entries.length - 1] !== input) history.entries.push(input);
+
+    history.pos = history.entries.length;
+    history.stash = null;
+    history.prefix = null;
 }
 
 //A ROW HAS BEEN EDITED AND NOT SENT BACK YET
@@ -593,11 +740,17 @@ function App()
     const [settings, setSettings] = useState<SettingsBox | null>(null);
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
+    const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [] });
+
+    //THE LINES ALREADY SENT. IT IS A REF AND NOT STATE BECAUSE NOTHING IS DRAWN FROM IT - IT IS READ AND
+    //WRITTEN BY ONE KEYPRESS AT A TIME, AND A RE-RENDER PER ARROW WOULD BE ONE PER RECALLED LINE ANYWAY
+    const historyRef = useRef<History>({ entries: [], pos: 0, stash: null, prefix: null });
 
     const paneRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const settingsRowRef = useRef<HTMLDivElement>(null);
+    const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
@@ -707,8 +860,10 @@ function App()
         setUsername("");
         setRole("user");
         setUnread(0);
+        setVoice({ enabled: false, mic: false, users: [] });
 
         pinnedRef.current = true;
+        historyRef.current = { entries: [], pos: 0, stash: null, prefix: null };
     };
 
     useEffect(() =>
@@ -805,15 +960,48 @@ function App()
                     break;
                 }
 
+                //THE DEVICES COME ALONG WITH THE ROWS, ENUMERATED ONCE THE WAY THE TUI ENUMERATES THEM WHEN
+                ///settings IS TYPED - THE PICKER AND THE DEVICE ROWS BOTH READ THAT ONE LIST
                 case "open_settings":
                 {
-                    invoke<ClientSetting[]>("get_client_settings").then((list) =>
+                    Promise.all([
+                        invoke<ClientSetting[]>("get_client_settings"),
+                        invoke<AudioDevices>("get_audio_devices"),
+                    ]).then(([list, devices]) =>
                     {
                         const rows = clientRows(list);
 
-                        setSettings({ rows, selected: landRow(rows, 0, 1), server: false, edit: null, saving: false, confirm: false });
+                        setSettings({
+                            rows,
+                            selected: landRow(rows, 0, 1),
+                            server: false,
+                            edit: null,
+                            saving: false,
+                            confirm: false,
+                            devices,
+                            picker: null,
+                        });
                     }).catch((error: unknown) => setPopupMessage(String(error)));
 
+                    break;
+                }
+
+                //client.toml MOVED UNDER THE BOX - THE VOICE CLIENT POINTED A DEVICE KEY BACK AT WHAT IS
+                //ACTUALLY PLAYING. THE SELECTION STAYS WHERE THE USER LEFT IT
+                case "client_settings":
+                {
+                    const rows = clientRows(payload.data.settings);
+
+                    setSettings((previous) => (previous && !previous.server
+                        ? { ...previous, rows, selected: landRow(rows, previous.selected, 1), edit: null, picker: null }
+                        : previous));
+
+                    break;
+                }
+
+                case "voice":
+                {
+                    setVoice(payload.data.voice);
                     break;
                 }
 
@@ -833,7 +1021,18 @@ function App()
                         break;
                     }
 
-                    setSettings({ rows, selected: landRow(rows, 0, 1), server: true, edit: null, saving: false, confirm: false });
+                    setSettings({
+                        rows,
+                        selected: landRow(rows, 0, 1),
+                        server: true,
+                        edit: null,
+                        saving: false,
+                        confirm: false,
+
+                        //THE SERVER'S ROWS HAVE NO AUDIO IN THEM - server.toml IS NOT WHERE OUR DEVICES LIVE
+                        devices: NO_DEVICES,
+                        picker: null,
+                    });
                     break;
                 }
 
@@ -1054,6 +1253,8 @@ function App()
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
+    useEffect(() => { pickerRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.picker?.selected]);
+
     const channels = useMemo(() =>
     {
         const set = new Set(activeChannels);
@@ -1111,7 +1312,50 @@ function App()
             (item) => ({ ...item, value: { kind: "toggle", value: on }, changed: item.changed || current.server })));
     };
 
-    //LEFT/RIGHT: FLIP A TOGGLE, OR STEP A NUMBER. A FREE-FORM STRING HAS NO NEXT VALUE TO STEP TO
+    //SLIDE ONE VOLUME. THE BRIDGE KEEPS THE CEILING, SO WHAT IT STORED IS WHAT THE ROW ENDS UP DRAWING -
+    //THE BAR MOVES AT ONCE ALL THE SAME, BECAUSE A SLIDER THAT WAITS FOR A ROUND TRIP PER ARROW IS NOT ONE
+    const setVolume = (index: number, percent: number, max: number) =>
+    {
+        const box = settings;
+        if (!box) return;
+
+        const row = box.rows[index];
+        if (row.row !== "item" || row.item.value.kind !== "volume") return;
+
+        const wanted = Math.min(Math.max(percent, 0), max);
+        if (wanted === row.item.value.value.percent) return;
+
+        const write = (stored: number) => editSettings((current) => withRow({ ...current, selected: index, confirm: false }, index,
+            (item) => (item.value.kind === "volume"
+                ? { ...item, value: { kind: "volume", value: { ...item.value.value, percent: stored } } }
+                : item)));
+
+        write(wanted);
+
+        invoke<number>("set_client_volume", { key: row.item.key, percent: wanted })
+            .then((stored) => { if (stored !== wanted) write(stored); })
+            .catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //POINT ONE OF THE TWO DEVICE KEYS SOMEWHERE ELSE. A RUNNING CALL REBUILDS ITS STREAMS ON THIS WITHOUT
+    //BEING DROPPED, WHICH IS WHY THE ROW MAY BE TOUCHED MID-SESSION AT ALL
+    const setDevice = (index: number, id: string) =>
+    {
+        const box = settings;
+        if (!box) return;
+
+        const row = box.rows[index];
+        if (row.row !== "item" || row.item.value.kind !== "device" || row.item.value.value.id === id) return;
+
+        const input = row.item.value.value.input;
+
+        invoke("set_client_device", { key: row.item.key, id }).catch((error: unknown) => setPopupMessage(String(error)));
+
+        editSettings((current) => withRow({ ...current, selected: index, confirm: false }, index,
+            (item) => ({ ...item, value: { kind: "device", value: { id, input } } })));
+    };
+
+    //LEFT/RIGHT: FLIP A TOGGLE, SLIDE A VOLUME, STEP A NUMBER, OR CYCLE A DEVICE WITHOUT OPENING THE PICKER
     const adjustRow = (direction: number) =>
     {
         const box = settings;
@@ -1124,6 +1368,26 @@ function App()
         if (row.item.value.kind === "toggle")
         {
             if ((direction > 0) !== row.item.value.value) setToggle(box.selected, direction > 0);
+            return;
+        }
+
+        if (row.item.value.kind === "volume")
+        {
+            const { percent, max, step } = row.item.value.value;
+
+            setVolume(box.selected, percent + direction * step, max);
+            return;
+        }
+
+        if (row.item.value.kind === "device")
+        {
+            const { id, input } = row.item.value.value;
+            const entries = deviceEntries(box.devices, id, input);
+
+            const current = Math.max(entries.findIndex((entry) => entry.id === id), 0);
+            const next = (current + direction + entries.length) % entries.length;
+
+            setDevice(box.selected, entries[next].id);
             return;
         }
 
@@ -1205,6 +1469,31 @@ function App()
             return;
         }
 
+        //A VOLUME HAS NOWHERE ELSE TO GO ON ⏎ THAN ONE STEP UP, THE WAY THE TUI'S DOES
+        if (row.item.value.kind === "volume")
+        {
+            const { percent, max, step } = row.item.value.value;
+
+            setVolume(index, percent + step, max);
+            return;
+        }
+
+        //A DEVICE HAS A WHOLE LIST BEHIND IT, SO ⏎ OPENS IT RATHER THAN GUESSING WHICH ONE WAS MEANT
+        if (row.item.value.kind === "device")
+        {
+            const { id, input } = row.item.value.value;
+            const entries = deviceEntries(box.devices, id, input);
+
+            editSettings((current) => ({
+                ...current,
+                selected: index,
+                confirm: false,
+                picker: { title: input ? " Input device " : " Output device ", entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
+            }));
+
+            return;
+        }
+
         //A NUMBER OR A STRING IS TYPED INTO THE ROW ITSELF
         editSettings((current) => ({ ...current, selected: index, confirm: false, edit: String(row.item.value.value) }));
     };
@@ -1234,10 +1523,47 @@ function App()
     });
 
     //ONE KEYPRESS WHILE THE BOX IS UP - IT OWNS THE KEYBOARD, THE WAY THE TUI'S OVERLAY DOES
+    //ONE KEYPRESS WHILE THE DEVICE LIST IS UP. IT SITS ON TOP OF THE ROWS AND TAKES THE KEYBOARD OFF THEM
+    //FOR AS LONG AS IT IS OPEN - THERE IS NOTHING TO DO IN THE BOX BEHIND IT UNTIL A DEVICE IS PICKED
+    const handlePickerKey = (event: React.KeyboardEvent<HTMLDivElement>, picker: Picker) =>
+    {
+        const move = (delta: number) => editSettings((current) => (current.picker
+            ? { ...current, picker: { ...current.picker, selected: Math.min(Math.max(current.picker.selected + delta, 0), current.picker.entries.length - 1) } }
+            : current));
+
+        switch (event.key)
+        {
+            case "Escape": editSettings((current) => ({ ...current, picker: null })); break;
+
+            case "ArrowUp": move(-1); break;
+            case "ArrowDown": move(1); break;
+
+            case "Home": editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: 0 } } : current)); break;
+            case "End": editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: current.picker.entries.length - 1 } } : current)); break;
+
+            case "Enter":
+            case " ":
+            {
+                const chosen = picker.entries[picker.selected];
+
+                if (chosen) setDevice(picker.row, chosen.id);
+
+                editSettings((current) => ({ ...current, picker: null }));
+                break;
+            }
+
+            default: return;
+        }
+
+        event.preventDefault();
+    };
+
     const handleSettingsKey = (event: React.KeyboardEvent<HTMLDivElement>) =>
     {
         const box = settings;
         if (!box || box.edit !== null) return;
+
+        if (box.picker) { handlePickerKey(event, box.picker); return; }
 
         //Ctrl+S SAVES FROM WHEREVER THE SELECTION IS - THE BUTTON IS AT THE BOTTOM OF A LONG LIST
         if (box.server && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s")
@@ -1324,7 +1650,22 @@ function App()
             return;
         }
 
-        if (!active) return;
+        //WITH NO MENU OPEN THE ARROWS BELONG TO WHAT WAS TYPED BEFORE, THE WAY THEY DO IN THE TERMINAL -
+        //AND A HALF-WRITTEN MESSAGE LOCKS THE SEARCH TO ITSELF INSTEAD OF BEING WALKED OVER
+        if (!active)
+        {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+            event.preventDefault();
+
+            const line = event.key === "ArrowUp"
+                ? historyUp(historyRef.current, chatInput)
+                : historyDown(historyRef.current);
+
+            if (line !== null) writeInput(line);
+
+            return;
+        }
 
         if (event.key === "ArrowDown")
         {
@@ -1349,6 +1690,8 @@ function App()
         if (!chatInput.trim()) return;
 
         send(chatInput);
+        pushHistory(historyRef.current, chatInput);
+
         setChatInput("");
     };
 
@@ -1525,11 +1868,13 @@ function App()
             ? ` Server settings${box.saving ? " · saving…" : unsaved ? " · unsaved" : ""} `
             : " Settings ";
 
-        const legend = editing
-            ? " type a value │ ⏎ keep │ esc cancel "
-            : box.server
-                ? " ↑↓ move │ ←→ change │ ⏎ edit │ ^S save │ esc close "
-                : " ↑↓ move │ ←→ change │ ⏎ select │ esc close ";
+        const legend = box.picker
+            ? " ↑↓ select │ ⏎ use │ esc back "
+            : editing
+                ? " type a value │ ⏎ keep │ esc cancel "
+                : box.server
+                    ? " ↑↓ move │ ←→ change │ ⏎ edit │ ^S save │ esc close "
+                    : " ↑↓ move │ ←→ change │ ⏎ select │ esc close ";
 
         //THE SERVER'S COMMENT ON A KEY IS A WHOLE SENTENCE AND HAS NO BUSINESS IN A TITLE BAR. IT SITS
         //UNDER A RULE IN THE FOOT OF THE BOX INSTEAD, WHERE IT READS AS AN EXPLANATION OF THE SELECTED ROW
@@ -1545,6 +1890,33 @@ function App()
                     : <span className="text-muted-foreground">○ off</span>;
             }
 
+            //THE BAR IS THE WHOLE SUPPORTED RANGE, SO 100% SITS EXACTLY IN THE MIDDLE OF IT
+            if (item.value.kind === "volume")
+            {
+                const { percent, max } = item.value.value;
+                const filled = Math.ceil((percent * SLIDER_WIDTH) / Math.max(max, 1));
+
+                return (
+                    <span className="whitespace-pre">
+                        <span className="text-accent">{"█".repeat(filled)}</span>
+                        <span className="text-border">{"░".repeat(Math.max(SLIDER_WIDTH - filled, 0))}</span>
+                        <span className={percent === 0 ? "text-muted-foreground" : ""}>{` ${String(percent).padStart(3)}%`}</span>
+                    </span>
+                );
+            }
+
+            //client.toml HOLDS THE cpal ID, WHICH IS NOT SOMETHING TO READ - THE LABEL IS LOOKED UP FOR IT
+            if (item.value.kind === "device")
+            {
+                const { id, input } = item.value.value;
+
+                if (!id) return <span className="text-muted-foreground">{DEFAULT_DEVICE}</span>;
+
+                const found = (input ? box.devices.input : box.devices.output).find((device) => device.id === id);
+
+                return <span className="text-accent">{found?.label ?? id}</span>;
+            }
+
             if (item.value.kind === "number") return <span>{item.value.value}</span>;
 
             return item.value.value ? <span>{item.value.value}</span> : <span className="text-muted-foreground">(empty)</span>;
@@ -1556,7 +1928,7 @@ function App()
                     ref={settingsRef}
                     tabIndex={-1}
                     onKeyDown={handleSettingsKey}
-                    className="w-full max-w-[62ch] outline-none"
+                    className="relative w-full max-w-[62ch] outline-none"
                 >
                     <Panel active title={title} left={legend} className="flex flex-col bg-background">
                         <div className="custom-scrollbar panel-scroll" style={{ maxHeight: "60vh" }}>
@@ -1662,6 +2034,39 @@ function App()
                             <div className="border-t border-border px-3 pb-2 pt-1 text-muted-foreground">{hint}</div>
                         )}
                     </Panel>
+
+                    {/* THE DEVICE LIST, ON TOP OF THE ROWS AND NOT BESIDE THEM - IT IS ANSWERING THE ROW
+                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE BOX UNTIL IT IS ANSWERED */}
+                    {box.picker && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center px-4">
+                            <Panel active title={box.picker.title} className="w-full max-w-[52ch] bg-background">
+                                <div className="custom-scrollbar panel-scroll" style={{ maxHeight: `calc(${PALETTE_ROWS * 1.5}rem + 1rem)` }}>
+                                    {box.picker.entries.map((entry, index) =>
+                                    {
+                                        const chosenEntry = index === box.picker!.selected;
+
+                                        return (
+                                            <div
+                                                key={entry.id || "default"}
+                                                ref={chosenEntry ? pickerRowRef : undefined}
+                                                onMouseEnter={() => editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: index } } : current))}
+                                                onClick={() =>
+                                                {
+                                                    setDevice(box.picker!.row, entry.id);
+                                                    editSettings((current) => ({ ...current, picker: null }));
+                                                    settingsRef.current?.focus();
+                                                }}
+                                                className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosenEntry ? "bg-selected" : ""}`}
+                                            >
+                                                <span className="text-accent">{chosenEntry ? "▌" : " "}</span>
+                                                <span className={`overflow-hidden text-ellipsis ${entry.id ? "" : "text-muted-foreground"}`}>{entry.label}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </Panel>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -1871,6 +2276,28 @@ function App()
                             </div>
                         </Panel>
                         )}
+
+                        {/* THE CALL, WHILE THERE IS ONE AND SOMEBODY IS IN IT. CLICKING A ROW MUTES WHOEVER
+                            IS ON IT - OUR OWN ROW IS THE MICROPHONE, AND IS THE ONE /mute TAKES NO ID FOR */}
+                        {voice.enabled && voice.users.length > 0 && (
+                        <Panel title={` Voice (${voice.users.length}) `} className="flex max-h-[40%] flex-col">
+                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
+                                {voice.users.map((user) => (
+                                    <div
+                                        key={user.id}
+                                        onClick={() => send(user.local ? "/mute" : `/mute ${user.id}`)}
+                                        title={user.muted ? "Unmute" : "Mute"}
+                                        className="cursor-pointer whitespace-pre hover:bg-selected"
+                                    >
+                                        <span className={user.muted ? "text-error" : user.speaking ? "font-bold text-ok" : "text-muted-foreground"}>
+                                            {user.muted ? "✕" : user.speaking ? "●" : "○"} {user.username}
+                                        </span>
+                                        {!user.local && <span className="text-muted-foreground">{` ${user.latency}ms`}</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        </Panel>
+                        )}
                     </div>
                 )}
             </div>
@@ -1887,6 +2314,21 @@ function App()
                                 <button onClick={uploadFile} className="hover:text-accent">upload</button>
                                 {" │ "}
                                 <button onClick={() => send("/files")} className="hover:text-accent">files</button>
+                                {" │ "}
+                                <button onClick={() => send("/voice")} className={voice.enabled ? "text-accent hover:text-error" : "hover:text-accent"}>
+                                    {voice.enabled ? "hang up" : "voice"}
+                                </button>
+
+                                {/* THE MICROPHONE, WHICH THE CAPTURE CALLBACK COUNTS AS OFF AT 0% TOO -
+                                    SO THE ROW READS WHAT IS ACTUALLY BEING SENT, NOT WHAT WAS CLICKED */}
+                                {voice.enabled && (
+                                    <>
+                                        {" │ "}
+                                        <button onClick={() => send("/mute")} className={voice.mic ? "text-ok hover:text-error" : "text-error hover:text-ok"}>
+                                            {voice.mic ? "mic on" : "mic off"}
+                                        </button>
+                                    </>
+                                )}
                                 {" │ "}
                                 <button onClick={() => send("/settings")} className="hover:text-accent">settings</button>
                                 {" │ "}

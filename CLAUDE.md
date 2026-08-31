@@ -9,11 +9,13 @@ hybrid ECC+ML-KEM key exchange, TOFU key pinning, commands, roles, config) lives
 crate, pulled in as a **path dependency**:
 
 ```toml
-why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base"] }
+why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 That resolves to `/mnt/data/Rust/WHY2` relative to `src-tauri/`. **The sibling checkout must be present or the
-Rust build fails.** When behaviour looks wrong, the cause is often in that crate, not here — read
+Rust build fails.** `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
+system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
+script, not in this code. When behaviour looks wrong, the cause is often in that crate, not here — read
 `/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
 assuming a bug in this repo. This app is a thin presentation layer over it.
 
@@ -82,8 +84,9 @@ Two things make session lifetime subtle:
 
 The window is laid out the way `tui/draw.rs` lays out the terminal, and the two are meant to stay recognisable
 as the same client: rounded boxes with their name sitting in the top border and their status in the bottom one,
-a message pane titled `WHY2 ── <server> ── <address>`, an `Online`/`Channels` sidebar that only exists once
-there is somebody to list, a `> ` input whose bottom border carries `#channel │ username`, a `Commands` palette
+a message pane titled `WHY2 ── <server> ── <address>`, an `Online`/`Channels`/`Voice` sidebar whose panels
+each only exist once there is somebody to list in them, a `> ` input whose bottom border carries
+`#channel │ username` and whose `↑`/`↓` walk what was typed before, a `Commands` palette
 on the bottom edge of the pane, and the logo as a watermark behind it all. Chat is `username: text`, not
 bubbles.
 
@@ -116,11 +119,13 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   `Username`, `PasswordL` or `PasswordR` packet. Commands do not exist yet.
 - After it, a line starting with `/` goes to `command::get_command`, then `command::send_command_code`, which
   returns `Some(true)` (sent), `Some(false)` (invalid usage) or `None` (ours to run: `/upload`, `/server`,
-  `/ucolor`, `/color`).
+  `/ucolor`, `/color`, `/mute`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
-`send_input("/channel <name>")`, the status row's `exit` sends `/exit` and its `files` sends `/files`, and
-clicking a file row sends `/download <user_id> <file_id>`. Prefer extending the command path over adding a
+`send_input("/channel <name>")`, the status row's `exit` sends `/exit`, its `files` sends `/files`, its
+`voice` sends `/voice` and its microphone reading sends `/mute`, clicking a file row sends
+`/download <user_id> <file_id>`, and clicking a row of the `Voice` panel sends `/mute <id>` — or `/mute` on
+our own row, the one the command takes no ID for. Prefer extending the command path over adding a
 `#[tauri::command]`.
 
 `get_commands` reflects `command::COMMAND_LIST` filtered by the role the server granted us
@@ -161,11 +166,59 @@ applied. Nothing on this side names a server key — the rows, the headings and 
 `server.toml` turned out to hold, so a key added there needs no client change at all.
 
 `restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
-by the next, and is dead while there are unsaved rows in the box. The audio rows the TUI opens with belong to
-`client_voice`, which this build does not carry.
+by the next, and is dead while there are unsaved rows in the box.
+
+The `Audio` rows above them are the third kind. A **volume** carries the range it lives in along with it
+(`ClientValue::Volume { percent, max, step }`), because the ceiling is `voice_options::VOLUME_MAX` and not a
+number to copy into the window; `set_client_volume` clamps, writes and live-updates the running streams, and
+hands back what it *stored*, so a row that asked for too much snaps down instead of drawing a bar past its own
+end. A **device** row holds the `cpal` id `client.toml` holds — the label is looked up for display out of the
+list `get_audio_devices` enumerated when the box opened, ⏎ opens that list as a picker and ←→ cycles it
+without one, and `set_client_device` marks the generation so a running call rebuilds its streams instead of
+being dropped. A device that is configured but currently unplugged still gets a row, and the empty id is
+"whatever the system picks".
+
+`ClientEvent::VoiceDeviceFailed` is the one thing that moves `client.toml` under the box: the voice client
+points the key back at the device that is actually playing. It arrives as a `client_settings` event carrying
+our rows again, which the box adopts if it is showing ours — the TUI calls that `refresh_devices`.
 
 Side effects belong outside the state updaters: React runs them twice under `StrictMode`, and an updater that
 writes `client.toml` or puts a packet on the wire would do it twice.
+
+### Voice
+
+`client_voice` is on, so the crate owns the whole call — the UDP handshake, the `cpal` streams, the Opus
+codec, the denoiser, the mixing — and there is nothing left on this side but to draw it. `/voice` is a plain
+packet the crate answers by spawning `listen_server_voice`; `/mute` never reaches the server at all, because
+the muted set lives in `options::` and is where the crate drops both a muted user's audio and their messages.
+
+The window learns about all of it through **one** event, `UiEvent::Voice`, carrying the whole `VoiceState`:
+whether there is a call, whether the microphone is live, and who is in it. The three move independently and a
+panel drawn from half of them lies about the rest, so everything that touches any part goes through
+`emit_voice` — `VoiceActivity` arriving, the server letting us in or putting us out, a mute toggled, a volume
+slid. `mic` is `!is_muted(None) && input_volume > 0`, because the capture callback treats 0% as off and the
+status row had better agree.
+
+`VoiceActivity` fires per voice packet, which means it stops entirely in a silent call — so the roster is
+kept in `AppState::voice_users` and sent again after a mute, rather than waiting for somebody to speak. The
+`muted` flag on a row is ours and not the server's, and the panel only exists while the call does and
+somebody is in it (`voice_visible` in the TUI).
+
+`reset_session` clears `voice_options::set_use_voice(false)`: the voice client follows that flag, so a lost
+session takes its streams with it.
+
+### Input history
+
+`↑`/`↓` on the input line are `InputBuffer`'s history from `tui/input.rs`, rewritten in `App.tsx`
+(`historyUp`, `historyDown`, `pushHistory`). `pos` at the end of `entries` means "not searching"; the first
+`↑` parks the half-written line in `stash` **and** locks the search to it as `prefix`, so `↑` walks what was
+typed before rather than everything ever sent, and the last `↓` puts that line back. A line starting with `/`
+never becomes the prefix — that one is the palette's search, not this one — and the same line twice in a row
+is one entry.
+
+The arrows only mean this while no palette menu is open; a menu takes them for its own selection, exactly as
+the TUI does. The history is a **ref**: nothing is drawn from it, and it is read and written one keypress at
+a time.
 
 ### TOFU
 

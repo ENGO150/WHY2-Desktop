@@ -73,7 +73,8 @@ use why2_chat::
     network::
     {
         self,
-        client::{ self, ClientEvent },
+        voice::client::{ self as voice, options as voice_options },
+        client::{ self, ClientEvent, VoiceUser },
         codes::
         {
             PacketCode,
@@ -122,19 +123,26 @@ const COLORS: [&str; 16] =
 
 const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
 
-//THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: LABEL, KEY, AND WHETHER THE
-//KEY IS PHRASED AS A NEGATIVE. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT MEANS - disable_colors HELD
-//IS "Message colors" TURNED OFF. THE AUDIO ROWS ABOVE THEM IN THE TUI BELONG TO client_voice, WHICH THIS
-//BUILD DOES NOT CARRY
-const CLIENT_SETTINGS: [(&str, &str, bool); 3] =
+//THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: THE HEADING THEY SIT UNDER,
+//THE LABEL, THE KEY, AND WHAT KIND OF ANSWER THE KEY TAKES. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT
+//MEANS - disable_colors HELD IS "Message colors" TURNED OFF, WHICH IS WHY A TOGGLE CARRIES invert
+const CLIENT_SETTINGS: [(&str, &str, &str, ClientKind); 9] =
 [
-    ("Message colors",  "disable_colors", true),
-    ("Background logo", "disable_logo",   true),
-    ("Show client IDs", "show_id",        false),
+    ("Audio", "Input device",      "input_device",      ClientKind::Device { input: true }),
+    ("Audio", "Output device",     "output_device",     ClientKind::Device { input: false }),
+    ("Audio", "Input volume",      "input_volume",      ClientKind::Volume),
+    ("Audio", "Output volume",     "output_volume",     ClientKind::Volume),
+    ("Audio", "Noise suppression", "noise_suppression", ClientKind::Toggle { invert: false }),
+    ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
+
+    ("Interface", "Message colors",  "disable_colors", ClientKind::Toggle { invert: true }),
+    ("Interface", "Background logo", "disable_logo",   ClientKind::Toggle { invert: true }),
+    ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
-//THE HEADING THEY SIT UNDER, WHICH IS THE ONE THE TUI GIVES THEM
-const CLIENT_SECTION: &str = "Interface";
+//CELLS OF VOLUME BAR AND THE STEP EITHER ARROW MOVES IT BY, BOTH AS tui/settings.rs HAS THEM. THE BAR IS
+//DRAWN IN THE WINDOW, SO ONLY THE STEP IS OURS - THE CEILING IS THE VOICE CLIENT'S OWN
+const VOLUME_STEP: u32 = 5;
 
 //STRUCTS
 struct AppState
@@ -148,6 +156,11 @@ struct AppState
     leaving: AtomicBool,                                               //THE DISCONNECT WAS ASKED FOR
     list_requested: AtomicBool,                                        //THE NEXT ROSTER OPENS A MODAL
     version_checked: AtomicBool,                                       //crates.io IS ASKED ONCE PER PROCESS
+    voice_enabled: AtomicBool,                                         //THE SERVER LET US INTO THE CALL
+
+    //WHO WAS IN IT WHEN WE LAST HEARD. VoiceActivity ARRIVES ONLY WHILE THERE IS AUDIO TO ARRIVE WITH, SO
+    //A MUTE TOGGLED IN A SILENT CALL HAS NOTHING TO REDRAW IT - THE ROSTER IS KEPT HERE AND SENT AGAIN
+    voice_users: Mutex<Vec<VoiceUserInfo>>,
 }
 
 //ONE LINE OF THE CHAT PANE. EVERY EVENT THAT HAS SOMETHING TO SAY BECOMES ONE OF THESE, SO THE
@@ -232,7 +245,46 @@ struct ClientSetting
     label: String,
     key: String,
     section: String,
-    on: bool, //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
+    value: ClientValue,
+}
+
+//ONE USER OF THE CALL, AS THE Voice PANEL DRAWS THEM. muted IS OURS AND NOT THE SERVER'S - THE CRATE
+//KEEPS THE MUTED SET IN ITS OWN GLOBALS, AND IS ALSO WHERE A MUTED USER'S AUDIO IS DROPPED
+#[derive(Serialize, Clone)]
+struct VoiceUserInfo
+{
+    id: usize,
+    username: String,
+    speaking: bool,
+    latency: u128,
+    local: bool, //US - THE ONE ROW WITH NO LATENCY TO SHOW, AND THE ONE /mute TAKES NO ID FOR
+    muted: bool,
+}
+
+//THE WHOLE OF WHAT THE WINDOW KNOWS ABOUT THE CALL, SENT AS ONE - THE ROSTER, THE MICROPHONE AND WHETHER
+//THERE IS A CALL AT ALL MOVE INDEPENDENTLY, AND A PANEL DRAWN FROM HALF OF THEM WOULD LIE ABOUT THE REST
+#[derive(Serialize, Clone)]
+struct VoiceState
+{
+    enabled: bool,
+    mic: bool, //THE CAPTURE CALLBACK TREATS 0% AS OFF, SO THE STATUS ROW HAD BETTER AGREE
+    users: Vec<VoiceUserInfo>,
+}
+
+//ONE DEVICE AS THE PICKER SHOWS IT. THE id IS WHAT client.toml HOLDS AND WHAT THE VOICE CLIENT OPENS -
+//THE label IS DISPLAY ONLY, AND IS NOT UNIQUE (ALSA HANDS OUT THE SAME DESCRIPTION TO SEVERAL PCMs)
+#[derive(Serialize, Clone)]
+struct AudioDeviceInfo
+{
+    id: String,
+    label: String,
+}
+
+#[derive(Serialize, Clone, Default)]
+struct AudioDevices
+{
+    input: Vec<AudioDeviceInfo>,
+    output: Vec<AudioDeviceInfo>,
 }
 
 //ONE ROW OF server.toml, BOTH WAYS: THE SERVER SENDS ITS WHOLE CONFIG THIS WAY, AND A SAVE SENDS BACK
@@ -267,6 +319,27 @@ struct VocabularyValue
 }
 
 //ENUMS
+//WHAT KIND OF ANSWER ONE OF OUR OWN KEYS TAKES. THIS IS THE TABLE'S SIDE OF IT - THE VALUE THE KEY
+//ACTUALLY HOLDS IS READ OUT OF THE CONFIG AND HANDED OVER AS A ClientValue
+#[derive(Clone, Copy)]
+enum ClientKind
+{
+    Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
+    Volume,
+    Device { input: bool },
+}
+
+//AND WHAT IT HOLDS RIGHT NOW. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE BAR IN THE
+//WINDOW IS DRAWN AGAINST THE VOICE CLIENT'S OWN CEILING RATHER THAN A NUMBER COPIED OVER THERE
+#[derive(Serialize, Clone)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum ClientValue
+{
+    Toggle(bool), //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
+    Volume { percent: u32, max: u32, step: u32 },
+    Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
+}
+
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum MessageKind
@@ -307,6 +380,8 @@ enum UiEvent
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /files, /list, BANS
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
+    ClientSettings { settings: Vec<ClientSetting> },              //OUR OWN ROWS AGAIN, WHEN SOMETHING ELSE MOVED THEM
+    Voice { voice: VoiceState },                                  //THE CALL, WHOLE - THE PANEL DRAWS ITSELF FROM IT
     ServerSettings { settings: Vec<SettingRow>, saved: bool },     //server.toml, EITHER ASKED FOR OR JUST STORED
     ChannelChanged { channel: Option<String> },                   //WE SWITCHED CHANNEL
     ChannelCreated { name: String },                              //SOMEBODY OPENED ONE
@@ -386,6 +461,39 @@ fn block(app: &AppHandle, title: String, rows: Vec<BlockRow>) //PUSH ONE TREE IN
     emit(app, UiEvent::Block { title, rows });
 }
 
+//THE CALL AS IT STANDS. EVERYTHING THAT TOUCHES ANY PART OF IT ENDS HERE - THE ROSTER ARRIVING, THE
+//SERVER LETTING US IN OR PUTTING US OUT, A MUTE TOGGLED, A VOLUME SLID - BECAUSE THE PANEL AND THE
+//MICROPHONE READING ARE ONE PICTURE AND HALF OF IT IS ALWAYS WRONG
+fn emit_voice(app: &AppHandle)
+{
+    let state = app.state::<AppState>();
+
+    emit(app, UiEvent::Voice
+    {
+        voice: VoiceState
+        {
+            enabled: state.voice_enabled.load(Ordering::Relaxed),
+            mic: !options::is_muted(None) && voice_options::get_input_volume() > 0,
+            users: state.voice_users.lock().unwrap().clone(),
+        },
+    });
+}
+
+//ONE USER OF THE CALL, WITH THE MUTE READ OFF THE CRATE'S GLOBALS THE WAY tui/draw.rs READS IT: OUR OWN
+//ROW ASKS ABOUT THE MICROPHONE, EVERYBODY ELSE'S ABOUT THEIR ID
+fn voice_user(user: VoiceUser) -> VoiceUserInfo
+{
+    VoiceUserInfo
+    {
+        muted: options::is_muted((!user.is_local).then_some(user.id)),
+        id: user.id,
+        username: user.username,
+        speaking: user.is_speaking,
+        latency: user.latency,
+        local: user.is_local,
+    }
+}
+
 //EVERY PIECE OF SESSION STATE THAT LIVES IN THE CRATE'S GLOBALS. THE NEXT HANDSHAKE HAS TO START FROM
 //THE SAME PLACE THE FIRST ONE DID - THE SEQUENCE NUMBERS ESPECIALLY, SINCE A SECOND CONNECTION THAT
 //KEPT THE FIRST ONE'S COUNTERS WOULD HAVE EVERY PACKET IT SENDS REFUSED
@@ -401,6 +509,9 @@ fn reset_session()
 
     //A HALF-FINISHED UPLOAD BELONGS TO THE SOCKET THAT IS GONE
     client::ACTIVE_UPLOADS.lock().unwrap().clear();
+
+    //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
+    voice_options::set_use_voice(false);
 }
 
 fn to_color(color: &str) -> Result<(u8, String), ()> //PARSE A COLOR NAME/NUMBER INTO THE CODE THE WIRE CARRIES
@@ -915,6 +1026,51 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         },
 
         ClientEvent::Muted => say(app, ChatMessage::notice("You have been muted by a moderator.")),
+
+        //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
+        //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING
+        ClientEvent::VoiceActivity(users) =>
+        {
+            *state.voice_users.lock().unwrap() = users.into_iter().map(voice_user).collect();
+
+            emit_voice(app);
+        },
+
+        ClientEvent::VoiceEnabled =>
+        {
+            state.voice_enabled.store(true, Ordering::Relaxed);
+
+            say(app, ChatMessage::ok("Voice enabled."));
+            emit_voice(app);
+        },
+
+        ClientEvent::VoiceDisabled =>
+        {
+            state.voice_enabled.store(false, Ordering::Relaxed);
+            state.voice_users.lock().unwrap().clear();
+
+            say(app, ChatMessage::system("Voice disabled."));
+            emit_voice(app);
+        },
+
+        //THE VOICE CLIENT POINTED THE CONFIG BACK AT THE DEVICE THAT IS ACTUALLY PLAYING, SO THE ROWS IN
+        //THE BOX ARE NOW BEHIND WHAT client.toml HOLDS - THEY ARE SENT AGAIN RATHER THAN LEFT LYING
+        ClientEvent::VoiceDeviceFailed =>
+        {
+            say(app, ChatMessage::error("Switching the audio device failed - the previous one is still in use."));
+
+            emit(app, UiEvent::ClientSettings { settings: client_settings() });
+        },
+
+        ClientEvent::VoiceHandshakeFailed =>
+        {
+            say(app, ChatMessage::error("The server never answered the voice handshake - is UDP getting through?"));
+        },
+
+        ClientEvent::Socks5Voice =>
+        {
+            say(app, ChatMessage::error("Voice chat cannot be enabled while using SOCKS5."));
+        },
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
         ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
         ClientEvent::DisabledFeature => popup(app, "Server has disabled the feature you requested."),
@@ -956,7 +1112,7 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
             });
         },
 
-        //VOICE AND SCREEN SHARING ARE NOT COMPILED IN, SO NOTHING EVER SENDS THE REST
+        //SCREEN SHARING IS NOT COMPILED IN, SO NOTHING EVER SENDS THE REST
         _ => {},
     }
 }
@@ -983,6 +1139,8 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
     *state.role.lock().unwrap() = Role::default();
     state.tofu_reply.lock().unwrap().take();
     state.roster_queued.store(false, Ordering::Relaxed);
+    state.voice_enabled.store(false, Ordering::Relaxed);
+    state.voice_users.lock().unwrap().clear();
 
     reset_session();
 }
@@ -1028,39 +1186,127 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
         .collect()
 }
 
+//ONE ROW'S KIND, OR NOTHING WHEN THE KEY IS NOT ONE THE BOX OFFERS - A KEY ARRIVING FROM ANYWHERE ELSE
+//IS NOT OURS TO WRITE, WHATEVER client.toml HAPPENS TO HOLD UNDER IT
+fn client_kind(key: &str) -> Option<ClientKind>
+{
+    CLIENT_SETTINGS.iter().find(|(_, _, candidate, _)| *candidate == key).map(|(_, _, _, kind)| *kind)
+}
+
 //OUR OWN CONFIG, AS THE SETTINGS BOX SHOWS IT. THE TUI READS EVERY VALUE OUT OF THE CONFIG ONCE WHEN THE
 //OVERLAY OPENS AND NEVER RE-READS IT WHILE DRAWING - SO DOES THIS
-#[tauri::command]
-fn get_client_settings() -> Vec<ClientSetting>
+fn client_settings() -> Vec<ClientSetting>
 {
-    CLIENT_SETTINGS.iter().map(|(label, key, invert)|
+    CLIENT_SETTINGS.iter().map(|(section, label, key, kind)| ClientSetting
     {
-        let stored = config::read_config::<bool>(key);
-
-        ClientSetting
+        label: label.to_string(),
+        key: key.to_string(),
+        section: section.to_string(),
+        value: match kind
         {
-            label: label.to_string(),
-            key: key.to_string(),
-            section: CLIENT_SECTION.to_string(),
-            on: if *invert { !stored } else { stored },
-        }
+            ClientKind::Toggle { invert } =>
+            {
+                let stored = config::read_config::<bool>(key);
+
+                ClientValue::Toggle(if *invert { !stored } else { stored })
+            },
+
+            ClientKind::Volume => ClientValue::Volume
+            {
+                percent: voice_options::clamp_volume(config::read_config::<u32>(key)),
+                max: voice_options::VOLUME_MAX,
+                step: VOLUME_STEP,
+            },
+
+            ClientKind::Device { input } => ClientValue::Device
+            {
+                id: config::read_config::<String>(key),
+                input: *input,
+            },
+        },
     }).collect()
 }
 
-//FLIP ONE OF THEM. IT IS WRITTEN THROUGH IMMEDIATELY - client.toml IS OURS, AND THE THREE KEYS ARE THE
+#[tauri::command]
+fn get_client_settings() -> Vec<ClientSetting>
+{
+    client_settings()
+}
+
+//EVERY DEVICE THE VOICE CLIENT COULD OPEN. THE LIST COMES FROM THE VOICE CLIENT ITSELF, SO IT IS
+//ENUMERATED IN THE SAME cpal HOST THAT LATER OPENS THE CHOSEN ONE (BLOCKING, HENCE spawn_blocking)
+#[tauri::command]
+async fn get_audio_devices() -> AudioDevices
+{
+    task::spawn_blocking(||
+    {
+        let entry = |device: voice::AudioDevice| AudioDeviceInfo { id: device.id, label: device.label };
+        let (input, output) = voice::list_devices();
+
+        AudioDevices
+        {
+            input: input.into_iter().map(entry).collect(),
+            output: output.into_iter().map(entry).collect(),
+        }
+    }).await.unwrap_or_default()
+}
+
+//FLIP ONE TOGGLE. IT IS WRITTEN THROUGH IMMEDIATELY - client.toml IS OURS, AND THE INTERFACE KEYS ARE THE
 //ONES THE PANE DRAWS ITSELF FROM, SO THE CONFIG COMES BACK FOR THE WINDOW TO REDRAW ON THE SPOT
 #[tauri::command]
 fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, String>
 {
-    //ONLY THE ROWS THE BOX OFFERS - A KEY TYPED IN FROM ANYWHERE ELSE IS NOT ONE OF OURS TO WRITE
-    let Some((_, _, invert)) = CLIENT_SETTINGS.iter().find(|(_, candidate, _)| *candidate == key) else
-    {
-        return Err(String::from("Unknown setting!"));
-    };
+    let Some(ClientKind::Toggle { invert }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
 
-    config::client_write_bool(&key, if *invert { !on } else { on });
+    config::client_write_bool(&key, if invert { !on } else { on });
+
+    //THE TWO AUDIO TOGGLES ARE READ BY THE CAPTURE CALLBACK OUT OF ITS OWN GLOBALS, NOT OFF THE DISK
+    match key.as_str()
+    {
+        "noise_suppression" => voice_options::set_noise_suppression(on),
+        "automatic_gain" => voice_options::set_automatic_gain(on),
+        _ => {},
+    }
 
     Ok(get_client_config())
+}
+
+//SLIDE ONE VOLUME. THE STORED VALUE COMES BACK BECAUSE THE CEILING IS THE VOICE CLIENT'S, NOT THE BOX'S -
+//A ROW THAT DREW WHAT IT ASKED FOR RATHER THAN WHAT WAS KEPT WOULD SIT ABOVE THE MAXIMUM LOOKING APPLIED
+#[tauri::command]
+fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Result<u32, String>
+{
+    let Some(ClientKind::Volume) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+
+    let percent = voice_options::clamp_volume(percent);
+
+    config::client_write_int(&key, percent as i64);
+
+    //LIVE-UPDATE THE RUNNING STREAMS - A VOLUME IS THE ONE SETTING THAT IS USELESS A SESSION LATER
+    match key.as_str()
+    {
+        "input_volume" => voice_options::set_input_volume(percent),
+        "output_volume" => voice_options::set_output_volume(percent),
+        _ => {},
+    }
+
+    //THE MICROPHONE READING IN THE STATUS ROW COUNTS 0% AS OFF, SO IT MOVES WITH THIS
+    emit_voice(&app);
+
+    Ok(percent)
+}
+
+//POINT ONE OF THE TWO DEVICE KEYS SOMEWHERE ELSE. AN EMPTY ID IS "WHATEVER THE SYSTEM PICKS", WHICH IS
+//WHAT THE CONFIG SHIPS WITH - AND A RUNNING CALL REBUILDS ITS STREAMS WITHOUT BEING DROPPED
+#[tauri::command]
+fn set_client_device(key: String, id: String) -> Result<(), String>
+{
+    let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+
+    config::client_write(&key, &id);
+    voice_options::mark_devices_changed();
+
+    Ok(())
 }
 
 //THE EDITED SERVER ROWS, IN ONE GO. THE BOX HOLDS THEM UNTIL THIS IS CALLED BECAUSE server.toml IS NOT
@@ -1270,6 +1516,43 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
 
                     Command::Server => server_command(&app, &state, &write_stream, parameters).await,
 
+                    //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
+                    //MESSAGES) OF ANYBODY IN IT, AND THE SERVER IS NEVER TOLD WHO WE ARE NOT LISTENING TO
+                    //NO PARAMETER IS OUR OWN MICROPHONE, WHICH IS ALSO THE ONLY ROW OF THE PANEL WITH NO ID
+                    Command::Mute => match parameters.as_deref().map(|id| id.trim().parse::<usize>())
+                    {
+                        Some(Err(_)) => popup(&app, "Usage: /mute [ID]"),
+
+                        parsed =>
+                        {
+                            let id = parsed.map(|parsed| parsed.unwrap_or_default());
+                            let muted = options::toggle_mute(id);
+
+                            say(&app, ChatMessage::ok(format!("Successfully {}muted{}.",
+                                if muted { "" } else { "un" },
+                                id.map(|id| format!(" ID {id}")).unwrap_or_default())));
+
+                            //THE PANEL AND THE MICROPHONE READING BOTH DRAW THIS, AND A SILENT CALL SENDS
+                            //NOTHING OF ITS OWN TO REDRAW THEM WITH
+                            {
+                                let mut users = state.voice_users.lock().unwrap();
+
+                                for user in users.iter_mut()
+                                {
+                                    let this = match id
+                                    {
+                                        Some(id) => !user.local && user.id == id,
+                                        None => user.local,
+                                    };
+
+                                    if this { user.muted = muted; }
+                                }
+                            }
+
+                            emit_voice(&app);
+                        },
+                    },
+
                     Command::UsernameColor => color_handler(&app, "username_color", parameters),
                     Command::MessageColor => color_handler(&app, "message_color", parameters),
 
@@ -1327,6 +1610,8 @@ pub fn run()
             leaving: AtomicBool::new(false),
             list_requested: AtomicBool::new(false),
             version_checked: AtomicBool::new(false),
+            voice_enabled: AtomicBool::new(false),
+            voice_users: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler!
         [
@@ -1336,7 +1621,10 @@ pub fn run()
             get_vocabulary,
             get_client_config,
             get_client_settings,
+            get_audio_devices,
             set_client_setting,
+            set_client_volume,
+            set_client_device,
             save_server_settings,
             restart_server,
             answer_tofu,
