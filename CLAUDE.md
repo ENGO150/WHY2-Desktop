@@ -4,17 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-WHY2 Desktop is a Tauri 2 desktop GUI for the WHY2 chat protocol. All protocol work (TCP framing, crypto,
-TOFU key pinning, commands, config) lives in the sibling `why2-chat` crate, pulled in as a **path dependency**:
+WHY2 Desktop is a Tauri 2 desktop GUI for the WHY2 chat protocol. All protocol work (async TCP framing,
+hybrid ECC+ML-KEM key exchange, TOFU key pinning, commands, roles, config) lives in the sibling `why2-chat`
+crate, pulled in as a **path dependency**:
 
 ```toml
 why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base"] }
 ```
 
 That resolves to `/mnt/data/Rust/WHY2` relative to `src-tauri/`. **The sibling checkout must be present or the
-Rust build fails.** When behavior looks wrong, the cause is often in that crate, not here — read
-`/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `command.rs`, `config/`, `options.rs`) before assuming a bug
-in this repo. This app is a thin presentation layer over it.
+Rust build fails.** When behaviour looks wrong, the cause is often in that crate, not here — read
+`/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
+assuming a bug in this repo. This app is a thin presentation layer over it.
+
+`chat/src/bin/client/` is the crate's own terminal client (ratatui). **It is the reference implementation for
+everything this app does** — `tui/event.rs` maps every `ClientEvent` to UI state, `mod.rs::submit` handles every
+line the user types, and `tui/state.rs::reset_session` lists the globals a session has to put back. When adding a
+feature here, read how the TUI does it first; the two are deliberately kept in step.
+
+Do not run cargo inside `/mnt/data/Rust/WHY2` — path dependencies build into *this* repo's `src-tauri/target`,
+and that is the only reason the sibling checkout stays clean.
 
 ## Commands
 
@@ -35,60 +44,118 @@ There is no test suite, no ESLint/Prettier, and no formatter config. Verificatio
 
 Three layers, and the boundary between them is deliberately narrow:
 
-1. **`why2-chat` crate** — owns the socket, the protocol, and persistent config/TOFU state.
-2. **`src-tauri/src/lib.rs`** (single file, ~600 lines) — the bridge. Holds `AppState { write_stream }`, exposes
-   five `#[tauri::command]`s, and translates `ClientEvent`s into UI events.
-3. **`src/App.tsx`** (single file, ~770 lines) — the entire UI. One component, no router, no state library.
+1. **`why2-chat` crate** — owns the socket, the protocol, and persistent config/TOFU state. Everything is
+   `async` on tokio, and the crate spawns its own tasks (uploads, downloads), so every call into it must be
+   made from inside the runtime.
+2. **`src-tauri/src/lib.rs`** (single file) — the bridge. Holds `AppState`, exposes five `#[tauri::command]`s,
+   and translates `ClientEvent`s into UI events.
+3. **`src/App.tsx`** (single file) — the entire UI. One component, no router, no state library.
 
 ### The event bridge (the thing to understand first)
 
-`connect_to_server` spawns two threads: one runs `client::listen_server` writing `ClientEvent`s into an
-`mpsc` channel, the other drains that channel and re-emits everything to the webview as a **single Tauri event
-named `why2-event` whose payload is a `String`**. There is no typed IPC event surface — the payload is a
-tag-prefixed string:
+`connect_to_server` spawns two tasks: `client::listen_server` writes `ClientEvent`s into a tokio `mpsc`
+channel, and `pump_events` drains it and re-emits to the webview as a **single Tauri event named
+`why2-event`**. The payload is `UiEvent`, adjacently tagged by serde, so the frontend sees
+`{ "event": "message", "data": { … } }` and switches on one field. `BridgeEvent` in `App.tsx` is the mirror of
+that enum — **adding an event means adding a variant on both sides**, and the TS union is what makes a missed
+case visible.
 
-- Bare tags: `Register`, `Login`, `Authenticated`, `Quit`, `UsernameRejected`, `TofuMismatch`
-- `Tag:value` — `Connected:<name>`, `PasswordRejected:<min>`, `RequestUsername:<bool>`,
-  `ChannelCreated:<ch>`, `ChannelDestroyed:<ch>`, `ChannelChanged:<ch>`, `Popup:<text>`
-- `Tag:<json>` — `Message:{...}`, `UserList:[...]`, `Modal:Files:[...]`, `TofuUnknown:<hash>:<ip>`
+Chat lines all arrive as one `message` event carrying a `ChatMessage` whose `kind` (`user`, `private`,
+`system`, `notice`, `ok`, `error`) is what the frontend styles on — joins, uploads and server notices are not a
+separate channel, they are messages nobody said. `/files`, `/list` and the ban list arrive as a `block` event
+(a flat `Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the
+TUI prints them; the frontend draws the `├─`/`╰─` glyphs from the depths.
 
-`App.tsx` decodes these in one long `if/else if` chain inside a single `useEffect`. **Adding a server-side
-feature means touching both ends of this string protocol**: emit the new prefix in `lib.rs`, parse it in that
-chain. Note the parsing is prefix-based and some values are rejoined with `:` (IPs, JSON) — keep that in mind
-when choosing a tag.
+### Sessions
+
+Two things make session lifetime subtle:
+
+- The crate keeps session state in **process-wide globals** (`options::`): sequence counters, login state,
+  the active channel, the shared keys. `reset_session()` in `lib.rs` mirrors the TUI's function of the same
+  name and must run on every connect and teardown — a second connection that kept the first one's sequence
+  numbers has every packet it sends refused.
+- `AppState::session` is a counter bumped on every connect. An old `pump_events` can outlive its socket (a
+  half-finished upload still holds a `Sender`), so it checks the counter and goes quiet rather than letting
+  its last events — or its cleanup — land on the connection that replaced it.
+
+### The UI is the TUI
+
+The window is laid out the way `tui/draw.rs` lays out the terminal, and the two are meant to stay recognisable
+as the same client: rounded boxes with their name sitting in the top border and their status in the bottom one,
+a message pane titled `WHY2 ── <server> ── <address>`, an `Online`/`Channels` sidebar that only exists once
+there is somebody to list, a `> ` input whose bottom border carries `#channel │ username`, a `Commands` palette
+on the bottom edge of the pane, and the logo as a watermark behind it all. Chat is `username: text`, not
+bubbles.
+
+`Panel` in `App.tsx` is the one component that draws a box. **It must never clip**: the title and the status
+row are absolutely positioned *outside* its border box, so `overflow-hidden` on a `Panel` erases them. The
+scroll container inside it does the clipping instead (`min-h-0 flex-1 overflow-auto`).
+
+The colors are `tui/theme.rs`, kept as they are there — sky blue titles, pale pink notices, salmon for what
+went right, hot magenta for what went wrong — over the desktop's own near-black surfaces. `index.css` holds
+the whole palette; both files must stay in step.
+
+`get_client_config` hands over the three `client.toml` keys that change how the pane looks (`show_id`,
+`disable_colors`, `disable_logo`), which the TUI re-reads on every redraw.
 
 ### The command path
 
-Everything the user does flows through `send_input(input: String)` — free text is sent as a message, and
-anything starting with `COMMAND_PREFIX` (`/`) goes to `command::get_command`. `send_command_code` handles most
-commands generically inside `why2-chat`; `lib.rs` only special-cases `Exit`, `Upload`, `UsernameColor`,
-`MessageColor`, and blocks `Help`/`Info` (they are terminal-oriented and also filtered out of `get_commands`).
-Unhandled commands emit a "not fully supported in desktop UI yet" popup.
+Everything the user types goes through `send_input`, which mirrors `submit` in the TUI:
 
-The UI deliberately drives itself through this same path rather than adding new IPC commands: clicking a channel
-invokes `send_input("/channel <name>")`, the disconnect button sends `/exit`, the files modal sends
-`/download <user_id> <file_id>`. Prefer extending the command path over adding a `#[tauri::command]`.
+- Before authentication, `options::get_sending_messages()` is false and **every line is an answer to the
+  identity step the server is waiting on** — `options::get_login_state()` decides whether it becomes a
+  `Username`, `PasswordL` or `PasswordR` packet. Commands do not exist yet.
+- After it, a line starting with `/` goes to `command::get_command`, then `command::send_command_code`, which
+  returns `Some(true)` (sent), `Some(false)` (invalid usage) or `None` (ours to run: `/upload`, `/server`,
+  `/ucolor`, `/color`).
 
-The slash-command autocomplete in the chat box is populated by `get_commands`, which reflects
-`why2_chat::command::COMMAND_LIST` — commands appear in the UI automatically when added to the crate.
+The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
+`send_input("/channel <name>")`, the status row's `exit` sends `/exit` and its `files` sends `/files`, and
+clicking a file row sends `/download <user_id> <file_id>`. Prefer extending the command path over adding a
+`#[tauri::command]`.
+
+`get_commands` reflects `command::COMMAND_LIST` filtered by the role the server granted us
+(`CommandInfo::available`), so the palette follows a promotion without a reconnect — the frontend re-invokes it
+whenever a `role` event names no user (that one is ours). Hiding a command is cosmetic; the server checks every
+privileged packet itself.
+
+### TOFU
+
+The identity check is answered **in-band**. The handshake parks on a `oneshot`, which arrives as
+`ClientEvent::TofuPrompt`; the bridge stashes the sender in `AppState::tofu_reply` and `answer_tofu` sends the
+verdict. On accept the crate pins the key and reconnects *itself* — the frontend must not dial again. A
+mismatch has to be typed out (`yes`) rather than clicked, as in the TUI. The prompt can also appear mid-session,
+because the periodic rekey runs the same check, which is why the overlay renders on both screens.
 
 ### Channels and message routing
 
-Messages carry no channel field. `App.tsx` keeps `messagesByChannel: Record<string, ChatMessage[]>` and files
-each incoming `Message:` into **whatever channel is current at the time it arrives**, read via
-`currentChannelRef` (a ref, not state — the listener closure is registered once with `[]` deps and would
-otherwise capture a stale channel). The lobby is the empty string `""`. `ClientEvent::Clear(1)` from the crate
-is what signals a channel switch; it becomes `ChannelChanged`. `UserList` doubles as channel discovery and prunes
-history for channels that no longer exist.
+Messages carry no channel field. `App.tsx` keeps `paneByChannel` and files each incoming entry into
+**whatever channel is current at the time it arrives**, read via `currentChannelRef` (a ref, not state — the
+listener is registered once with `[]` deps and would otherwise capture a stale channel). The lobby is the empty
+string. The roster (`users` event) is authoritative for which channels exist — one lives exactly as long as
+somebody sits in it — and history for a channel nobody is in any more is dropped.
+
+Unlike the TUI, which clears the pane on every switch, this app keeps per-channel history locally. The server
+only ever replays the lobby, once, at login (`history`).
+
+### Roster refreshes
+
+The server counts *packets*, not messages, against `min_message_delay`, and it broadcasts our own `Join` right
+behind `Accept` — so the two events that both want a roster used to put two `List` packets on the wire a
+millisecond apart and earn a spam warning. `refresh_online` coalesces them the way the TUI's `refresh_online`
+flag does, then waits until our own last packet is `ROSTER_GAP` behind it. Never send a `List` (or anything
+else unprompted) straight out of an event handler — go through `refresh_online`, and route anything you do send
+through `send_packet` so the clock it reads stays honest.
 
 ### Colors
 
-The protocol speaks 16 ANSI color codes. `to_color` in `lib.rs` parses names/numbers → code and canonical name
-(persisted to config); `getAnsiColor` in `App.tsx` maps code → hex for rendering. Both tables must stay in sync.
+The protocol carries 16 ANSI color codes. `to_color` in `lib.rs` parses names/numbers → code plus canonical
+name (persisted to `client.toml`); the `ANSI` table in `App.tsx` maps code → hex. Both must stay in sync, and
+`disable_colors` turns the message colors off without touching the theme.
 
 ### Adding a Tauri plugin
 
-Three places, all required: `src-tauri/Cargo.toml`, the `.plugin(...)` chain in `run()`, and the `permissions`
+Three places, all required: `src-tauri/Cargo.toml`, the `.plugin(…)` chain in `run()`, and the `permissions`
 array in `src-tauri/capabilities/default.json`. Missing the capability entry fails only at runtime.
 
 ## Conventions
@@ -97,9 +164,13 @@ array in `src-tauri/capabilities/default.json`. Missing the capability entry fai
   Václav Šmejkal. Copy it into any new file.
 - Rust uses **Allman braces** — opening brace on its own line, including for `match` arms, closures, `if`, and
   struct literals. This is not rustfmt default; do not run `cargo fmt`, it will reformat the whole codebase.
-  TS/TSX follows the same brace style with 4-space indent.
-- Comments in Rust are `//ALL CAPS`, no space after the slashes, usually trailing on the item they describe.
-- Styling is Tailwind v4 (`@import "tailwindcss"` in `src/index.css`, configured via CSS `@theme`/custom
-  properties in an `@theme inline` block — there is no `tailwind.config.js`). Use the semantic tokens
-  (`bg-card`, `text-muted-foreground`, `border-border`), not raw colors. The app is hardcoded dark via a
-  `dark` class on the root `<main>`. `src/App.css` is leftover scaffolding — nothing imports it.
+  TS/TSX and CSS follow the same brace style with 4-space indent.
+- Comments in Rust are `//ALL CAPS`, no space after the slashes. The upstream crate writes them as short
+  explanations of *why*, often several lines above a block; match that rather than narrating the code.
+- Styling is Tailwind v4 (`@import "tailwindcss"` in `src/index.css`, configured with CSS custom properties in
+  an `@theme inline` block — there is no `tailwind.config.js`). Use the semantic tokens (`text-title`,
+  `text-accent`, `text-notice`, `text-ok`, `text-error`, `text-muted-foreground`, `border-border`,
+  `border-border-active`, `bg-selected`), never raw colors — they are the terminal client's palette, and are
+  the reason the two read as one program. The app is dark only; there is no light theme to switch to.
+- The whole UI is monospace on purpose. Anything measured in characters (`w-[26ch]`, the padded ID columns,
+  the branch glyphs) depends on it.
