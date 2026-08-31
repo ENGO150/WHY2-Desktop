@@ -667,8 +667,11 @@ async fn handle_event(app: &AppHandle, event: ClientEvent)
             emit(app, UiEvent::TofuPrompt { host, hash, pinned, mismatch });
         },
 
-        //REFUSING THE CHECK JUST ENDS THE SESSION - THE PROMPT ALREADY SAID WHY
-        ClientEvent::TofuError => emit(app, UiEvent::Disconnected { reason: None }),
+        //REFUSING THE CHECK JUST ENDS THE SESSION
+        ClientEvent::TofuError =>
+        {
+            emit(app, UiEvent::Disconnected { reason: Some(String::from("Server identity rejected.")) });
+        },
 
         //THE SERVER WENT AWAY BETWEEN THE TWO CONNECTIONS - THE KEY IS PINNED NOW, THE SOCKET IS NOT
         ClientEvent::ReconnectFailed =>
@@ -726,7 +729,8 @@ async fn handle_event(app: &AppHandle, event: ClientEvent)
         },
 
         //THE SOCKET IS GONE, BUT THE APP IS NOT: THE CONNECT BOX COMES BACK SO ANOTHER SERVER (OR THE
-        //SAME ONE AGAIN) IS ONE ENTER AWAY. ONLY A DISCONNECT THE USER ASKED FOR ARRIVES WITHOUT A REASON
+        //SAME ONE AGAIN) IS ONE ENTER AWAY. A DISCONNECT THE USER ASKED FOR ARRIVES WITHOUT A REASON,
+        //SO THE BOX COMES BACK WITHOUT AN ERROR OVER IT
         ClientEvent::Quit =>
         {
             emit(app, UiEvent::Disconnected

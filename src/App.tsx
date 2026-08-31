@@ -255,9 +255,9 @@ function App()
 
     //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO THE ROSTER IS THE WHOLE TRUTH ABOUT
     //WHICH ONES THERE ARE - AND HISTORY OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
-    const syncChannels = (roster: OnlineUser[]) =>
+    useEffect(() =>
     {
-        const channels = new Set(roster.map((user) => user.channel ?? LOBBY));
+        const channels = new Set(users.map((user) => user.channel ?? LOBBY));
         channels.add(LOBBY);
 
         setActiveChannels(Array.from(channels));
@@ -278,7 +278,7 @@ function App()
 
             return changed ? next : previous;
         });
-    };
+    }, [users]);
 
     const refreshCommands = () =>
     {
@@ -413,7 +413,6 @@ function App()
                     const { users, requested } = payload.data;
 
                     setUsers(users);
-                    syncChannels(users);
 
                     if (requested) setModal({ type: "users", users });
                     break;
@@ -421,13 +420,7 @@ function App()
 
                 case "user_left":
                 {
-                    setUsers((previous) =>
-                    {
-                        const next = previous.filter((user) => user.id !== payload.data.id);
-                        syncChannels(next);
-
-                        return next;
-                    });
+                    setUsers((previous) => previous.filter((user) => user.id !== payload.data.id));
                     break;
                 }
 
@@ -487,7 +480,7 @@ function App()
                 //(OR THE SAME ONE AGAIN) IS ONE ENTER AWAY
                 case "disconnected":
                 {
-                    resetSession(payload.data.reason ?? "Disconnected from the server.");
+                    resetSession(payload.data.reason ?? "");
                     break;
                 }
             }
@@ -539,12 +532,12 @@ function App()
 
         invoke("answer_tofu", { accept }).catch((error: unknown) => setErrorMsg(String(error)));
 
+        //REJECTING ENDS THE SESSION, AND THE DISCONNECT THAT FOLLOWS CARRIES THE REASON ITSELF
         if (accept)
         {
             setConnecting(true);
             setErrorMsg("");
         }
-        else setErrorMsg("Connection aborted.");
     };
 
     const uploadFile = async () =>
