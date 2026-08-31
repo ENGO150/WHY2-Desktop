@@ -16,116 +16,200 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* THE FONT COMES FIRST - @import ONLY COUNTS BEFORE ANY RULE, AND THE TAILWIND IMPORT EXPANDS INTO RULES */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+/* THE FONTS COME FIRST - @import ONLY COUNTS BEFORE ANY RULE, AND THE TAILWIND IMPORT EXPANDS INTO RULES.
+   THE INTERFACE IS PROPORTIONAL NOW; THE MONOSPACE IS KEPT FOR WHAT IS ACTUALLY MEASURED IN CHARACTERS -
+   FINGERPRINTS, THE LIST BLOCKS AND THEIR BRANCH GLYPHS, THE LOGO */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
-/* THE TERMINAL CLIENT'S OWN PALETTE, KEPT AS IT IS THERE - THE SURFACES UNDER IT ARE THE DESKTOP'S,
-   SO THE BOXES READ AS BOXES INSTEAD OF AS A TERMINAL PAINTED ONTO A WINDOW */
+/* THE SURFACES ARE A DARK STACK - RAIL, SIDEBAR, CHAT, RAISED, OVERLAY - AND EVERY ONE OF THEM CARRIES
+   THE SAME ROSE TINT, SO THE WINDOW STILL READS AS WHY2 AND NOT AS A GREY CHAT APP. THE FOREGROUND AND
+   THE ACCENTS ARE THE TERMINAL CLIENT'S OWN PALETTE, WHICH IS WHERE THE PROTOCOL'S COLORS COME FROM */
 :root
 {
-    --background: oklch(0.03 0 0);
-    --foreground: #eed1d6;            /* WARM OFF-WHITE - THE BASE FOREGROUND */
-    --muted-foreground: #a89296;      /* MUTED ROSE GREY - EVERY DIM LABEL AND ID COLUMN */
+    --deep: #100d10;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
+    --sidebar: #191418;          /* THE CHANNEL AND MEMBER COLUMNS */
+    --chat: #201a1e;             /* WHERE THE MESSAGES ARE */
+    --raised: #2a2327;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
+    --overlay: #2f272c;          /* DIALOGS */
 
-    --border: #362e30;                /* THE IDLE BOX OUTLINE */
-    --border-active: #9dceff;         /* SKY BLUE - THE BOX BEING TYPED INTO */
+    --hover: #ffffff0d;
+    --selected: #ffffff14;
+    --active: #ffffff1f;
 
-    --title: #9dceff;                 /* A BOX'S NAME IN ITS OWN TOP BORDER */
-    --accent: #9dceff;
-    --notice: #ffdde2;                /* PALE PINK */
-    --ok: #ffbbba;                    /* SALMON */
-    --error: #f646c6;                 /* HOT MAGENTA */
+    --border: #342c30;
+    --border-strong: #473c41;
 
-    --logo: #5c464b;                  /* DEEP ROSE - THE WATERMARK BEHIND EVERYTHING */
-    --selected: #005f5f;              /* THE ROW UNDER THE CURSOR */
+    --text: #ece0e3;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
+    --muted: #b09ba0;            /* EVERY DIM LABEL */
+    --faint: #7c6a6f;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
 
-    --arg-required: #d7af87;          /* SOFT SAND */
-    --arg-optional: #ffb4ab;          /* FADED CORAL */
+    --accent: #9dceff;           /* SKY BLUE - LINKS, THE ACTIVE THING, THE CARET */
+    --brand: #f646c6;            /* HOT MAGENTA - WHY2 ITSELF */
+    --notice: #ffdde2;           /* PALE PINK */
+    --ok: #ffbbba;               /* SALMON */
+    --error: #ff5f7e;
+    --online: #3fd08a;           /* PRESENCE, AND A CALL THAT IS UP */
+    --warning: #ffcf6b;
 
-    --radius: 0.5rem;
+    --logo: #4a373c;             /* THE WATERMARK BEHIND AN EMPTY PANE */
+
+    --arg-required: #d7af87;     /* SOFT SAND */
+    --arg-optional: #ffb4ab;     /* FADED CORAL */
+
+    --radius: 8px;
 }
 
 @theme inline
 {
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-    --color-background: var(--background);
-    --color-foreground: var(--foreground);
-    --color-muted-foreground: var(--muted-foreground);
+    --color-deep: var(--deep);
+    --color-sidebar: var(--sidebar);
+    --color-chat: var(--chat);
+    --color-raised: var(--raised);
+    --color-overlay: var(--overlay);
+
+    --color-hover: var(--hover);
+    --color-selected: var(--selected);
+    --color-active: var(--active);
 
     --color-border: var(--border);
-    --color-border-active: var(--border-active);
+    --color-border-strong: var(--border-strong);
 
-    --color-title: var(--title);
+    --color-text: var(--text);
+    --color-muted: var(--muted);
+    --color-faint: var(--faint);
+
     --color-accent: var(--accent);
+    --color-brand: var(--brand);
     --color-notice: var(--notice);
     --color-ok: var(--ok);
     --color-error: var(--error);
+    --color-online: var(--online);
+    --color-warning: var(--warning);
 
     --color-logo: var(--logo);
-    --color-selected: var(--selected);
 
     --color-arg-required: var(--arg-required);
     --color-arg-optional: var(--arg-optional);
 
-    --radius-md: calc(var(--radius) - 2px);
+    --radius-app: var(--radius);
 }
 
 @layer base
 {
     body
     {
-        @apply bg-background text-foreground;
+        @apply bg-deep text-text;
 
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-variant-ligatures: none;
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-synthesis-weight: none;
+        text-rendering: optimizeLegibility;
+        overflow: hidden;
     }
 
-    /* A BOX IS DRAWN, NOT TYPED - NOTHING INSIDE ONE MAY BE DRAGGED OUT OF LINE */
     button
     {
         cursor: pointer;
     }
+
+    /* NOTHING IN A CHAT WINDOW IS A DOCUMENT TO SELECT BY ACCIDENT - THE MESSAGE TEXT OPTS BACK IN */
+    ::selection
+    {
+        background: color-mix(in oklab, var(--accent) 35%, transparent);
+    }
 }
 
-/* WHAT SCROLLS INSIDE A PANEL. THE BAND AT THE TOP AND THE BOTTOM IS WHERE THE PANEL'S TITLE AND ITS
-   STATUS ROW SIT, AND NOTHING SCROLLING PAST MAY BE PAINTED THERE - SO IT IS A BORDER AND NOT PADDING.
-   overflow CLIPS AT THE PADDING BOX: A LINE SCROLLED PAST IS STILL DRAWN ACROSS PADDING, AND WOULD GO
-   STRAIGHT THROUGH THE TITLE, BUT NOTHING IS EVER DRAWN IN A BORDER. THIS IS THE INNER AREA THE TUI GETS
-   FROM Block::inner - THE ROWS SIMPLY CANNOT REACH THE BORDER CELLS THERE EITHER.
-   IT ALSO HOLDS THE SCROLLBAR IN, WHICH IS WHY IT RUNS THE HEIGHT OF THE ROWS AND NOT OF THE BOX. */
-.panel-scroll
+/* THE SCROLLBAR IS ONLY THERE WHILE SOMETHING IS OFF-SCREEN, AND IT NEVER CLAIMS A COLUMN OF ITS OWN */
+.scroller
 {
-    overflow: auto;
-    border-block: 0.5rem solid transparent;
-}
-
-/* THE SCROLLBAR REPLACES BORDER CELLS IN THE TUI RATHER THAN CLAIMING A COLUMN OF ITS OWN, AND IT IS
-   ONLY THERE WHILE SOMETHING IS OFF-SCREEN - A VISIBLE BAR ALWAYS MEANS "THERE IS MORE" */
-.custom-scrollbar
-{
+    overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--accent) transparent;
+    scrollbar-color: var(--border-strong) transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar
+.scroller::-webkit-scrollbar
 {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track
+.scroller::-webkit-scrollbar-track
 {
     background: transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb
+.scroller::-webkit-scrollbar-thumb
 {
-    background: var(--accent);
-    border-radius: 3px;
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+
+/* A COLUMN THAT ONLY SHOWS ITS SCROLLBAR WHILE THE POINTER IS IN IT, THE WAY THE SIDEBARS DO */
+.scroller-quiet
+{
+    scrollbar-color: transparent transparent;
+}
+
+.scroller-quiet:hover
+{
+    scrollbar-color: var(--border-strong) transparent;
+}
+
+.scroller-quiet::-webkit-scrollbar-thumb
+{
+    background: transparent;
+}
+
+.scroller-quiet:hover::-webkit-scrollbar-thumb
+{
+    background: var(--border-strong);
+}
+
+/* SOMEBODY IS TALKING - THE RING AROUND THEIR AVATAR IS THE ONE THING IN THE WINDOW THAT MOVES */
+.speaking
+{
+    box-shadow: 0 0 0 2px var(--online);
+    transition: box-shadow 90ms ease-out;
+}
+
+/* THE VOLUME SLIDERS. A NATIVE RANGE IS THE RIGHT CONTROL HERE; IT JUST HAS TO STOP LOOKING NATIVE */
+.slider
+{
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    outline: none;
+}
+
+.slider::-webkit-slider-thumb
+{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px #0009;
+}
+
+.slider::-moz-range-thumb
+{
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px #0009;
 }
 
 /* GRAIN OVER THE WHOLE WINDOW - THE ONE THING A TERMINAL COULD NOT HAVE DONE */
@@ -136,8 +220,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     inset: 0;
     z-index: 9999;
     pointer-events: none;
-    opacity: 0.018;
+    opacity: 0.016;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
     background-repeat: repeat;
     background-size: 256px 256px;
+}
+
+@keyframes rise
+{
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.rise
+{
+    animation: rise 120ms ease-out;
 }

@@ -22,7 +22,9 @@ assuming a bug in this repo. This app is a thin presentation layer over it.
 `chat/src/bin/client/` is the crate's own terminal client (ratatui). **It is the reference implementation for
 everything this app does** — `tui/event.rs` maps every `ClientEvent` to UI state, `mod.rs::submit` handles every
 line the user types, and `tui/state.rs::reset_session` lists the globals a session has to put back. When adding a
-feature here, read how the TUI does it first; the two are deliberately kept in step.
+feature here, read how the TUI does it first: the two are deliberately kept in step about *behaviour* —
+what a line does, what an event means, what a session has to reset. They no longer look alike, and are not
+meant to (see **The window**).
 
 Do not run cargo inside `/mnt/data/Rust/WHY2` — path dependencies build into *this* repo's `src-tauri/target`,
 and that is the only reason the sibling checkout stays clean.
@@ -66,7 +68,8 @@ Chat lines all arrive as one `message` event carrying a `ChatMessage` whose `kin
 `system`, `notice`, `ok`, `error`) is what the frontend styles on — joins, uploads and server notices are not a
 separate channel, they are messages nobody said. `/files`, `/list` and the ban list arrive as a `block` event
 (a flat `Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the
-TUI prints them; the frontend draws the `├─`/`╰─` glyphs from the depths.
+TUI prints them — the frontend draws them as a card in the stream, keeping the `├─`/`╰─` glyphs it builds from
+the depths, since what they are is a tree.
 
 ### Sessions
 
@@ -80,32 +83,48 @@ Two things make session lifetime subtle:
   half-finished upload still holds a `Sender`), so it checks the counter and goes quiet rather than letting
   its last events — or its cleanup — land on the connection that replaced it.
 
-### The UI is the TUI
+### The window
 
-The window is laid out the way `tui/draw.rs` lays out the terminal, and the two are meant to stay recognisable
-as the same client: rounded boxes with their name sitting in the top border and their status in the bottom one,
-a message pane titled `WHY2 ── <server> ── <address>`, an `Online`/`Channels`/`Voice` sidebar whose panels
-each only exist once there is somebody to list in them, a `> ` input whose bottom border carries
-`#channel │ username` and whose `↑`/`↓` walk what was typed before, a `Commands` palette
-on the bottom edge of the pane, and the logo as a watermark behind it all. Chat is `username: text`, not
-bubbles.
+The app used to be the terminal client redrawn cell for cell. It is not any more: the layout is the one every
+chat program has settled on, because that is the one a user already knows how to read.
 
-`Panel` in `App.tsx` is the one component that draws a box. **It must never clip**: the title and the status
-row are absolutely positioned *outside* its border box, so `overflow-hidden` on a `Panel` erases them. The
-scroll container inside it does the clipping instead (`min-h-0 flex-1 overflow-auto`).
+Three columns, and a screen in front of them while there is no session:
 
-Those three are border cells, and they behave like it: each reaches half a line *into* the box, so nothing
-inside may be drawn in that band. Anything that scrolls inside a `Panel` therefore carries `.panel-scroll`
-(`index.css`), whose air is a **transparent border and not padding** — `overflow` clips at the padding box, so
-a line scrolled past is still painted across padding and would go straight through the title, while nothing is
-ever painted in a border. That class is the equivalent of the TUI's `Block::inner`, and it is the fix for
-"the title covers the first row"; reaching for `py-*` on the scroll container instead brings the bug back.
-The three are also opaque and `z-30`, because an absolutely positioned element paints above in-flow content
-whatever the source order says, and a border cell has to be the one on top.
+- **Left** — the server (name over the address as it was typed) and a gear, the channel list, then the call:
+  the voice roster while there is one, the `Voice connected` strip with the button that hangs up, and at the
+  bottom the person using the program — face, name, role, microphone, and the way out.
+- **Middle** — the channel header (`#name`, how many are online, and the buttons for upload, files, voice and
+  the member column), the messages, and the composer. The command palette floats on the composer.
+- **Right** — everybody on the server, with the channel each of them is sitting in. It is toggled by the
+  header's own button, and is the first thing a narrow window drops (`lg:` on the column).
 
-The colors are `tui/theme.rs`, kept as they are there — sky blue titles, pale pink notices, salmon for what
-went right, hot magenta for what went wrong — over the desktop's own near-black surfaces. `index.css` holds
-the whole palette; both files must stay in step.
+Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
+first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
+run** — a system line, a notice, a `/files` card. A line nobody said keeps the avatar column but puts an icon
+in it, so the text of the whole pane stays under one edge. Private messages take an accent rule down their
+left side and a `private` badge. There are no avatars in this protocol, so a face is the first letter of the
+name over the color the user picked — or, where they picked none, the one `avatarColor` always hashes it to.
+
+`↑`/`↓` still walk what was typed before, the palette still answers `/`, and every button still goes through
+`send_input`. What changed is what it looks like, not what it does.
+
+Two things the layout depends on:
+
+- **A column that scrolls must be `min-h-0`.** A flex child's default `min-height: auto` refuses to shrink
+  below its content, and a scroll container inside one silently grows the page instead of scrolling.
+- **The composer and the header do not scroll** (`shrink-0`), and the pane between them is the only thing
+  that does. The palette is absolutely positioned against the composer's wrapper (`bottom-full`), so it grows
+  upwards off a fixed edge rather than pushing the input around.
+
+The colors are still `tui/theme.rs` where they mean something — sky blue for the active thing, pale pink
+notices, salmon for what went right — but the surfaces are a dark stack of their own (`deep` → `sidebar` →
+`chat` → `raised` → `overlay`), and every one of them carries the same rose tint so the window still reads as
+WHY2. `index.css` holds the whole palette as CSS custom properties, mapped to Tailwind tokens in one
+`@theme inline` block.
+
+The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
+characters**: the fingerprints, the list-block rows and their branch glyphs, the logo, the palette's command
+signatures, IDs and latencies.
 
 `get_client_config` hands over the three `client.toml` keys that change how the pane looks (`show_id`,
 `disable_colors`, `disable_logo`), which the TUI re-reads on every redraw.
@@ -122,9 +141,9 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   `/ucolor`, `/color`, `/mute`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
-`send_input("/channel <name>")`, the status row's `exit` sends `/exit`, its `files` sends `/files`, its
-`voice` sends `/voice` and its microphone reading sends `/mute`, clicking a file row sends
-`/download <user_id> <file_id>`, and clicking a row of the `Voice` panel sends `/mute <id>` — or `/mute` on
+`send_input("/channel <name>")`, the sidebar's gear sends `/settings` and its door `/exit`, the header's
+folder sends `/files` and its headset `/voice`, the microphone button sends `/mute`, clicking a file row sends
+`/download <user_id> <file_id>`, and clicking a row of the voice roster sends `/mute <id>` — or `/mute` on
 our own row, the one the command takes no ID for. Prefer extending the command path over adding a
 `#[tauri::command]`.
 
@@ -150,11 +169,13 @@ from Tauri's own `available_monitors()` rather than the crate, so the helper wor
 
 ### Settings
 
-`/settings` and `/server settings` open the same box, which is `tui/settings.rs` in a window: section
-headings with a rule out to the edge, `● on`/`○ off`, `●` on an edited row and `↻` on one the server will not
-pick up until it restarts, and the selected key's own comment under a rule in the foot. It owns the keyboard
-while it is up — the focus moves into it, so nothing typed reaches the input line behind it — and the
-selection skips headings the way the TUI's does.
+`/settings` and `/server settings` open the same dialog, which is `tui/settings.rs` with real controls in it:
+section headings with a rule out to the edge, a switch for a toggle, a slider for a volume, a button that
+opens a list for a device, `edited`/`restart` badges on the rows that earned them, and the server's own
+comment on a key printed under it rather than in a foot. The `Save` and `Restart server` rows are still rows
+as far as the keyboard is concerned — they are simply drawn as buttons in the footer, index and all. It owns
+the keyboard while it is up — the focus moves into it, so nothing typed reaches the composer behind it — and
+the selection skips headings the way the TUI's does.
 
 The two halves are not symmetrical, and that is the whole shape of it. **`client.toml` is ours**: a row is
 written through the moment it is flipped (`set_client_setting`, which hands back the config so the pane
@@ -173,14 +194,14 @@ The `Audio` rows above them are the third kind. A **volume** carries the range i
 number to copy into the window; `set_client_volume` clamps, writes and live-updates the running streams, and
 hands back what it *stored*, so a row that asked for too much snaps down instead of drawing a bar past its own
 end. A **device** row holds the `cpal` id `client.toml` holds — the label is looked up for display out of the
-list `get_audio_devices` enumerated when the box opened, ⏎ opens that list as a picker and ←→ cycles it
-without one, and `set_client_device` marks the generation so a running call rebuilds its streams instead of
+list `get_audio_devices` enumerated when the dialog opened, ⏎ (or a click on the row's button) opens that
+list as a picker and ←→ cycles it without one, and `set_client_device` marks the generation so a running call rebuilds its streams instead of
 being dropped. A device that is configured but currently unplugged still gets a row, and the empty id is
 "whatever the system picks".
 
-`ClientEvent::VoiceDeviceFailed` is the one thing that moves `client.toml` under the box: the voice client
+`ClientEvent::VoiceDeviceFailed` is the one thing that moves `client.toml` under the dialog: the voice client
 points the key back at the device that is actually playing. It arrives as a `client_settings` event carrying
-our rows again, which the box adopts if it is showing ours — the TUI calls that `refresh_devices`.
+our rows again, which the dialog adopts if it is showing ours — the TUI calls that `refresh_devices`.
 
 Side effects belong outside the state updaters: React runs them twice under `StrictMode`, and an updater that
 writes `client.toml` or puts a packet on the wire would do it twice.
@@ -197,12 +218,13 @@ whether there is a call, whether the microphone is live, and who is in it. The t
 panel drawn from half of them lies about the rest, so everything that touches any part goes through
 `emit_voice` — `VoiceActivity` arriving, the server letting us in or putting us out, a mute toggled, a volume
 slid. `mic` is `!is_muted(None) && input_volume > 0`, because the capture callback treats 0% as off and the
-status row had better agree.
+microphone button had better agree.
 
 `VoiceActivity` fires per voice packet, which means it stops entirely in a silent call — so the roster is
 kept in `AppState::voice_users` and sent again after a mute, rather than waiting for somebody to speak. The
-`muted` flag on a row is ours and not the server's, and the panel only exists while the call does and
-somebody is in it (`voice_visible` in the TUI).
+`muted` flag on a row is ours and not the server's, and the roster only exists while the call does and
+somebody is in it (`voice_visible` in the TUI) — the `Voice connected` strip stands on `enabled` alone, so a
+call nobody else has joined yet still says so.
 
 `reset_session` clears `voice_options::set_use_voice(false)`: the voice client follows that flag, so a lost
 session takes its streams with it.
@@ -254,6 +276,11 @@ The protocol carries 16 ANSI color codes. `to_color` in `lib.rs` parses names/nu
 name (persisted to `client.toml`); the `ANSI` table in `App.tsx` maps code → hex. Both must stay in sync, and
 `disable_colors` turns the message colors off without touching the theme.
 
+There are **two** tables: `ANSI` is the lifted set the names and the message text are painted in — these sit
+on a near-black surface rather than in a terminal, and `black` on black is not a name anybody could read —
+while `ANSI_TRUE` is the unmodified set, used for the swatch in the color palette, where the point is to show
+which color is actually being picked.
+
 ### Adding a Tauri plugin
 
 Three places, all required: `src-tauri/Cargo.toml`, the `.plugin(…)` chain in `run()`, and the `permissions`
@@ -269,9 +296,13 @@ array in `src-tauri/capabilities/default.json`. Missing the capability entry fai
 - Comments in Rust are `//ALL CAPS`, no space after the slashes. The upstream crate writes them as short
   explanations of *why*, often several lines above a block; match that rather than narrating the code.
 - Styling is Tailwind v4 (`@import "tailwindcss"` in `src/index.css`, configured with CSS custom properties in
-  an `@theme inline` block — there is no `tailwind.config.js`). Use the semantic tokens (`text-title`,
-  `text-accent`, `text-notice`, `text-ok`, `text-error`, `text-muted-foreground`, `border-border`,
-  `border-border-active`, `bg-selected`), never raw colors — they are the terminal client's palette, and are
-  the reason the two read as one program. The app is dark only; there is no light theme to switch to.
-- The whole UI is monospace on purpose. Anything measured in characters (`w-[26ch]`, the padded ID columns,
-  the branch glyphs) depends on it.
+  an `@theme inline` block — there is no `tailwind.config.js`). Use the semantic tokens — surfaces
+  (`bg-deep`, `bg-sidebar`, `bg-chat`, `bg-raised`, `bg-overlay`, `bg-hover`, `bg-selected`, `bg-active`),
+  text (`text-text`, `text-muted`, `text-faint`), meaning (`text-accent`, `text-brand`, `text-notice`,
+  `text-ok`, `text-error`, `text-online`, `text-warning`), and `border-border` / `border-border-strong` —
+  never raw colors. The app is dark only; there is no light theme to switch to.
+- Icons are `Icon`/`IconButton` in `App.tsx`: one component over a table of 24×24 stroked paths. An icon set
+  is not worth a dependency. Every `IconButton` carries a `label`, which is its tooltip and its accessible
+  name both.
+- Add `font-mono` deliberately, to the things that are measured in characters — the branch glyphs, the padded
+  ID columns, fingerprints, command signatures. Everything else is the proportional face.

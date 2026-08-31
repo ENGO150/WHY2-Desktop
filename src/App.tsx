@@ -28,7 +28,7 @@ const LOBBY = "";
 //WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS, SO IT CANNOT HAPPEN BY LEANING ON ENTER
 const CHALLENGE = "yes";
 
-//THE PROJECT LOGO, PAINTED IN THE MIDDLE OF THE MESSAGE PANE AS A WATERMARK
+//THE PROJECT LOGO, PAINTED BEHIND AN EMPTY PANE AND OVER THE CONNECT SCREEN
 const LOGO = `                ▄█
   ▄▄▄▄        ▄███  ▄▄██
   ████▀███▀▀▀▀▀███▄██▀██
@@ -68,8 +68,8 @@ interface BlockRow
     download: [number, number] | null;
 }
 
-//ONE THING IN THE PANE. THE TUI PRINTS ITS LISTS INTO THE SAME SCROLLBACK THE MESSAGES LIVE IN, SO A
-///files IS AN ENTRY IN THE HISTORY RATHER THAN A WINDOW THAT COVERS IT
+//ONE THING IN THE PANE. A LIST (/files, /list, THE BAN LIST) IS AN ENTRY IN THE SCROLLBACK RATHER THAN A
+//WINDOW THAT COVERS IT - IT IS AN ANSWER TO SOMETHING THAT WAS ASKED, AND IT BELONGS WHERE IT WAS ASKED
 type PaneEntry =
     | { entry: "message"; message: ChatMessage }
     | { entry: "block"; title: string; rows: BlockRow[] };
@@ -109,14 +109,14 @@ interface CommandInfo
     subcommands: SubcommandInfo[];
 }
 
-//WHAT ONE OF OUR OWN KEYS HOLDS. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE BAR IS
+//WHAT ONE OF OUR OWN KEYS HOLDS. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE SLIDER IS
 //DRAWN AGAINST THE VOICE CLIENT'S OWN CEILING RATHER THAN A NUMBER COPIED OVER HERE
 type ClientValueInfo =
     | { kind: "toggle"; value: boolean }
     | { kind: "volume"; value: { percent: number; max: number; step: number } }
     | { kind: "device"; value: { id: string; input: boolean } }; //EMPTY ID = WHATEVER THE SYSTEM PICKS
 
-//ONE ROW OF client.toml THE SETTINGS BOX OFFERS. EVERY ONE OF THEM IS WRITTEN THROUGH THE MOMENT IT IS
+//ONE ROW OF client.toml THE SETTINGS DIALOG OFFERS. EVERY ONE OF THEM IS WRITTEN THROUGH THE MOMENT IT IS
 //TOUCHED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
 interface ClientSetting
 {
@@ -132,7 +132,7 @@ type SettingValueInfo =
     | { kind: "number"; value: number }
     | { kind: "text"; value: string };
 
-//AND EVERYTHING A ROW OF THE BOX CAN HOLD, WHICHEVER CONFIG IT CAME FROM
+//AND EVERYTHING A ROW OF THE DIALOG CAN HOLD, WHICHEVER CONFIG IT CAME FROM
 type SettingsValue = SettingValueInfo | ClientValueInfo;
 
 //ONE DEVICE AS THE PICKER SHOWS IT. THE id IS WHAT client.toml HOLDS AND WHAT THE VOICE CLIENT OPENS -
@@ -158,7 +158,7 @@ interface Picker
     row: number;            //THE SETTINGS ROW THAT OPENED IT
 }
 
-//ONE USER OF THE CALL, AS THE Voice PANEL DRAWS THEM
+//ONE USER OF THE CALL, AS THE VOICE LIST DRAWS THEM
 interface VoiceUser
 {
     id: number;
@@ -188,7 +188,7 @@ interface SettingRow
     restart: boolean;
 }
 
-//ONE ROW OF THE SETTINGS BOX, WHICHEVER CONFIG IT IS SHOWING
+//ONE ROW OF THE SETTINGS DIALOG, WHICHEVER CONFIG IT IS SHOWING
 interface SettingsItem
 {
     label: string;
@@ -204,7 +204,7 @@ type SettingsRow =
     | { row: "item"; item: SettingsItem }
     | { row: "action"; label: string }; //A BUTTON - THE SERVER ROWS ARE THE ONLY THING THAT NEEDS ONE
 
-//THE BOX ITSELF, IN EITHER OF ITS TWO MODES
+//THE DIALOG ITSELF, IN EITHER OF ITS TWO MODES
 interface SettingsBox
 {
     rows: SettingsRow[];
@@ -214,7 +214,7 @@ interface SettingsBox
     saving: boolean;          //A SAVE IS ON THE WIRE, WAITING FOR THE SERVER TO ANSWER WITH WHAT IT STORED
     confirm: boolean;         //THE RESTART BUTTON IS ARMED BY ONE PRESS AND FIRED BY THE NEXT
 
-    //WHAT cpal REPORTED, ENUMERATED ONCE WHEN THE BOX OPENS - THE SERVER'S ROWS HAVE NO USE FOR EITHER
+    //WHAT cpal REPORTED, ENUMERATED ONCE WHEN THE DIALOG OPENS - THE SERVER'S ROWS HAVE NO USE FOR EITHER
     devices: AudioDevices;
     picker: Picker | null;
 }
@@ -290,14 +290,38 @@ type BridgeEvent =
     | { event: "channel_destroyed"; data: { name: string } }
     | { event: "disconnected"; data: { reason: string | null } };
 
-//THE SIXTEEN COLORS THE PROTOCOL CARRIES, AS THE TERMINAL WOULD HAVE PAINTED THEM
+//THE SIXTEEN COLORS THE PROTOCOL CARRIES. THE DARK HALF IS LIFTED OFF THE FLOOR: THESE ARE PAINTED ON A
+//NEAR-BLACK SURFACE RATHER THAN IN A TERMINAL, AND black ON black IS NOT A NAME ANYBODY COULD READ
 const ANSI: Record<number, string> =
+{
+    0: "#6b6b6b", 1: "#e06c75", 2: "#7ec699", 3: "#d7b56b",
+    4: "#7aa2f7", 5: "#c792ea", 6: "#56b6c2", 7: "#c0c0c0",
+    8: "#909090", 9: "#ff6b7a", 10: "#8bea9b", 11: "#ffe07a",
+    12: "#8ab4ff", 13: "#ff8be0", 14: "#7fe6ec", 15: "#ffffff",
+};
+
+//THE SWATCH IN THE COLOR PALETTE IS THE ACTUAL ANSI COLOR, NOT THE LIFTED ONE - IT IS THERE TO SAY WHICH
+//COLOR IS BEING PICKED, AND A SQUARE OF IT IS BIG ENOUGH TO SEE EVEN AT black
+const ANSI_TRUE: Record<number, string> =
 {
     0: "#000000", 1: "#800000", 2: "#008000", 3: "#808000",
     4: "#000080", 5: "#800080", 6: "#008080", 7: "#c0c0c0",
     8: "#808080", 9: "#ff0000", 10: "#00ff00", 11: "#ffff00",
     12: "#0000ff", 13: "#ff00ff", 14: "#00ffff", 15: "#ffffff",
 };
+
+//THE COLOR AN AVATAR FALLS BACK TO WHEN THE USER HAS NOT PICKED ONE - THE SAME NAME ALWAYS GETS THE SAME
+//ONE, SO A FACE IS RECOGNISABLE DOWN THE PANE EVEN THOUGH NOTHING ABOUT IT IS STORED ANYWHERE
+const AVATARS = ["#6f5ba8", "#a85b7a", "#5b86a8", "#a8875b", "#5ba884", "#a85b5b", "#7a5ba8", "#5ba8a0"];
+
+function avatarColor(name: string): string
+{
+    let hash = 0;
+
+    for (let index = 0; index < name.length; index++) hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
+
+    return AVATARS[hash % AVATARS.length];
+}
 
 //THE FINGERPRINT IS 64 HEX CHARS - GROUPED IN EIGHTS AND BROKEN INTO ROWS SO IT CAN ACTUALLY BE
 //COMPARED AGAINST WHAT THE OPERATOR PUBLISHED
@@ -342,9 +366,147 @@ function branches(rows: BlockRow[]): string[]
     });
 }
 
-//HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS - EACH HALF OF THE COLOR
-//VOCABULARY IS EXACTLY THIS LONG, SO AN UNFILTERED POPUP SHOWS ONE HALF AT A TIME. ONE ROW IS leading-6
+//HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS
 const PALETTE_ROWS = 8;
+
+//THE LINE ART. ONE COMPONENT AND A TABLE OF PATHS, BECAUSE AN ICON SET IS NOT WORTH A DEPENDENCY AND A
+//STROKED 24×24 GRID IS WHAT EVERY ONE OF THESE WOULD HAVE BEEN ANYWAY
+const ICONS: Record<string, string[]> =
+{
+    hash: ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3 14 21"],
+    mic: ["M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z", "M19 10v2a7 7 0 0 1-14 0v-2", "M12 19v3"],
+    mic_off: ["M3 3l18 18", "M9 9.5V12a3 3 0 0 0 5.1 2.1", "M15 10.5V5a3 3 0 0 0-5.9-.7", "M19 10v2a7 7 0 0 1-10.9 5.8", "M12 19v3"],
+    headset: ["M4 14v-2a8 8 0 0 1 16 0v2", "M4 14h3v6H5.5A1.5 1.5 0 0 1 4 18.5V14z", "M20 14h-3v6h1.5a1.5 1.5 0 0 0 1.5-1.5V14z"],
+    hangup: ["M3 3l18 18", "M4 14v-2a8 8 0 0 1 12.5-6.6", "M20 11v3", "M4 14h3v6H5.5A1.5 1.5 0 0 1 4 18.5V14z"],
+    gear: ["M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-2.9-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.1-2.9H3a2 2 0 1 1 0-4h.2A1.7 1.7 0 0 0 4.3 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 2.9-1.1V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 2.9 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.1 2.9H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.4 1z"],
+    plus: ["M12 5v14", "M5 12h14"],
+    folder: ["M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"],
+    users: ["M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M22 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"],
+    send: ["M22 2 11 13", "M22 2l-7 20-4-9-9-4 20-7z"],
+    logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
+    close: ["M18 6 6 18", "M6 6l12 12"],
+    download: ["M12 3v12", "M7 11l5 5 5-5", "M4 20h16"],
+    chevron: ["M6 9l6 6 6-6"],
+    shield: ["M12 3l8 3v6c0 5-3.4 8.4-8 9-4.6-.6-8-4-8-9V6l8-3z"],
+    alert: ["M12 3 3 19h18L12 3z", "M12 9v4", "M12 16.5h.01"],
+    lock: ["M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4"],
+    arrow_down: ["M12 5v14", "M6 13l6 6 6-6"],
+    speaker: ["M11 5 6 9H3v6h3l5 4V5z", "M15.5 9.5a3.5 3.5 0 0 1 0 5", "M18.5 6.5a7.5 7.5 0 0 1 0 11"],
+    speaker_off: ["M11 5 6 9H3v6h3l5 4V5z", "M17 9.5l4 5", "M21 9.5l-4 5"],
+    check: ["M20 6 9 17l-5-5"],
+    info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 8h.01", "M11.25 12h.75v4.5h.75"],
+};
+
+function Icon({ name, className }: { name: keyof typeof ICONS | string; className?: string })
+{
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className ?? "h-4 w-4"}
+            aria-hidden
+        >
+            {(ICONS[name] ?? []).map((path) => <path key={path} d={path} />)}
+        </svg>
+    );
+}
+
+//AN ICON THAT IS A BUTTON, WHICH IN THIS WINDOW IS MOST OF THEM. THE LABEL IS THE TOOLTIP AND THE
+//ACCESSIBLE NAME BOTH - NOTHING HERE IS A GUESSING GAME ABOUT WHAT A GLYPH MEANT
+function IconButton(
+{
+    icon,
+    label,
+    onClick,
+    tone,
+    active,
+    className,
+}: {
+    icon: string;
+    label: string;
+    onClick: () => void;
+    tone?: "default" | "error" | "ok";
+    active?: boolean;
+    className?: string;
+})
+{
+    const color = tone === "error"
+        ? "text-error hover:text-error"
+        : tone === "ok"
+            ? "text-online hover:text-online"
+            : active ? "text-text" : "text-muted hover:text-text";
+
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={onClick}
+            className={`flex h-8 w-8 items-center justify-center rounded-app transition-colors hover:bg-hover ${color} ${className ?? ""}`}
+        >
+            <Icon name={icon} className="h-[18px] w-[18px]" />
+        </button>
+    );
+}
+
+//A FACE. THERE ARE NO UPLOADED PICTURES IN THIS PROTOCOL, SO IT IS THE FIRST LETTER OVER THE COLOR THE
+//USER PICKED - OR, WHERE THEY PICKED NONE, THE ONE THEIR NAME ALWAYS HASHES TO
+function Avatar(
+{
+    name,
+    color,
+    size,
+    ring,
+}: {
+    name: string;
+    color?: string;
+    size?: number;
+    ring?: boolean;
+})
+{
+    const side = size ?? 36;
+
+    return (
+        <div
+            className={`flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white/90 ${ring ? "speaking" : ""}`}
+            style={{
+                width: side,
+                height: side,
+                fontSize: side * 0.42,
+                background: color ?? avatarColor(name),
+            }}
+        >
+            {(name.trim()[0] ?? "?").toUpperCase()}
+        </div>
+    );
+}
+
+//A TOGGLE. THE TUI DREW THIS AS ●/○ BECAUSE A TERMINAL HAD NOTHING ELSE; A WINDOW HAS A SWITCH, AND A
+//SWITCH SAYS WHICH WAY IS ON WITHOUT ANYBODY HAVING TO LEARN THE GLYPHS
+function Switch({ on, onClick }: { on: boolean; onClick: () => void })
+{
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            onClick={(event) => { event.stopPropagation(); onClick(); }}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? "bg-online" : "bg-border-strong"}`}
+        >
+            <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-6" : "left-1"}`} />
+        </button>
+    );
+}
+
+//THE LABEL OVER A GROUP OF ROWS IN EITHER SIDEBAR
+function SectionLabel({ children }: { children: React.ReactNode })
+{
+    return <div className="px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-faint">{children}</div>;
+}
 
 function commandEntry(command: CommandInfo): PaletteEntry
 {
@@ -492,7 +654,6 @@ const SAVE_LABEL = "Save";
 const RESTART_LABEL = "Restart server";
 
 const DEFAULT_DEVICE = "System default"; //SHOWN FOR AN EMPTY input_device/output_device
-const SLIDER_WIDTH = 14;                 //CELLS OF VOLUME BAR, AS tui/draw.rs HAS IT
 
 const NO_DEVICES: AudioDevices = { input: [], output: [] };
 
@@ -673,46 +834,6 @@ function unsavedRows(rows: SettingsRow[]): boolean
     return rows.some((row) => row.row === "item" && row.item.changed);
 }
 
-//A BORDERED BOX WITH ITS NAME SITTING IN THE TOP BORDER, AND ITS STATUS IN THE BOTTOM ONE.
-//THE THREE OF THEM SIT OUTSIDE THE BORDER BOX, SO overflow-hidden HERE ERASES THEM - THE SCROLL CONTAINER
-//INSIDE DOES THE CLIPPING INSTEAD. THEY ALSO SIT ABOVE IT: THEY ARE BORDER CELLS, AND A LINE SCROLLING
-//PAST HAS TO GO UNDER THEM RATHER THAN THROUGH THEM, WHICH IS WHY THEY ARE OPAQUE AND WHY THEY ARE z-30
-function Panel(
-{
-    title,
-    active,
-    danger,
-    left,
-    right,
-    className,
-    children,
-}: {
-    title?: string;
-    active?: boolean;
-    danger?: boolean;
-    left?: React.ReactNode;
-    right?: React.ReactNode;
-    className?: string;
-    children: React.ReactNode;
-})
-{
-    const border = danger ? "border-error" : active ? "border-border-active" : "border-border";
-    const titleColor = danger ? "text-error" : "text-title";
-
-    return (
-        <div className={`relative min-h-0 rounded-md border ${border} ${className ?? ""}`}>
-            {title && (
-                <span className={`absolute -top-[0.5em] left-3 z-30 bg-background px-1 font-bold leading-none ${titleColor}`}>
-                    {title}
-                </span>
-            )}
-            {children}
-            {left && <span className="absolute -bottom-[0.5em] left-3 z-30 bg-background px-1 leading-none text-muted-foreground">{left}</span>}
-            {right && <span className="absolute -bottom-[0.5em] right-3 z-30 bg-background px-1 leading-none text-muted-foreground">{right}</span>}
-        </div>
-    );
-}
-
 function App()
 {
     const [uiState, setUiState] = useState<UIState>("server_select");
@@ -741,6 +862,9 @@ function App()
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
     const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [] });
+
+    //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
+    const [members, setMembers] = useState(true);
 
     //THE LINES ALREADY SENT. IT IS A REF AND NOT STATE BECAUSE NOTHING IS DRAWN FROM IT - IT IS READ AND
     //WRITTEN BY ONE KEYPRESS AT A TIME, AND A RE-RENDER PER ARROW WOULD BE ONE PER RECALLED LINE ANYWAY
@@ -784,6 +908,8 @@ function App()
         const timer = setTimeout(() => loginInputRef.current?.focus(), 10);
         return () => clearTimeout(timer);
     }, [uiState, connecting]);
+
+    const connected = uiState === "connected";
 
     const pane = paneByChannel[currentChannel] ?? [];
 
@@ -1251,6 +1377,29 @@ function App()
 
     useEffect(() => { if (settingsOpen) settingsRef.current?.focus(); }, [settingsOpen]);
 
+    //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
+    //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
+    //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
+    useEffect(() =>
+    {
+        if (!connected || settingsOpen || tofu) return;
+
+        const onKey = (event: KeyboardEvent) =>
+        {
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key.length !== 1 && event.key !== "Backspace") return;
+
+            const focused = document.activeElement;
+            if (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) return;
+
+            chatInputRef.current?.focus();
+        };
+
+        window.addEventListener("keydown", onKey);
+
+        return () => window.removeEventListener("keydown", onKey);
+    }, [connected, settingsOpen, tofu]);
+
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
     useEffect(() => { pickerRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.picker?.selected]);
@@ -1708,10 +1857,13 @@ function App()
     const color = (code: number | null): string | undefined =>
         (code === null || config.disable_colors ? undefined : ANSI[code]);
 
-    //THE POPUP NAMES WHAT IT IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
+
+    const channelLabel = currentChannel || "lobby";
+
+    //WHAT THE PALETTE IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
     const paletteTitle = palette.mode === "values"
-        ? ` ${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()} `
-        : palette.mode === "menu" ? " Commands " : " Parameters ";
+        ? `${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()}`
+        : palette.mode === "menu" ? "Commands" : "Parameters";
 
     //ONE ROW PER COMMAND, OR THE SINGLE PARAMETER HINT. THE ACTIVE PARAMETER'S OWN DESCRIPTION TAKES OVER
     //THE COLUMN WHILE IT IS BEING TYPED - index IS null FOR THE HINT, WHICH IS THERE TO BE READ, NOT PICKED
@@ -1726,19 +1878,18 @@ function App()
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={index === null ? undefined : () => setSelected(index)}
                 onClick={index === null ? undefined : () => { complete(true); chatInputRef.current?.focus(); }}
-                className={`flex items-baseline gap-2 whitespace-pre px-2 leading-6 ${index === null ? "" : "cursor-pointer"} ${chosen ? "bg-selected" : ""}`}
+                className={`flex items-baseline gap-2 border-l-2 px-3 py-1.5 ${index === null ? "border-transparent" : "cursor-pointer"} ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
             >
-                <span className="text-accent">{chosen ? "▌" : " "}</span>
-                <span className="font-bold text-title">/{entry.name}</span>
+                <span className="font-mono text-[13px] font-semibold text-text">/{entry.name}</span>
                 {entry.args.map((arg, position) => (
                     <span
                         key={arg.name}
-                        className={position === activeArgument ? "text-accent" : arg.required ? "text-arg-required" : "text-arg-optional"}
+                        className={`font-mono text-[13px] ${position === activeArgument ? "text-accent" : arg.required ? "text-arg-required" : "text-arg-optional"}`}
                     >
                         {formatArg(arg)}
                     </span>
                 ))}
-                <span className="ml-auto pl-4 text-muted-foreground">{described?.description ?? entry.description}</span>
+                <span className="ml-auto truncate pl-6 text-xs text-muted">{described?.description ?? entry.description}</span>
             </div>
         );
     };
@@ -1754,61 +1905,95 @@ function App()
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={() => setSelected(index)}
                 onClick={() => { complete(true); chatInputRef.current?.focus(); }}
-                className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosen ? "bg-selected" : ""}`}
+                className={`flex cursor-pointer items-center gap-3 border-l-2 px-3 py-1.5 ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
             >
-                <span className="text-accent">{chosen ? "▌" : " "}</span>
-
-                {/* THE SWATCH IS PAINTED AS A BACKGROUND, SO EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}
+                {/* THE SWATCH IS THE ACTUAL ANSI COLOR - EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}
                 {value.color !== null && (
-                    <span className="inline-block w-[4ch] self-center" style={{ backgroundColor: ANSI[value.color] }}>&nbsp;</span>
+                    <span
+                        className="h-4 w-4 shrink-0 rounded border border-white/15"
+                        style={{ backgroundColor: ANSI_TRUE[value.color] }}
+                    />
                 )}
-
-                <span>{value.value}</span>
+                <span className="text-sm">{value.value}</span>
             </div>
         );
     };
 
-    //THE PANE'S TITLE IS THE WHOLE OF WHAT WE ARE CONNECTED TO: WHY2 ── <SERVER> ── <ADDRESS AS TYPED>
-    const paneTitle = ` ${["WHY2", serverName, address].filter(Boolean).join(" ── ")} `;
-
-    const status = [currentChannel && `#${currentChannel}`, username].filter(Boolean).join(" │ ");
-
-    //ID FIRST, RIGHT-ALIGNED, SO THE USERNAMES LINE UP IN ONE COLUMN
-    const idWidth = useMemo(() => Math.max(...users.map((user) => String(user.id).length), 1), [users]);
-
-    const renderMessage = (message: ChatMessage, key: number) =>
+    //A LINE NOBODY SAID: A JOIN, AN UPLOAD, A SERVER NOTICE, THE ANSWER TO A COMMAND. IT GETS THE COLUMN
+    //THE AVATARS SIT IN, SO THE TEXT OF THE WHOLE PANE STAYS UNDER ONE EDGE
+    const renderNotice = (message: ChatMessage, key: number) =>
     {
-        const spoken = message.kind === "user" || message.kind === "private";
-
-        const tone =
+        const { tone, icon } =
         {
-            user: "",
-            private: "text-accent",
-            system: "text-muted-foreground",
-            notice: "text-notice",
-            ok: "text-ok",
-            error: "text-error",
+            system: { tone: "text-muted", icon: "info" },
+            notice: { tone: "text-notice", icon: "info" },
+            ok: { tone: "text-ok", icon: "check" },
+            error: { tone: "text-error", icon: "alert" },
+            user: { tone: "", icon: "info" },
+            private: { tone: "", icon: "info" },
         }[message.kind];
 
         return (
-            <div key={key} className="whitespace-pre-wrap break-words">
-                {message.prefix && <span className="text-muted-foreground">{message.prefix} </span>}
-                {spoken && (
-                    <>
-                        <span style={{ color: color(message.username_color) }}>{message.username}</span>
-                        {config.show_id && message.id !== null && (
-                            <span className="text-muted-foreground"> ({message.id})</span>
-                        )}
-                        <span>: </span>
-                    </>
-                )}
-                <span className={tone} style={{ color: spoken ? color(message.message_color) : undefined }}>
+            <div key={key} className="flex gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
+                <div className="flex w-9 shrink-0 justify-end pt-[3px]">
+                    <Icon name={icon} className={`h-4 w-4 ${tone}`} />
+                </div>
+                <div className={`min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed ${tone}`}>
+                    {message.prefix && <span className="text-faint">{message.prefix} </span>}
                     {message.text}
-                </span>
+                </div>
             </div>
         );
     };
 
+    //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
+    //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
+    const renderChat = (message: ChatMessage, key: number, grouped: boolean) =>
+    {
+        const own = message.username === username;
+        const whisper = message.kind === "private";
+
+        return (
+            <div
+                key={key}
+                className={`flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
+            >
+                <div className="w-9 shrink-0">
+                    {!grouped && <Avatar name={message.username} color={color(message.username_color)} />}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                    {!grouped && (
+                        <div className="flex items-baseline gap-2">
+                            <span
+                                className={`text-[15px] font-semibold ${own ? "text-accent" : ""}`}
+                                style={{ color: own ? undefined : color(message.username_color) }}
+                            >
+                                {message.username}
+                            </span>
+                            {config.show_id && message.id !== null && <span className="text-[11px] text-faint">#{message.id}</span>}
+                            {whisper && (
+                                <span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">
+                                    private
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    <div
+                        className="select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
+                        style={{ color: color(message.message_color) }}
+                    >
+                        {message.prefix && <span className="text-faint">{message.prefix} </span>}
+                        {message.text}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    //A LIST THE SERVER ANSWERED WITH. IT IS A CARD IN THE STREAM RATHER THAN A WINDOW OVER IT, AND THE
+    //ROWS KEEP THE TERMINAL'S BRANCH GLYPHS - THEY ARE A TREE, AND A TREE IS WHAT THEY SHOULD LOOK LIKE
     const renderBlock = (title: string, rows: BlockRow[], key: number) =>
     {
         const glyphs = branches(rows);
@@ -1823,85 +2008,115 @@ function App()
         }, {});
 
         return (
-            <div key={key}>
-                <div className="font-bold text-title">{title}:</div>
-                {rows.map((row, index) =>
-                {
-                    //THE TWO IDS A FILE ROW CARRIES ARE THE TWO ARGUMENTS TO /download, SO CLICKING ONE
-                    //SENDS EXACTLY WHAT TYPING IT OUT WOULD HAVE
-                    const download = row.download;
+            <div key={key} className="mx-4 mt-4 overflow-hidden rounded-app border border-border bg-raised">
+                <div className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    {title}
+                </div>
 
-                    return (
-                    <div
-                        key={index}
-                        className={`whitespace-pre ${download ? "cursor-pointer hover:bg-selected" : ""}`}
-                        onClick={download ? () => send(`/download ${download[0]} ${download[1]}`) : undefined}
-                        title={download ? "Download" : undefined}
-                    >
-                        <span className="text-border">{glyphs[index]}</span>
-                        {row.id !== null && (
-                            <span className="text-muted-foreground">{String(row.id).padStart(widths[row.depth])}  </span>
-                        )}
-                        <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
-                        {row.note && <span className="text-muted-foreground">  {row.note}</span>}
-                    </div>
-                    );
-                })}
+                <div className="py-1">
+                    {rows.map((row, index) =>
+                    {
+                        //THE TWO IDS A FILE ROW CARRIES ARE THE TWO ARGUMENTS TO /download, SO CLICKING ONE
+                        //SENDS EXACTLY WHAT TYPING IT OUT WOULD HAVE
+                        const download = row.download;
+
+                        return (
+                            <div
+                                key={index}
+                                className={`group flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px] ${download ? "cursor-pointer hover:bg-hover" : ""}`}
+                                onClick={download ? () => send(`/download ${download[0]} ${download[1]}`) : undefined}
+                                title={download ? "Download" : undefined}
+                            >
+                                <span className="text-border-strong">{glyphs[index]}</span>
+                                {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
+                                <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
+                                {row.note && <span className="text-faint">{"  "}{row.note}</span>}
+                                {download && (
+                                    <Icon name="download" className="ml-auto h-4 w-4 shrink-0 text-faint opacity-0 group-hover:opacity-100" />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         );
     };
 
-    const connected = uiState === "connected";
+    //THE WHOLE PANE. THE GROUPING IS DECIDED HERE AND NOT PER MESSAGE, BECAUSE IT IS ABOUT WHAT CAME
+    //BEFORE - AND ANYTHING THAT IS NOT SOMEBODY TALKING BREAKS THE RUN
+    const paneNodes = (() =>
+    {
+        let previous: string | null = null;
 
-    //THE SETTINGS BOX. IT OWNS THE KEYBOARD WHILE IT IS UP, THE WAY THE TUI'S OVERLAY DOES - THE FOCUS
-    //MOVES INTO IT, SO NOTHING TYPED HERE REACHES THE INPUT LINE BEHIND IT
+        return pane.map((entry, index) =>
+        {
+            if (entry.entry === "block")
+            {
+                previous = null;
+
+                return renderBlock(entry.title, entry.rows, index);
+            }
+
+            const message = entry.message;
+
+            if (message.kind !== "user" && message.kind !== "private")
+            {
+                previous = null;
+
+                return renderNotice(message, index);
+            }
+
+            const author = `${message.kind} ${message.username} ${message.id ?? ""}`;
+            const grouped = author === previous;
+
+            previous = author;
+
+            return renderChat(message, index, grouped);
+        });
+    })();
+
+    //THE SETTINGS DIALOG. IT OWNS THE KEYBOARD WHILE IT IS UP, THE WAY THE TUI'S OVERLAY DOES - THE FOCUS
+    //MOVES INTO IT, SO NOTHING TYPED HERE REACHES THE COMPOSER BEHIND IT
     const settingsBox = settings && (() =>
     {
         const box = settings;
         const editing = box.edit !== null;
         const unsaved = unsavedRows(box.rows);
 
-        //THE VALUE COLUMN STARTS RIGHT BEHIND THE LONGEST LABEL, NOT AT SOME GUESSED OFFSET
-        const labelWidth = Math.max(...box.rows.map((row) => (row.row === "item" ? row.item.label.length : 0)), 8);
+        //THE ACTIONS ARE ROWS LIKE ANY OTHER AS FAR AS THE KEYBOARD IS CONCERNED, BUT THEY BELONG IN THE
+        //FOOT OF THE DIALOG AND NOT IN THE MIDDLE OF THE LIST - SO THEY ARE DRAWN THERE, INDEX AND ALL
+        const listed = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row !== "action");
+        const actions = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row === "action");
 
-        const title = box.server
-            ? ` Server settings${box.saving ? " · saving…" : unsaved ? " · unsaved" : ""} `
-            : " Settings ";
-
-        const legend = box.picker
-            ? " ↑↓ select │ ⏎ use │ esc back "
-            : editing
-                ? " type a value │ ⏎ keep │ esc cancel "
-                : box.server
-                    ? " ↑↓ move │ ←→ change │ ⏎ edit │ ^S save │ esc close "
-                    : " ↑↓ move │ ←→ change │ ⏎ select │ esc close ";
-
-        //THE SERVER'S COMMENT ON A KEY IS A WHOLE SENTENCE AND HAS NO BUSINESS IN A TITLE BAR. IT SITS
-        //UNDER A RULE IN THE FOOT OF THE BOX INSTEAD, WHERE IT READS AS AN EXPLANATION OF THE SELECTED ROW
-        const chosen = box.rows[box.selected];
-        const hint = chosen?.row === "item" ? chosen.item.hint : "";
-
-        const value = (item: SettingsItem) =>
+        const control = (item: SettingsItem, index: number) =>
         {
             if (item.value.kind === "toggle")
             {
-                return item.value.value
-                    ? <span className="text-ok">● on</span>
-                    : <span className="text-muted-foreground">○ off</span>;
+                const on = item.value.value;
+
+                return <Switch on={on} onClick={() => setToggle(index, !on)} />;
             }
 
-            //THE BAR IS THE WHOLE SUPPORTED RANGE, SO 100% SITS EXACTLY IN THE MIDDLE OF IT
             if (item.value.kind === "volume")
             {
-                const { percent, max } = item.value.value;
-                const filled = Math.ceil((percent * SLIDER_WIDTH) / Math.max(max, 1));
+                const { percent, max, step } = item.value.value;
 
                 return (
-                    <span className="whitespace-pre">
-                        <span className="text-accent">{"█".repeat(filled)}</span>
-                        <span className="text-border">{"░".repeat(Math.max(SLIDER_WIDTH - filled, 0))}</span>
-                        <span className={percent === 0 ? "text-muted-foreground" : ""}>{` ${String(percent).padStart(3)}%`}</span>
-                    </span>
+                    <div className="flex items-center gap-3">
+                        <Icon name={percent === 0 ? "speaker_off" : "speaker"} className={`h-4 w-4 ${percent === 0 ? "text-faint" : "text-muted"}`} />
+                        <input
+                            type="range"
+                            min={0}
+                            max={max}
+                            step={step}
+                            value={percent}
+                            onChange={(event) => setVolume(index, Number(event.currentTarget.value), max)}
+                            onKeyDown={(event) => event.stopPropagation()}
+                            className="slider w-[150px]"
+                            style={{ accentColor: "var(--accent)" }}
+                        />
+                        <span className="w-[4ch] text-right font-mono text-xs text-muted">{percent}%</span>
+                    </div>
                 );
             }
 
@@ -1909,146 +2124,190 @@ function App()
             if (item.value.kind === "device")
             {
                 const { id, input } = item.value.value;
-
-                if (!id) return <span className="text-muted-foreground">{DEFAULT_DEVICE}</span>;
-
                 const found = (input ? box.devices.input : box.devices.output).find((device) => device.id === id);
 
-                return <span className="text-accent">{found?.label ?? id}</span>;
+                return (
+                    <button
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); activateRow(index); }}
+                        className="flex w-[220px] items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong"
+                    >
+                        <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
+                        <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
+                    </button>
+                );
             }
 
-            if (item.value.kind === "number") return <span>{item.value.value}</span>;
+            //A NUMBER OR A STRING IS TYPED INTO THE ROW ITSELF
+            if (editing && index === box.selected)
+            {
+                return (
+                    <input
+                        autoFocus
+                        value={box.edit ?? ""}
+                        onChange={(event) =>
+                        {
+                            const typed = event.currentTarget.value;
 
-            return item.value.value ? <span>{item.value.value}</span> : <span className="text-muted-foreground">(empty)</span>;
+                            //A NUMBER ROW ONLY TAKES A NUMBER - THE MINUS SIGN ONLY AS THE FIRST CHARACTER
+                            if (item.value.kind === "number" && !/^-?\d*$/.test(typed)) return;
+
+                            editSettings((current) => ({ ...current, edit: typed }));
+                        }}
+                        onKeyDown={(event) =>
+                        {
+                            event.stopPropagation();
+
+                            //ESC PUTS THE OLD VALUE BACK, ENTER KEEPS WHAT WAS TYPED - AND EITHER WAY THE
+                            //KEYBOARD GOES BACK TO THE DIALOG
+                            if (event.key === "Enter") { event.preventDefault(); commitEdit(); }
+                            else if (event.key === "Escape") { event.preventDefault(); editSettings((current) => ({ ...current, edit: null })); }
+                            else return;
+
+                            settingsRef.current?.focus();
+                        }}
+                        onBlur={commitEdit}
+                        className="w-[220px] rounded-app border border-accent bg-deep px-3 py-1.5 text-sm text-accent caret-accent outline-none"
+                        spellCheck={false}
+                    />
+                );
+            }
+
+            const text = String(item.value.value);
+
+            return (
+                <button
+                    type="button"
+                    onClick={(event) => { event.stopPropagation(); activateRow(index); }}
+                    className="w-[220px] truncate rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong"
+                >
+                    {text || <span className="text-faint">empty</span>}
+                </button>
+            );
         };
 
         return (
-            <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 px-4">
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
                 <div
                     ref={settingsRef}
                     tabIndex={-1}
                     onKeyDown={handleSettingsKey}
-                    className="relative w-full max-w-[62ch] outline-none"
+                    className="rise relative flex max-h-[84vh] w-full max-w-[660px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none"
                 >
-                    <Panel active title={title} left={legend} className="flex flex-col bg-background">
-                        <div className="custom-scrollbar panel-scroll" style={{ maxHeight: "60vh" }}>
-                            {box.rows.map((row, index) =>
+                    <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
+                        <Icon name="gear" className="h-4 w-4 text-muted" />
+                        <h2 className="flex-1 text-[15px] font-semibold">{box.server ? "Server settings" : "Settings"}</h2>
+
+                        {box.saving && <span className="text-xs text-muted">saving</span>}
+                        {!box.saving && unsaved && <span className="text-xs text-notice">unsaved changes</span>}
+
+                        <IconButton icon="close" label="Close" onClick={closeSettings} />
+                    </header>
+
+                    <div className="scroller flex-1 px-3 py-2">
+                        {listed.map(({ row, index }) =>
+                        {
+                            //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS
+                            if (row.row === "header")
                             {
-                                //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS
-                                if (row.row === "header")
-                                {
-                                    return (
-                                        <div key={`header-${row.label}`} className="flex items-center gap-2 px-3 leading-6">
-                                            <span className="font-bold text-title">{row.label}</span>
-                                            <span className="h-px flex-1 bg-border" />
-                                        </div>
-                                    );
-                                }
-
-                                const chosenRow = index === box.selected;
-
-                                //A BUTTON IS LIVE WHEN IT HAS SOMETHING TO DO: Save WITH EDITED ROWS IN THE
-                                //BOX, Restart WITH NONE
-                                if (row.row === "action")
-                                {
-                                    const restart = row.label === RESTART_LABEL;
-                                    const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
-                                    const armed = restart && box.confirm;
-
-                                    return (
-                                        <div
-                                            key={row.label}
-                                            ref={chosenRow ? settingsRowRef : undefined}
-                                            onClick={() => activateRow(index)}
-                                            className={`flex cursor-pointer items-baseline whitespace-pre px-2 leading-6 ${chosenRow ? "bg-selected" : ""}`}
-                                        >
-                                            <span className="text-accent">{chosenRow ? "▌" : " "}</span>
-                                            <span className={`flex-1 text-center ${armed ? "text-error" : chosenRow ? "text-accent" : live ? "" : "text-muted-foreground"}`}>
-                                                {armed ? `[ ${row.label} · press again ]` : `[ ${row.label} ]`}
-                                            </span>
-                                        </div>
-                                    );
-                                }
-
-                                const item = row.item;
-
                                 return (
-                                    <div
-                                        key={item.key}
-                                        ref={chosenRow ? settingsRowRef : undefined}
-                                        onClick={() => { if (!editing) activateRow(index); }}
-                                        className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosenRow ? "bg-selected" : ""}`}
-                                    >
-                                        <span className="text-accent">{chosenRow ? "▌" : " "}</span>
-                                        <span
-                                            className={`shrink-0 overflow-hidden text-ellipsis ${chosenRow ? "text-accent" : ""}`}
-                                            style={{ width: `${labelWidth}ch` }}
-                                        >
-                                            {item.label}
-                                        </span>
-
-                                        {/* THE ROW BEING TYPED INTO SHOWS THE TEXT AS IT STANDS, CARET AND ALL */}
-                                        {chosenRow && editing
-                                            ? (
-                                                <input
-                                                    autoFocus
-                                                    value={box.edit ?? ""}
-                                                    onChange={(event) =>
-                                                    {
-                                                        const typed = event.currentTarget.value;
-
-                                                        //A NUMBER ROW ONLY TAKES A NUMBER - THE MINUS SIGN ONLY AS THE FIRST CHARACTER
-                                                        if (item.value.kind === "number" && !/^-?\d*$/.test(typed)) return;
-
-                                                        editSettings((current) => ({ ...current, edit: typed }));
-                                                    }}
-                                                    onKeyDown={(event) =>
-                                                    {
-                                                        event.stopPropagation();
-
-                                                        //ESC PUTS THE OLD VALUE BACK, ⏎ KEEPS WHAT WAS TYPED - AND EITHER WAY
-                                                        //THE KEYBOARD GOES BACK TO THE BOX
-                                                        if (event.key === "Enter") { event.preventDefault(); commitEdit(); }
-                                                        else if (event.key === "Escape") { event.preventDefault(); editSettings((current) => ({ ...current, edit: null })); }
-                                                        else return;
-
-                                                        settingsRef.current?.focus();
-                                                    }}
-                                                    onBlur={commitEdit}
-                                                    className="min-w-0 flex-1 bg-transparent text-accent caret-accent outline-none"
-                                                    spellCheck={false}
-                                                />
-                                            )
-                                            : <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{value(item)}</span>}
-
-                                        {/* AN EDITED ROW IS MARKED UNTIL THE SERVER HAS SAID WHAT IT STORED, AND ONE
-                                            IT WILL NOT PICK UP UNTIL IT IS RESTARTED CARRIES THAT SAVED OR NOT */}
-                                        {item.changed && <span className="text-notice">●</span>}
-                                        {item.restart && <span className="text-muted-foreground">↻</span>}
+                                    <div key={`header-${row.label}`} className="flex items-center gap-3 px-2 pb-1 pt-5 first:pt-2">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{row.label}</span>
+                                        <span className="h-px flex-1 bg-border" />
                                     </div>
                                 );
-                            })}
-                        </div>
+                            }
 
-                        {hint && (
-                            <div className="border-t border-border px-3 pb-2 pt-1 text-muted-foreground">{hint}</div>
-                        )}
-                    </Panel>
+                            if (row.row !== "item") return null;
+
+                            const item = row.item;
+                            const chosen = index === box.selected;
+
+                            return (
+                                <div
+                                    key={item.key}
+                                    ref={chosen ? settingsRowRef : undefined}
+                                    onMouseDown={() => editSettings((current) => ({ ...current, selected: index }))}
+                                    onClick={() => { if (item.value.kind === "toggle") activateRow(index); }}
+                                    className={`flex items-center gap-6 rounded-app border-l-2 px-3 py-2.5 ${chosen ? "border-accent bg-selected" : "border-transparent hover:bg-hover"}`}
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="truncate text-sm">{item.label}</span>
+
+                                            {/* AN EDITED ROW IS MARKED UNTIL THE SERVER HAS SAID WHAT IT STORED, AND ONE IT
+                                                WILL NOT PICK UP UNTIL IT IS RESTARTED CARRIES THAT SAVED OR NOT */}
+                                            {item.changed && <span className="rounded bg-notice/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-notice">edited</span>}
+                                            {item.restart && <span className="rounded bg-warning/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-warning">restart</span>}
+                                        </div>
+
+                                        {item.hint && <div className="mt-0.5 pr-2 text-xs leading-snug text-faint">{item.hint}</div>}
+                                    </div>
+
+                                    <div className="shrink-0">{control(item, index)}</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* THE SERVER'S ROWS ARE THE ONLY ONES THAT ARE NOT WRITTEN THROUGH ON THE SPOT, SO THEY
+                        ARE THE ONLY ONES WITH ANYTHING TO PRESS */}
+                    {actions.length > 0 && (
+                        <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
+                            <span className="flex-1 text-xs text-faint">
+                                {box.confirm
+                                    ? "Restarting drops every client on the server."
+                                    : unsaved ? "Nothing leaves this window until you save." : "Arrows move and change, esc closes."}
+                            </span>
+
+                            {actions.map(({ row, index }) =>
+                            {
+                                if (row.row !== "action") return null;
+
+                                const restart = row.label === RESTART_LABEL;
+                                const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
+                                const armed = restart && box.confirm;
+                                const chosen = index === box.selected;
+
+                                const skin = restart
+                                    ? `border ${armed ? "border-error bg-error/15 text-error" : "border-border text-muted hover:border-error hover:text-error"}`
+                                    : "bg-accent text-black/85 hover:brightness-110";
+
+                                return (
+                                    <button
+                                        key={row.label}
+                                        type="button"
+                                        disabled={!live}
+                                        onClick={() => activateRow(index)}
+                                        className={`rounded-app px-4 py-1.5 text-sm font-semibold transition ${skin} ${chosen ? "ring-2 ring-accent/60" : ""} disabled:cursor-not-allowed disabled:opacity-40`}
+                                    >
+                                        {armed ? "Press again" : row.label}
+                                    </button>
+                                );
+                            })}
+                        </footer>
+                    )}
 
                     {/* THE DEVICE LIST, ON TOP OF THE ROWS AND NOT BESIDE THEM - IT IS ANSWERING THE ROW
-                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE BOX UNTIL IT IS ANSWERED */}
+                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE DIALOG UNTIL IT IS ANSWERED */}
                     {box.picker && (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center px-4">
-                            <Panel active title={box.picker.title} className="w-full max-w-[52ch] bg-background">
-                                <div className="custom-scrollbar panel-scroll" style={{ maxHeight: `calc(${PALETTE_ROWS * 1.5}rem + 1rem)` }}>
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 px-6">
+                            <div className="rise w-full max-w-[440px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl">
+                                <div className="border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                                    {box.picker.title}
+                                </div>
+
+                                <div className="scroller p-1" style={{ maxHeight: "48vh" }}>
                                     {box.picker.entries.map((entry, index) =>
                                     {
-                                        const chosenEntry = index === box.picker!.selected;
+                                        const chosen = index === box.picker!.selected;
+                                        const owner = box.rows[box.picker!.row];
+                                        const using = owner?.row === "item" && owner.item.value.kind === "device" && owner.item.value.value.id === entry.id;
 
                                         return (
                                             <div
                                                 key={entry.id || "default"}
-                                                ref={chosenEntry ? pickerRowRef : undefined}
+                                                ref={chosen ? pickerRowRef : undefined}
                                                 onMouseEnter={() => editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: index } } : current))}
                                                 onClick={() =>
                                                 {
@@ -2056,15 +2315,15 @@ function App()
                                                     editSettings((current) => ({ ...current, picker: null }));
                                                     settingsRef.current?.focus();
                                                 }}
-                                                className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosenEntry ? "bg-selected" : ""}`}
+                                                className={`flex cursor-pointer items-center gap-2 rounded-app px-3 py-2 text-sm ${chosen ? "bg-selected" : ""}`}
                                             >
-                                                <span className="text-accent">{chosenEntry ? "▌" : " "}</span>
-                                                <span className={`overflow-hidden text-ellipsis ${entry.id ? "" : "text-muted-foreground"}`}>{entry.label}</span>
+                                                <span className={`min-w-0 flex-1 truncate ${entry.id ? "" : "text-muted"}`}>{entry.label}</span>
+                                                {using && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
                                             </div>
                                         );
                                     })}
                                 </div>
-                            </Panel>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -2072,294 +2331,390 @@ function App()
         );
     })();
 
-    //THE CONNECT BOX ASKS FOR EVERYTHING UNTIL WE ARE IN, AND THE SERVER-KEY PROMPT COVERS EVEN THAT,
-    //BECAUSE IT IS THE ONLY THING THE USER MAY ANSWER WHILE IT IS UP
-    const loginBox = !connected && !tofu && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 px-4">
-            <Panel
-                active
-                title={` ${
-                    {
-                        server_select: "Connect",
-                        username_prompt: "Identify",
-                        password_prompt: registering ? "Register" : "Log in",
-                        connected: "",
-                    }[uiState]
-                } `}
-                left={connecting ? undefined : uiState === "server_select" ? " ⏎ connect " : " ⏎ continue "}
-                className="w-full max-w-[52ch] bg-background p-3"
-            >
-                <form onSubmit={handleSubmit}>
-                    <div className="text-muted-foreground">
-                        {uiState === "server_select" ? "Server address" : uiState === "username_prompt" ? "Username" : "Password"}
+    //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
+    //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
+    const loginScreen = !connected && !tofu && (() =>
+    {
+        const title = { server_select: "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
+        const label = { server_select: "Server address", username_prompt: "Username", password_prompt: "Password", connected: "" }[uiState];
+        const button = { server_select: "Connect", username_prompt: "Continue", password_prompt: registering ? "Register" : "Log in", connected: "" }[uiState];
+
+        return (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-deep px-4">
+                {/* THE WATERMARK IS THE ONE PIECE OF THE TERMINAL CLIENT THAT IS KEPT AS IT WAS DRAWN */}
+                <pre className="pointer-events-none absolute select-none font-mono text-[13px] leading-[1.05] text-logo opacity-60">{LOGO}</pre>
+
+                <div className="rise relative w-full max-w-[420px]">
+                    <div className="mb-6 text-center">
+                        <div className="text-2xl font-bold tracking-tight">WHY2</div>
+                        <div className="mt-1 text-sm text-muted">{title}</div>
                     </div>
-                    <div className="flex items-baseline">
-                        <span className="text-accent">&gt;&nbsp;</span>
+
+                    <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
+                        <label htmlFor="login-input" className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</label>
+
                         <input
+                            id="login-input"
                             ref={loginInputRef}
                             type={uiState === "password_prompt" ? "password" : "text"}
                             value={inputValue}
                             onChange={(event) => setInputValue(event.currentTarget.value)}
-                            className="w-full bg-transparent text-foreground caret-accent outline-none"
+                            placeholder={uiState === "server_select" ? "127.0.0.1:8080" : undefined}
+                            className="mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent"
                             disabled={connecting}
                             autoFocus
                             spellCheck={false}
                         />
-                    </div>
 
-                    {/* THE STATUS ROW, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG,
-                        OR THE SERVER'S RULES */}
-                    <div className="mt-2 min-h-[1.5em]">
-                        {connecting
-                            ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
-                            : errorMsg
-                                ? <span className="text-error">{errorMsg}</span>
-                                : <span className="text-muted-foreground">{hint}</span>}
-                    </div>
-                </form>
-            </Panel>
-        </div>
-    );
-
-    const tofuBox = tofu && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 px-4">
-            <Panel
-                danger
-                title={` ${tofu.mismatch ? "Server identity changed" : "Unknown server identity"} `}
-                left={tofu.mismatch ? " type the word │ ⏎ confirm " : " ⏎ confirm "}
-                className="w-full max-w-[64ch] bg-background p-3"
-            >
-                <p className="whitespace-pre-wrap text-notice">
-                    {tofu.mismatch
-                        ? "The server is presenting a different identity key than the one pinned for this address. Either the operator replaced the server's keys, or somebody is sitting between you and it."
-                        : "This address has no pinned identity key yet. Accept it only if the fingerprint below matches the one the server's operator published."}
-                </p>
-
-                <div className="mt-3 whitespace-pre">
-                    <div>
-                        <span className="text-muted-foreground">Server   </span>
-                        {tofu.host}
-                    </div>
-                    {fingerprint(tofu.pinned ?? "").map((row, index) => (
-                        <div key={row} className="text-muted-foreground">
-                            <span>{index === 0 ? "Pinned   " : "         "}</span>
-                            {row}
+                        {/* THE STATUS LINE, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG,
+                            OR THE SERVER'S OWN RULES FOR WHAT IS BEING ASKED */}
+                        <div className="mt-2 min-h-[1.25rem] text-xs">
+                            {connecting
+                                ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
+                                : errorMsg
+                                    ? <span className="text-error">{errorMsg}</span>
+                                    : <span className="text-faint">{hint}</span>}
                         </div>
-                    ))}
-                    {fingerprint(tofu.hash).map((row, index) => (
-                        <div key={row}>
-                            <span className="text-muted-foreground">
-                                {index === 0 ? (tofu.mismatch ? "New key  " : "Key      ") : "         "}
-                            </span>
-                            <span className="text-accent">{row}</span>
-                        </div>
-                    ))}
+
+                        <button
+                            type="submit"
+                            disabled={connecting || !inputValue}
+                            className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            {button}
+                        </button>
+                    </form>
                 </div>
+            </div>
+        );
+    })();
 
-                {/* REPLACING A PINNED KEY HAS TO BE TYPED OUT - A FIRST CONTACT IS THE ONLY ONE A BUTTON ANSWERS */}
-                {tofu.mismatch && (
-                    <div className="mt-3">
-                        <div>Type '{CHALLENGE}' to replace the pinned key with this one:</div>
-                        <div className="flex items-baseline justify-center">
+    //THE IDENTITY CHECK. IT COVERS EVEN THE CONNECT SCREEN, BECAUSE IT IS THE ONLY THING THE USER MAY
+    //ANSWER WHILE IT IS UP - AND IT CAN APPEAR MID-SESSION TOO, SINCE THE PERIODIC REKEY RUNS THE SAME CHECK
+    const tofuBox = tofu && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+            <div className="rise w-full max-w-[560px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl">
+                <header className={`flex items-center gap-3 border-b border-border px-5 py-4 ${tofu.mismatch ? "text-error" : "text-accent"}`}>
+                    <Icon name={tofu.mismatch ? "alert" : "lock"} className="h-5 w-5" />
+                    <h2 className="text-[15px] font-semibold">{tofu.mismatch ? "Server identity changed" : "Unknown server identity"}</h2>
+                </header>
+
+                <div className="px-5 py-4">
+                    <p className="text-sm leading-relaxed text-muted">
+                        {tofu.mismatch
+                            ? "The server is presenting a different identity key than the one pinned for this address. Either the operator replaced the server's keys, or somebody is sitting between you and it."
+                            : "This address has no pinned identity key yet. Accept it only if the fingerprint below matches the one the server's operator published."}
+                    </p>
+
+                    <div className="mt-4 rounded-app border border-border bg-deep p-3 font-mono text-[13px]">
+                        <div className="flex gap-3">
+                            <span className="w-[9ch] shrink-0 text-faint">Server</span>
+                            <span className="min-w-0 break-all">{tofu.host}</span>
+                        </div>
+
+                        {fingerprint(tofu.pinned ?? "").map((row, index) => (
+                            <div key={row} className="mt-1 flex gap-3 text-faint">
+                                <span className="w-[9ch] shrink-0">{index === 0 ? "Pinned" : ""}</span>
+                                <span>{row}</span>
+                            </div>
+                        ))}
+
+                        {fingerprint(tofu.hash).map((row, index) => (
+                            <div key={row} className="mt-1 flex gap-3">
+                                <span className="w-[9ch] shrink-0 text-faint">{index === 0 ? (tofu.mismatch ? "New key" : "Key") : ""}</span>
+                                <span className={tofu.mismatch ? "text-error" : "text-accent"}>{row}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* REPLACING A PINNED KEY HAS TO BE TYPED OUT - A FIRST CONTACT IS THE ONLY ONE A BUTTON ANSWERS */}
+                    {tofu.mismatch && (
+                        <div className="mt-4">
+                            <label htmlFor="tofu-input" className="text-xs text-muted">
+                                Type <span className="font-mono text-text">{CHALLENGE}</span> to replace the pinned key with this one:
+                            </label>
                             <input
+                                id="tofu-input"
                                 type="text"
                                 value={tofuTyped}
                                 onChange={(event) => setTofuTyped(event.currentTarget.value.toLowerCase())}
                                 onKeyDown={(event) => { if (event.key === "Enter") answerTofu(true); }}
-                                className="w-[8ch] bg-transparent text-center text-accent caret-accent outline-none"
+                                className="mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2 font-mono text-sm outline-none focus:border-error"
                                 autoFocus
                                 spellCheck={false}
                             />
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                <div className="mt-3 flex justify-center gap-4">
-                    <button onClick={() => answerTofu(false)} className="px-2 text-error hover:bg-selected">
-                        &nbsp;Reject&nbsp;
+                <footer className="flex justify-end gap-2 border-t border-border bg-deep/40 px-5 py-3">
+                    <button
+                        type="button"
+                        onClick={() => answerTofu(false)}
+                        className="rounded-app border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-error hover:text-error"
+                    >
+                        Reject
                     </button>
                     <button
+                        type="button"
                         onClick={() => answerTofu(true)}
                         disabled={tofu.mismatch && tofuTyped !== CHALLENGE}
-                        className="px-2 text-ok hover:bg-selected disabled:opacity-40 disabled:hover:bg-transparent"
+                        className={`rounded-app px-4 py-1.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${tofu.mismatch ? "bg-error" : "bg-accent"}`}
                     >
-                        &nbsp;{tofu.mismatch ? "Replace pinned key" : "Trust & save"}&nbsp;
+                        {tofu.mismatch ? "Replace pinned key" : "Trust and save"}
                     </button>
-                </div>
-            </Panel>
+                </footer>
+            </div>
         </div>
     );
 
     return (
-        <main className="noise-overlay relative flex h-screen w-screen flex-col bg-background font-mono text-sm text-foreground">
-            {popupMessage && (
-                <div className="absolute right-6 top-4 z-50 whitespace-nowrap rounded-md border border-border bg-background px-3 py-1 text-muted-foreground">
-                    {popupMessage}
-                </div>
-            )}
-
-            <div className="flex min-h-0 flex-1 gap-2 p-2">
-                <Panel
-                    title={paneTitle}
-                    right={unread > 0 ? <span className="text-notice">{` ↓ ${unread} new `}</span> : undefined}
-                    className="flex flex-1 flex-col"
-                >
-                    {!config.disable_logo && (
-                        <div className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center">
-                            <pre className="whitespace-pre text-logo">{LOGO}</pre>
-                        </div>
-                    )}
-
-                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar panel-scroll relative z-10 min-h-0 flex-1 px-3">
-                        {pane.map((entry, index) => entry.entry === "message"
-                            ? renderMessage(entry.message, index)
-                            : renderBlock(entry.title, entry.rows, index))}
-                    </div>
-
-                    {/* THE PALETTE SITS ON THE BOTTOM EDGE OF THE MESSAGE PANE, DIRECTLY ABOVE THE INPUT */}
-                    {connected && palette.mode !== "hidden" && (
-                        <div className="absolute inset-x-0 bottom-0 z-20 px-1 pb-1">
-                            <Panel
-                                active
-                                title={paletteTitle}
-                                left={active ? " ↑↓ select │ ⇥ complete " : undefined}
-                                className="bg-background"
-                            >
-                                <div className="custom-scrollbar panel-scroll" style={{ maxHeight: `calc(${PALETTE_ROWS * 1.5}rem + 1rem)` }}>
-                                    {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
-                                    {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
-                                    {palette.mode === "values" && palette.matches.map(valueRow)}
-                                </div>
-                            </Panel>
-                        </div>
-                    )}
-                </Panel>
-
-                {/* THE SIDEBAR HAS NOBODY TO LIST UNTIL WE ARE AUTHENTICATED - DO NOT SPEND THE WIDTH ON IT */}
-                {connected && (
-                    <div className="flex w-[26ch] shrink-0 flex-col gap-2">
-                        <Panel title={` Online (${users.length}) `} className="flex flex-1 flex-col">
-                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
-                                {users.map((user) => (
-                                    <div key={user.id} className="whitespace-pre">
-                                        <span className="text-muted-foreground">
-                                            {String(user.id).padStart(idWidth)}
-                                            &nbsp;&nbsp;
-                                        </span>
-                                        <span className={user.username === username ? "text-accent" : ""}>{user.username}</span>
-                                    </div>
-                                ))}
+        <main className="noise-overlay relative flex h-screen w-screen overflow-hidden bg-chat text-[15px] text-text">
+            {connected && (
+                <>
+                    {/* THE LEFT COLUMN: WHERE WE ARE, WHERE WE COULD BE, AND WHO WE ARE WHILE WE ARE THERE */}
+                    <aside className="flex w-[240px] shrink-0 flex-col border-r border-border bg-sidebar">
+                        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold">{serverName || "WHY2"}</div>
+                                <div className="truncate text-[11px] text-faint">{address}</div>
                             </div>
-                        </Panel>
+                            <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
+                        </header>
 
-                        {/* A CHANNEL LIVES EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO WITH NOBODY OUT
-                            THERE THE PANEL HAS NOTHING TO SAY - THE LOBBY IS WHERE WE ALREADY ARE */}
-                        {channels.length > 1 && (
-                        <Panel title={` Channels (${channels.length}) `} className="flex max-h-[40%] flex-col">
-                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
-                                {channels.map((channel) =>
+                        <div className="scroller scroller-quiet flex-1 px-2 pb-3">
+                            <SectionLabel>Channels</SectionLabel>
+
+                            {channels.map((channel) =>
+                            {
+                                const here = channel === currentChannel;
+
+                                return (
+                                    <button
+                                        key={channel || "lobby"}
+                                        type="button"
+                                        onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
+                                        className={`flex w-full items-center gap-1.5 rounded-app px-2 py-1.5 text-left transition-colors ${here ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                                    >
+                                        <Icon name="hash" className="h-4 w-4 shrink-0 text-faint" />
+                                        <span className="truncate text-sm">{channel === LOBBY ? "lobby" : channel}</span>
+                                    </button>
+                                );
+                            })}
+
+                            {/* THE CALL, WHILE THERE IS ONE AND SOMEBODY IS IN IT. CLICKING A ROW MUTES WHOEVER
+                                IS ON IT - OUR OWN ROW IS THE MICROPHONE, AND IS THE ONE /mute TAKES NO ID FOR */}
+                            {voice.enabled && voice.users.length > 0 && (
+                                <>
+                                    <SectionLabel>Voice — {voice.users.length}</SectionLabel>
+
+                                    {voice.users.map((user) => (
+                                        <button
+                                            key={user.id}
+                                            type="button"
+                                            onClick={() => send(user.local ? "/mute" : `/mute ${user.id}`)}
+                                            title={user.muted ? "Unmute" : "Mute"}
+                                            className="flex w-full items-center gap-2 rounded-app px-2 py-1 text-left hover:bg-hover"
+                                        >
+                                            <Avatar name={user.username} size={22} ring={user.speaking && !user.muted} />
+                                            <span className={`min-w-0 flex-1 truncate text-sm ${user.muted ? "text-faint line-through" : user.speaking ? "text-text" : "text-muted"}`}>
+                                                {user.username}
+                                            </span>
+                                            {!user.local && <span className="shrink-0 font-mono text-[10px] text-faint">{user.latency}ms</span>}
+                                            {user.muted && <Icon name="mic_off" className="h-3.5 w-3.5 shrink-0 text-error" />}
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+                        </div>
+
+                        {/* THE CALL'S OWN STRIP, WHERE IT IS IN EVERY OTHER CHAT CLIENT: ABOVE THE PERSON
+                            USING THE PROGRAM, AND HOLDING THE ONE BUTTON THAT ENDS IT */}
+                        {voice.enabled && (
+                            <div className="mx-2 mb-1 flex shrink-0 items-center gap-2 rounded-app bg-deep/70 px-2 py-2">
+                                <Icon name="headset" className="h-4 w-4 shrink-0 text-online" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-semibold text-online">Voice connected</div>
+                                    <div className="truncate text-[11px] text-faint">{serverName || address}</div>
+                                </div>
+                                <IconButton icon="hangup" label="Disconnect" tone="error" onClick={() => send("/voice")} />
+                            </div>
+                        )}
+
+                        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
+                            <Avatar name={username} size={32} />
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-semibold">{username}</div>
+                                <div className="flex items-center gap-1 text-[11px] text-muted">
+                                    <Icon name="shield" className="h-3 w-3" />
+                                    <span className="truncate">{role}</span>
+                                </div>
+                            </div>
+
+                            {/* THE MICROPHONE READS WHAT IS ACTUALLY BEING SENT: THE CAPTURE CALLBACK COUNTS
+                                0% AS OFF, SO A SLIDER AT THE BOTTOM SHOWS UP HERE AS MUTED */}
+                            <IconButton
+                                icon={voice.mic ? "mic" : "mic_off"}
+                                label={voice.mic ? "Mute microphone" : "Unmute microphone"}
+                                tone={voice.mic ? "default" : "error"}
+                                onClick={() => send("/mute")}
+                            />
+                            <IconButton icon="logout" label="Disconnect from the server" tone="error" onClick={() => send("/exit")} />
+                        </div>
+                    </aside>
+
+                    {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}
+                    <section className="flex min-w-0 flex-1 flex-col bg-chat">
+                        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+                            <Icon name="hash" className="h-5 w-5 shrink-0 text-faint" />
+                            <span className="truncate font-semibold">{channelLabel}</span>
+
+                            <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
+                            <span className="hidden min-w-0 truncate text-xs text-faint sm:block">{users.length} online</span>
+
+                            <div className="ml-auto flex items-center gap-1">
+                                <IconButton icon="folder" label="Files on the server" onClick={() => send("/files")} />
+                                <IconButton
+                                    icon="headset"
+                                    label={voice.enabled ? "Leave the call" : "Join the call"}
+                                    tone={voice.enabled ? "ok" : "default"}
+                                    onClick={() => send("/voice")}
+                                />
+                                <IconButton icon="users" label="Members" active={members} onClick={() => setMembers((previous) => !previous)} />
+                            </div>
+                        </header>
+
+                        <div className="relative flex min-h-0 flex-1 flex-col">
+                            <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative min-h-0 flex-1 pb-4">
+                                {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
+                                    IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
+                                <div className="px-4 pb-2 pt-8">
+                                    {!config.disable_logo && (
+                                        <pre className="pointer-events-none mb-4 select-none font-mono text-[11px] leading-[1.05] text-logo">{LOGO}</pre>
+                                    )}
+                                    <h1 className="text-2xl font-bold">Welcome to #{channelLabel}</h1>
+                                    <p className="mt-1 text-sm text-muted">
+                                        {currentChannel
+                                            ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
+                                            : `This is the beginning of ${serverName || "the server"}.`}
+                                    </p>
+                                </div>
+
+                                {paneNodes}
+                            </div>
+
+                            {/* THE PANE FOLLOWS THE BOTTOM ONLY WHILE IT IS ALREADY THERE - SCROLLING UP PARKS
+                                IT AND COUNTS WHAT ARRIVES, AND THIS IS THE WAY BACK DOWN */}
+                            {unread > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                    {
+                                        const node = paneRef.current;
+                                        if (node) node.scrollTop = node.scrollHeight;
+
+                                        pinnedRef.current = true;
+                                        setUnread(0);
+                                    }}
+                                    className="absolute inset-x-4 bottom-1 flex items-center gap-2 rounded-app bg-accent px-3 py-1.5 text-xs font-semibold text-black/85 shadow-lg"
+                                >
+                                    <Icon name="arrow_down" className="h-3.5 w-3.5" />
+                                    {unread} new {unread === 1 ? "message" : "messages"}
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="relative shrink-0 px-4 pb-5 pt-1">
+                            {/* THE PALETTE SITS ON THE COMPOSER, WHICH IS WHERE THE LINE IT IS TALKING ABOUT IS */}
+                            {palette.mode !== "hidden" && (
+                                <div className="rise absolute inset-x-4 bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl">
+                                    <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{paletteTitle}</span>
+                                        {active && <span className="text-[11px] text-faint">↑↓ select · tab complete · esc dismiss</span>}
+                                    </div>
+
+                                    <div className="scroller" style={{ maxHeight: `${PALETTE_ROWS * 2.1}rem` }}>
+                                        {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
+                                        {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
+                                        {palette.mode === "values" && palette.matches.map(valueRow)}
+                                    </div>
+                                </div>
+                            )}
+
+                            <form onSubmit={handleChatSubmit} className="flex items-center gap-1 rounded-app bg-raised px-2 py-1.5">
+                                <IconButton icon="plus" label="Upload a file" onClick={uploadFile} />
+
+                                <input
+                                    ref={chatInputRef}
+                                    id="chat-input"
+                                    type="text"
+                                    value={chatInput}
+                                    onChange={(event) => writeInput(event.currentTarget.value)}
+                                    onKeyDown={handleChatKey}
+                                    placeholder={`Message #${channelLabel}`}
+                                    className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
+                                    autoFocus
+                                    spellCheck={false}
+                                />
+
+                                <button
+                                    type="submit"
+                                    title="Send"
+                                    aria-label="Send"
+                                    disabled={!chatInput.trim()}
+                                    className="flex h-8 w-8 items-center justify-center rounded-app text-muted transition-colors hover:bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                                >
+                                    <Icon name="send" className="h-[18px] w-[18px]" />
+                                </button>
+                            </form>
+                        </div>
+                    </section>
+
+                    {/* THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN */}
+                    {members && (
+                        <aside className="flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar">
+                            <div className="scroller scroller-quiet flex-1 px-2 pb-3">
+                                <SectionLabel>Online — {users.length}</SectionLabel>
+
+                                {users.map((user) =>
                                 {
-                                    const here = channel === currentChannel;
+                                    const own = user.username === username;
 
                                     return (
                                         <div
-                                            key={channel || "lobby"}
-                                            onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
-                                            className="cursor-pointer whitespace-pre hover:bg-selected"
+                                            key={user.id}
+                                            className="flex items-center gap-2 rounded-app px-2 py-1 hover:bg-hover"
+                                            title={user.channel ? `#${user.channel}` : "lobby"}
                                         >
-                                            <span className="text-accent">{here ? "▸ " : "  "}</span>
-                                            <span className="text-muted-foreground">#</span>
-                                            <span className={here ? "text-accent" : ""}>{channel === LOBBY ? "lobby" : channel}</span>
+                                            <div className="relative shrink-0">
+                                                <Avatar name={user.username} size={28} />
+                                                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className={`truncate text-sm ${own ? "text-accent" : "text-muted"}`}>{user.username}</div>
+                                                {user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
+                                            </div>
+
+                                            {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
                                         </div>
                                     );
                                 })}
                             </div>
-                        </Panel>
-                        )}
+                        </aside>
+                    )}
+                </>
+            )}
 
-                        {/* THE CALL, WHILE THERE IS ONE AND SOMEBODY IS IN IT. CLICKING A ROW MUTES WHOEVER
-                            IS ON IT - OUR OWN ROW IS THE MICROPHONE, AND IS THE ONE /mute TAKES NO ID FOR */}
-                        {voice.enabled && voice.users.length > 0 && (
-                        <Panel title={` Voice (${voice.users.length}) `} className="flex max-h-[40%] flex-col">
-                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
-                                {voice.users.map((user) => (
-                                    <div
-                                        key={user.id}
-                                        onClick={() => send(user.local ? "/mute" : `/mute ${user.id}`)}
-                                        title={user.muted ? "Unmute" : "Mute"}
-                                        className="cursor-pointer whitespace-pre hover:bg-selected"
-                                    >
-                                        <span className={user.muted ? "text-error" : user.speaking ? "font-bold text-ok" : "text-muted-foreground"}>
-                                            {user.muted ? "✕" : user.speaking ? "●" : "○"} {user.username}
-                                        </span>
-                                        {!user.local && <span className="text-muted-foreground">{` ${user.latency}ms`}</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </Panel>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            {/* THE INPUT HAS NOTHING TO SAY UNTIL WE ARE IN, THE SAME WAY THE SIDEBAR HAS NOBODY TO LIST */}
-            {connected && (
-                <div className="px-2 pb-2">
-                    <Panel
-                        active
-                        left={status && ` ${status} `}
-                        right={
-                            <span className="whitespace-pre">
-                                {" "}
-                                <button onClick={uploadFile} className="hover:text-accent">upload</button>
-                                {" │ "}
-                                <button onClick={() => send("/files")} className="hover:text-accent">files</button>
-                                {" │ "}
-                                <button onClick={() => send("/voice")} className={voice.enabled ? "text-accent hover:text-error" : "hover:text-accent"}>
-                                    {voice.enabled ? "hang up" : "voice"}
-                                </button>
-
-                                {/* THE MICROPHONE, WHICH THE CAPTURE CALLBACK COUNTS AS OFF AT 0% TOO -
-                                    SO THE ROW READS WHAT IS ACTUALLY BEING SENT, NOT WHAT WAS CLICKED */}
-                                {voice.enabled && (
-                                    <>
-                                        {" │ "}
-                                        <button onClick={() => send("/mute")} className={voice.mic ? "text-ok hover:text-error" : "text-error hover:text-ok"}>
-                                            {voice.mic ? "mic on" : "mic off"}
-                                        </button>
-                                    </>
-                                )}
-                                {" │ "}
-                                <button onClick={() => send("/settings")} className="hover:text-accent">settings</button>
-                                {" │ "}
-                                <span className="text-accent">{role}</span>
-                                {" │ "}
-                                <button onClick={() => send("/exit")} className="hover:text-error">exit</button>
-                                {" "}
-                            </span>
-                        }
-                        className="p-2"
-                    >
-                        <form onSubmit={handleChatSubmit} className="flex items-baseline">
-                            <span className="text-accent">&gt;&nbsp;</span>
-                            <input
-                                ref={chatInputRef}
-                                id="chat-input"
-                                type="text"
-                                value={chatInput}
-                                onChange={(event) => writeInput(event.currentTarget.value)}
-                                onKeyDown={handleChatKey}
-                                className="w-full bg-transparent text-foreground caret-accent outline-none"
-                                autoFocus
-                                spellCheck={false}
-                            />
-                        </form>
-                    </Panel>
+            {/* WHAT THE SERVER SAID IN PASSING - IT IS NOT A MESSAGE, AND IT DOES NOT BELONG IN THE PANE */}
+            {popupMessage && (
+                <div className="rise absolute bottom-6 left-1/2 z-50 max-w-[80vw] -translate-x-1/2 rounded-app border border-border bg-overlay px-4 py-2 text-sm text-muted shadow-2xl">
+                    {popupMessage}
                 </div>
             )}
 
             {settingsBox}
-            {loginBox}
+            {loginScreen}
             {tofuBox}
         </main>
     );
