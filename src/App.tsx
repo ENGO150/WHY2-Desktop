@@ -50,14 +50,29 @@ interface BlockRow
     text: string;
     note: string | null;
     accent: boolean;
-    download: [number, number] | null;
+}
+
+//WHAT IS UP FOR DOWNLOAD. THE PROTOCOL CARRIES A NAME AND AN ID AND NOTHING ELSE - NO SIZE, NO TIME - SO
+//THE ROW IS THE NAME, WHAT KIND OF FILE THE NAME SAYS IT IS, AND THE TWO IDS /download TAKES
+interface FileInfo
+{
+    id: number;
+    name: string;
+}
+
+interface FileOwner
+{
+    id: number;
+    username: string;
+    files: FileInfo[];
 }
 
 //ONE THING IN THE PANE. A LIST (/files, /list, THE BAN LIST) IS AN ENTRY IN THE SCROLLBACK RATHER THAN A
 //WINDOW THAT COVERS IT - IT IS AN ANSWER TO SOMETHING THAT WAS ASKED, AND IT BELONGS WHERE IT WAS ASKED
 type PaneEntry =
     | { entry: "message"; message: ChatMessage }
-    | { entry: "block"; title: string; rows: BlockRow[] };
+    | { entry: "block"; title: string; rows: BlockRow[] }
+    | { entry: "files"; owners: FileOwner[] };
 
 interface OnlineUser
 {
@@ -265,6 +280,7 @@ type BridgeEvent =
     | { event: "users"; data: { users: OnlineUser[] } }
     | { event: "user_left"; data: { id: number } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
+    | { event: "files"; data: { owners: FileOwner[] } }
     | { event: "open_settings"; data?: null }
     | { event: "client_settings"; data: { settings: ClientSetting[] } }
     | { event: "voice"; data: { voice: VoiceState } }
@@ -379,7 +395,36 @@ const ICONS: Record<string, string[]> =
     speaker_off: ["M11 5 6 9H3v6h3l5 4V5z", "M17 9.5l4 5", "M21 9.5l-4 5"],
     check: ["M20 6 9 17l-5-5"],
     info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 8h.01", "M11.25 12h.75v4.5h.75"],
+    file: ["M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6z", "M13 3v6h6"],
+    image: ["M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M3 16l5-5 4 4 3-3 6 6", "M9 9.5h.01"],
+    music: ["M9 18V6l10-2v12", "M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z", "M19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"],
+    video: ["M3 6h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z", "M16 10.5 22 7v10l-6-3.5z"],
+    archive: ["M4 8h16v12H4z", "M3 4h18v4H3z", "M10 12h4"],
+    code: ["M9 18l-6-6 6-6", "M15 6l6 6-6 6"],
 };
+
+//WHAT A NAME SAYS THE FILE IS. THE PROTOCOL SENDS NO TYPE AND NO SIZE, SO THE EXTENSION IS THE ONLY
+//THING THERE IS TO GO ON - AND AN UNKNOWN ONE STILL NAMES ITSELF RATHER THAN SAYING NOTHING
+const FILE_KINDS: [string, string, string[]][] =
+[
+    ["image", "Image", ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif", "tiff"]],
+    ["music", "Audio", ["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac", "wma"]],
+    ["video", "Video", ["mp4", "mkv", "webm", "mov", "avi", "wmv", "m4v"]],
+    ["archive", "Archive", ["zip", "tar", "gz", "xz", "bz2", "7z", "rar", "zst"]],
+    ["code", "Code", ["rs", "ts", "tsx", "js", "jsx", "py", "c", "h", "cpp", "hpp", "go", "java", "sh", "toml", "json", "yaml", "yml", "html", "css"]],
+    ["file", "Document", ["txt", "md", "pdf", "doc", "docx", "odt", "rtf", "log"]],
+];
+
+function fileKind(name: string): { icon: string; label: string }
+{
+    const dot = name.lastIndexOf(".");
+    const extension = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+
+    const found = FILE_KINDS.find(([, , extensions]) => extensions.includes(extension));
+    if (found) return { icon: found[0], label: found[1] };
+
+    return { icon: "file", label: extension ? `${extension.toUpperCase()} file` : "File" };
+}
 
 function Icon({ name, className }: { name: keyof typeof ICONS | string; className?: string })
 {
@@ -1082,6 +1127,12 @@ function App()
                 case "block":
                 {
                     push({ entry: "block", title: payload.data.title, rows: payload.data.rows });
+                    break;
+                }
+
+                case "files":
+                {
+                    push({ entry: "files", owners: payload.data.owners });
                     break;
                 }
 
@@ -2013,29 +2064,76 @@ function App()
                 </div>
 
                 <div className="py-1">
-                    {rows.map((row, index) =>
-                    {
-                        //THE TWO IDS A FILE ROW CARRIES ARE THE TWO ARGUMENTS TO /download, SO CLICKING ONE
-                        //SENDS EXACTLY WHAT TYPING IT OUT WOULD HAVE
-                        const download = row.download;
+                    {rows.map((row, index) => (
+                        <div key={index} className="flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px]">
+                            <span className="text-border-strong">{glyphs[index]}</span>
+                            {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
+                            <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
+                            {row.note && <span className="text-faint">{"  "}{row.note}</span>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
 
-                        return (
-                            <div
-                                key={index}
-                                className={`group flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px] ${download ? "cursor-pointer hover:bg-hover" : ""}`}
-                                onClick={download ? () => send(`/download ${download[0]} ${download[1]}`) : undefined}
-                                title={download ? "Download" : undefined}
-                            >
-                                <span className="text-border-strong">{glyphs[index]}</span>
-                                {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
-                                <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
-                                {row.note && <span className="text-faint">{"  "}{row.note}</span>}
-                                {download && (
-                                    <Icon name="download" className="ml-auto h-4 w-4 shrink-0 text-faint opacity-0 group-hover:opacity-100" />
-                                )}
+    //THE FILE LIST, DRAWN AS A LIST AND NOT AS A TREE - A TERMINAL HAS GLYPHS WHERE A WINDOW HAS ROWS.
+    //THE OWNER IS A HEADING, THEIR FILES ARE THE ROWS UNDER IT, AND CLICKING ONE SENDS EXACTLY WHAT TYPING
+    ///download <USER> <FILE> WOULD HAVE
+    const renderFiles = (owners: FileOwner[], key: number) =>
+    {
+        const total = owners.reduce((count, owner) => count + owner.files.length, 0);
+
+        return (
+            <div key={key} className="mx-4 mt-4 overflow-hidden rounded-app border border-border bg-raised">
+                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                    <Icon name="folder" className="h-4 w-4 shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wider text-muted">Available files</span>
+                    <span className="shrink-0 text-[11px] text-faint">{total} {total === 1 ? "file" : "files"}</span>
+                </div>
+
+                <div className="p-1.5">
+                    {owners.map((owner) => (
+                        <div key={owner.id} className="mb-1 last:mb-0">
+                            <div className="flex items-center gap-2 px-1.5 py-1">
+                                <Avatar name={owner.username} size={20} />
+                                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{owner.username}</span>
+                                {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{owner.id}</span>}
                             </div>
-                        );
-                    })}
+
+                            {owner.files.length === 0 && <div className="px-2 pb-1 text-xs text-faint">nothing up</div>}
+
+                            {owner.files.map((file) =>
+                            {
+                                const kind = fileKind(file.name);
+
+                                return (
+                                    <button
+                                        key={file.id}
+                                        type="button"
+                                        title={`Download ${file.name}`}
+                                        onClick={() => send(`/download ${owner.id} ${file.id}`)}
+                                        className="group flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
+                                    >
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
+                                            <Icon name={kind.icon} className="h-4 w-4" />
+                                        </span>
+
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-sm">{file.name}</span>
+                                            <span className="block text-[11px] text-faint">{kind.label}</span>
+                                        </span>
+
+                                        <span className="shrink-0 font-mono text-[10px] text-faint">#{file.id}</span>
+
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-app text-faint transition-colors group-hover:bg-active group-hover:text-text">
+                                            <Icon name="download" className="h-4 w-4" />
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
                 </div>
             </div>
         );
@@ -2054,6 +2152,13 @@ function App()
                 previous = null;
 
                 return renderBlock(entry.title, entry.rows, index);
+            }
+
+            if (entry.entry === "files")
+            {
+                previous = null;
+
+                return renderFiles(entry.owners, index);
             }
 
             const message = entry.message;

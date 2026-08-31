@@ -66,10 +66,17 @@ case visible.
 
 Chat lines all arrive as one `message` event carrying a `ChatMessage` whose `kind` (`user`, `private`,
 `system`, `notice`, `ok`, `error`) is what the frontend styles on — joins, uploads and server notices are not a
-separate channel, they are messages nobody said. `/files`, `/list` and the ban list arrive as a `block` event
-(a flat `Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the
-TUI prints them — the frontend draws them as a card in the stream, keeping the `├─`/`╰─` glyphs it builds from
+separate channel, they are messages nobody said. `/list` and the ban list arrive as a `block` event (a flat
+`Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the TUI
+prints them — the frontend draws them as a card in the stream, keeping the `├─`/`╰─` glyphs it builds from
 the depths, since what they are is a tree.
+
+`/files` used to be one of those and is not any more: it arrives as its own `files` event carrying
+`FileOwnerInfo { id, username, files }`, because a file list is not a tree, it is a list of things you can
+click. `renderFiles` draws the owner as a heading and their files as rows — the kind the extension says it
+is, the name, the file's id, and the button that fetches it — and clicking a row sends the same
+`/download <user> <file>` typing it out would have. Nothing else carries a download, so `BlockRow` no longer
+has that field.
 
 ### Sessions
 
@@ -103,7 +110,7 @@ Three columns, and a screen in front of them while there is no session:
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
-run** — a system line, a notice, a `/files` card. A line nobody said keeps the avatar column but puts an icon
+run** — a system line, a notice, a list card. A line nobody said keeps the avatar column but puts an icon
 in it, so the text of the whole pane stays under one edge. Private messages take an accent rule down their
 left side and a `private` badge. There are no avatars in this protocol, so a face is the first letter of the
 name over the color the user picked — or, where they picked none, the one `avatarColor` always hashes it to.
@@ -137,7 +144,8 @@ tokens in one `@theme inline` block.
 
 The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
 characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
-signatures, IDs and latencies.
+signatures, IDs and latencies. A file name is **not** one of those — it is a name, and it is set in the
+interface face like every other name.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
@@ -156,12 +164,12 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   `/ucolor`, `/color`, `/mute`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
-`send_input("/channel <name>")`, the sidebar's `+` sends `/channel <new name>`, its header gear sends
-`/server settings` (drawn only when `get_commands` says our role has that action) while the gear by our own
-name sends `/settings`, the door sends `/exit`, the header's
-folder sends `/files` and its headset `/voice`, the microphone button sends `/mute`, clicking a file row sends
-`/download <user_id> <file_id>`, and clicking a row of the voice roster sends `/mute <id>` — or `/mute` on
-our own row, the one the command takes no ID for. Prefer extending the command path over adding a
+`send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
+header gear sends `/server settings` (drawn only when `get_commands` says our role has that action) while the
+gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
+and its headset `/voice`; the microphone button sends `/mute`; a row of the file list sends
+`/download <user_id> <file_id>`, and a row of the voice roster sends `/mute <id>` — or `/mute` on our own
+row, the one the command takes no ID for. Prefer extending the command path over adding a
 `#[tauri::command]`.
 
 `get_commands` reflects `command::COMMAND_LIST` filtered by the role the server granted us

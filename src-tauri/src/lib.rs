@@ -176,8 +176,8 @@ struct ChatMessage
     message_color: Option<u8>,
 }
 
-//ONE ROW OF A LIST BLOCK. THE TUI PRINTS /files, /list AND THE BAN LIST INTO THE PANE AS TREES RATHER
-//THAN INTO A WINDOW OF THEIR OWN, SO THE ROWS ARRIVE FLAT AND THE BRANCH GLYPHS ARE DRAWN FROM depth
+//ONE ROW OF A LIST BLOCK. THE TUI PRINTS /list AND THE BAN LIST INTO THE PANE AS TREES RATHER THAN INTO
+//A WINDOW OF THEIR OWN, SO THE ROWS ARRIVE FLAT AND THE BRANCH GLYPHS ARE DRAWN FROM depth
 #[derive(Serialize, Clone)]
 struct BlockRow
 {
@@ -186,7 +186,25 @@ struct BlockRow
     text: String,
     note: Option<String>,             //A DIM TRAILING COLUMN - A CHANNEL, A DESCRIPTION
     accent: bool,
-    download: Option<(usize, usize)>, //UPLOADER AND FILE, WHEN THE ROW IS ONE THAT CAN BE FETCHED
+}
+
+//ONE FILE SOMEBODY HAS UP, AND EVERYTHING /download NEEDS TO FETCH IT. THE PROTOCOL CARRIES NOTHING ELSE
+//ABOUT A FILE - NO SIZE, NO TIME - SO THE NAME IS THE WHOLE OF WHAT THERE IS TO SHOW
+#[derive(Serialize, Clone)]
+struct FileInfo
+{
+    id: usize,
+    name: String,
+}
+
+//THE FILES OF ONE USER. THE TUI PRINTS THIS AS A TREE BECAUSE A TERMINAL HAS GLYPHS AND NOT ROWS; HERE
+//THE OWNER IS A HEADING AND THEIR FILES ARE A LIST UNDER IT
+#[derive(Serialize, Clone)]
+struct FileOwnerInfo
+{
+    id: usize,
+    username: String,
+    files: Vec<FileInfo>,
 }
 
 #[derive(Serialize, Clone)]
@@ -376,7 +394,8 @@ enum UiEvent
     },
     Users { users: Vec<OnlineUserInfo> },                         //THE ROSTER BEHIND THE SIDEBAR
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
-    Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /files, /list, BANS
+    Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
+    Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
     ClientSettings { settings: Vec<ClientSetting> },              //OUR OWN ROWS AGAIN, WHEN SOMETHING ELSE MOVED THEM
     Voice { voice: VoiceState },                                  //THE CALL, WHOLE - THE PANEL DRAWS ITSELF FROM IT
@@ -866,7 +885,6 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
                     text: user.username.clone(),
                     note: user.channel.clone().map(|channel| format!("#{channel}")),
                     accent: user.channel.clone().unwrap_or_default() == here,
-                    download: None,
                 }).collect());
             }
 
@@ -878,38 +896,20 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
             emit(app, UiEvent::Users { users });
         },
 
-        //THE OWNER IS THE BRANCH AND THEIR FILES HANG OFF IT - THE TWO IDS SIDE BY SIDE ARE THE TWO
-        //ARGUMENTS TO /download, WHICH IS ALSO WHAT CLICKING ONE SENDS
+        //NOT A TREE: THE OWNER IS A HEADING AND THEIR FILES ARE THE ROWS UNDER IT. THE TWO IDS TRAVEL
+        //TOGETHER ALL THE WAY TO THE WINDOW, BECAUSE THEY ARE THE TWO ARGUMENTS TO /download
         ClientEvent::Files(users) =>
         {
             if users.is_empty() { return say(app, ChatMessage::notice("No available files.")) }
 
-            let mut rows = Vec::new();
-
-            for user in &users
+            let owners = users.into_iter().map(|user| FileOwnerInfo
             {
-                rows.push(BlockRow
-                {
-                    depth: 0,
-                    id: Some(user.id),
-                    text: user.username.clone(),
-                    note: None,
-                    accent: false,
-                    download: None,
-                });
+                id: user.id,
+                username: user.username,
+                files: user.upload.into_iter().map(|(name, id)| FileInfo { id, name }).collect(),
+            }).collect();
 
-                rows.extend(user.upload.iter().map(|(filename, file)| BlockRow
-                {
-                    depth: 1,
-                    id: Some(*file),
-                    text: filename.clone(),
-                    note: None,
-                    accent: false,
-                    download: Some((user.id, *file)),
-                }));
-            }
-
-            block(app, format!("Available files ({})", users.len()), rows);
+            emit(app, UiEvent::Files { owners });
         },
 
         //ASKED FOR BY /server bans, AND SENT AGAIN AFTER EVERY PARDON - THE IDS RENUMBER WHEN ONE IS
@@ -933,7 +933,6 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
                     text: name.to_string(),
                     note: None,
                     accent: false,
-                    download: None,
                 });
 
                 rows.extend(bans.into_iter().map(|BanEntry { id, subject }| BlockRow
@@ -943,7 +942,6 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
                     text: subject,
                     note: None,
                     accent: false,
-                    download: None,
                 }));
             }
 

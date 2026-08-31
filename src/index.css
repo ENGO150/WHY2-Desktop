@@ -30,30 +30,30 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
    NEARLY MONOCHROME ON PURPOSE, SO THE ONLY SATURATED THING IN THE WINDOW IS WHAT SOMEBODY SAID */
 :root
 {
-    --deep: #0a0809;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
-    --sidebar: #100e0f;          /* THE CHANNEL AND MEMBER COLUMNS */
-    --chat: #141112;             /* WHERE THE MESSAGES ARE */
-    --raised: #1a1617;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
-    --overlay: #1f1a1c;          /* DIALOGS */
+    --deep: #050405;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
+    --sidebar: #0a0809;          /* THE CHANNEL AND MEMBER COLUMNS */
+    --chat: #0d0b0c;             /* WHERE THE MESSAGES ARE */
+    --raised: #131011;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
+    --overlay: #171314;          /* DIALOGS */
 
     --hover: #ffffff0a;
     --selected: #ffffff10;
     --active: #ffffff17;
 
-    --border: #241f21;
-    --border-strong: #37302f;
+    --border: #1d191a;
+    --border-strong: #2d2729;
 
-    --text: #d6cecf;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
-    --muted: #8d8285;           /* EVERY DIM LABEL */
-    --faint: #5f5659;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
+    --text: #cec6c8;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
+    --muted: #877c7f;            /* EVERY DIM LABEL */
+    --faint: #5a5154;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
 
-    --accent: #9aa7b2;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
-    --brand: #b98aa6;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
-    --notice: #b7a8ab;           /* PALE ASH */
-    --ok: #a89293;               /* SALMON, WORN DOWN */
-    --error: #b8636f;
-    --online: #7b9c88;           /* PRESENCE, AND A CALL THAT IS UP */
-    --warning: #b09a6c;
+    --accent: #93a0ac;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
+    --brand: #ae7f9b;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
+    --notice: #ada0a3;           /* PALE ASH */
+    --ok: #9e8a8b;               /* SALMON, WORN DOWN */
+    --error: #ae5c68;
+    --online: #71917e;           /* PRESENCE, AND A CALL THAT IS UP */
+    --warning: #a69166;
 
     --arg-required: #a0937f;     /* SOFT SAND */
     --arg-optional: #a58c88;     /* FADED CORAL */
