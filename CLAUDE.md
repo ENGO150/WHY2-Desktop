@@ -323,12 +323,13 @@ a picture nobody sees is worth nothing a second later.
   draw-only-the-newest shape as the TUI's `display.rs`; what the TUI has and this cannot is the GPU, where
   the YUV planes go up as they are and a shader does the conversion.
 
-Either way the picture lands in a `<canvas>` that **takes the whole middle column or none of it**: while
-there is a screen to watch, the head of the column becomes two tabs (the channel, and whose screen it is)
-and `view` says which is in front — half a chat above half a screen is two things too small to read. The
-composer stays under both, so a line can still be typed at a picture. The screen pane is **hidden and never
-unmounted** while it is being watched: a canvas that left the page would take the decoder's target with it
-and come back black. A badge in the pane's footer says which of the two paths is live (`h.264` or `jpeg`),
+Either way the picture lands in a `<canvas>` that **takes the whole window** (`theater`): a screen is
+somebody's entire monitor, and every column left standing beside it is taken off the only thing anybody is
+looking at — so while it is in front, the sidebar, the member column, the channel header and the composer
+all stand down, and the picture's own footer bar carries the way back (`#channel`, or esc), who is being
+watched, and `Stop watching`. Out of it, the head of the column is two tabs and `view` says which is in
+front. The screen pane is **hidden and never unmounted** while it is being watched: a canvas that left the
+page would take the decoder's target with it and come back black. A badge in the pane's footer says which of the two paths is live (`h.264` or `jpeg`),
 which is the only way to tell from the outside — and on WebKitGTK the answer changes once `avdec_h264` is
 installed **and the app is restarted**, since the GStreamer registry is read when the process starts.
 
@@ -336,10 +337,14 @@ installed **and the app is restarted**, since the GStreamer registry is read whe
 clock (`SCREENS_POLL`, and the first ask waits for the roster to be out of the way, since the server counts
 packets and not messages). That keeps the **member list** honest, which is where watching actually starts: a
 green monitor button appears beside anybody who is sharing and sends `/attach <id>`, or `/deattach` while it
-is their screen in the pane. `pollingRef` is what separates the two kinds of answer — the one we asked for
-quietly fills the list in, and the one somebody typed opens the **Screens** window, one door for both
-directions: everybody who is sharing (whole rows, and ours among them marked `you` — a list that hid the
-reader could look empty while they were plainly sharing) over our own monitors, the live one badged. The
+is their screen in the pane. The clock's ask does **not** go through `send_input`: `refresh_screens` is the
+`refresh_online` of this question, waiting out `ROSTER_GAP` since our own last packet, because a `Screens`
+on the heels of an `Attach` is exactly what the server calls spam. Nothing asks it *because* a share
+started, for the same reason. `pollingRef` separates the two kinds of answer — the one we asked for quietly
+fills the list in, and the one somebody typed opens the **Screens** window, one door for both
+directions: everybody who is sharing (whole rows, ours among them marked `you` and watchable like any other
+— seeing what everybody else is seeing is the one thing the person sharing cannot otherwise check) over our
+own monitors, the live one badged. The
 header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap, and
 `Refresh` re-asks.
 

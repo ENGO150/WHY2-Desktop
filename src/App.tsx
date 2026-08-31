@@ -1004,9 +1004,6 @@ function App()
     //A COUNT AND NOT A FLAG, SINCE THE CLOCK AND A SHARE STARTING CAN BOTH BE IN FLIGHT AT ONCE
     const pollingRef = useRef(0);
 
-    //WHETHER THE SESSION HAS ALREADY HAD ITS FIRST ASK, SO THE ONE THE CONNECTION ITSELF WOULD FIRE IS NOT
-    //SENT ON TOP OF THE ROSTER
-    const screensReadyRef = useRef(false);
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1044,6 +1041,10 @@ function App()
     }, [uiState, connecting]);
 
     const connected = uiState === "connected";
+
+    //THE PICTURE GETS THE WHOLE WINDOW. A SCREEN IS SOMEBODY'S WHOLE MONITOR, AND EVERY COLUMN LEFT
+    //STANDING BESIDE IT IS TAKEN OFF THE ONLY THING ANYBODY IS LOOKING AT
+    const theater = connected && watching !== null && view === "screen";
 
     //THE SERVER'S OWN CONFIG IS BEHIND A ROLE, AND THE COMMAND LIST IS ALREADY FILTERED BY THE ONE THE
     //SERVER GRANTED US - SO THE DOOR IS DRAWN EXACTLY WHERE THERE IS SOMETHING BEHIND IT
@@ -1578,7 +1579,8 @@ function App()
     {
         pollingRef.current += 1;
 
-        send("/screens");
+        //NOT send(): THE SERVER COUNTS PACKETS, AND THIS ONE HAS TO WAIT OUT WHATEVER THE USER JUST DID
+        invoke("refresh_screens").catch(() => { pollingRef.current -= 1; });
     };
 
     //ONE DOOR FOR BOTH HALVES OF THE SUBJECT: WHICH OF OUR SCREENS TO SHARE, AND WHOSE TO WATCH. THE
@@ -1706,6 +1708,25 @@ function App()
         };
     }, [watching]);
 
+    //THE PICTURE HAS THE WHOLE WINDOW, SO THE WAY BACK HAS TO BE A KEY AS WELL AS A BUTTON - AND THERE IS
+    //NO COMPOSER UNDER IT TO TAKE THE KEYSTROKE FIRST
+    useEffect(() =>
+    {
+        if (!theater) return;
+
+        const onKey = (event: KeyboardEvent) =>
+        {
+            if (event.key !== "Escape") return;
+
+            event.preventDefault();
+            setView("chat");
+        };
+
+        window.addEventListener("keydown", onKey);
+
+        return () => window.removeEventListener("keydown", onKey);
+    }, [theater]);
+
     //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
     //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
     useEffect(() =>
@@ -1735,19 +1756,6 @@ function App()
 
         return () => { clearTimeout(first); clearInterval(clock); };
     }, [connected]);
-
-    //A SHARE STARTING OR STOPPING - OURS OR THE ONE WE ARE WATCHING - CHANGES THE ANSWER, AND WAITING OUT
-    //THE CLOCK FOR IT WOULD LEAVE A BUTTON STANDING THAT NO LONGER GOES ANYWHERE
-    useEffect(() =>
-    {
-        if (!connected) { screensReadyRef.current = false; return; }
-
-        //THE FIRST PASS IS THE CONNECTION ITSELF, WHICH THE CLOCK'S OWN FIRST ASK ALREADY COVERS - AND THE
-        //SERVER COUNTS PACKETS, SO ASKING TWICE IN THE SAME BREATH AS THE ROSTER EARNS A WARNING
-        if (!screensReadyRef.current) { screensReadyRef.current = true; return; }
-
-        askScreens();
-    }, [connected, screen.sharing, watching]);
 
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
@@ -2854,30 +2862,23 @@ function App()
                         const own = user.username === username;
                         const here = watching === user.username;
 
-                        //OUR OWN SHARE IS THE ONE ROW THAT IS NOT A DOOR - THE SERVER WILL NOT SHOW US OURSELVES
-                        if (own)
-                        {
-                            return (
-                                <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
-                                    <Avatar name={user.username} size={28} />
-
-                                    <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
-                                    <span className="shrink-0 text-[11px] text-faint">you</span>
-                                </div>
-                            );
-                        }
-
+                        //OUR OWN SHARE IS WATCHABLE LIKE ANY OTHER - IT IS THE ONLY WAY TO SEE WHAT EVERYBODY
+                        //ELSE IS SEEING OF IT, WHICH IS THE ONE THING THE PERSON SHARING CANNOT OTHERWISE CHECK
                         return (
                             <button
                                 key={user.id}
                                 type="button"
-                                title={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
+                                title={here
+                                    ? `Stop watching ${own ? "your own screen" : user.username}`
+                                    : own ? "Watch your own screen as everybody else sees it" : `Watch ${user.username}'s screen`}
                                 onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
                                 className="flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
                             >
                                 <Avatar name={user.username} size={28} />
 
                                 <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
+
+                                {own && <span className="shrink-0 text-[11px] text-faint">you</span>}
 
                                 <span className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
                                     ? "border border-border text-muted"
@@ -3078,7 +3079,7 @@ function App()
             {connected && (
                 <>
                     {/* THE LEFT COLUMN: WHERE WE ARE, WHERE WE COULD BE, AND WHO WE ARE WHILE WE ARE THERE */}
-                    <aside className="flex w-[240px] shrink-0 flex-col border-r border-border bg-sidebar">
+                    <aside className={`w-[240px] shrink-0 flex-col border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
                         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
                             <div className="min-w-0 flex-1">
                                 <div className="truncate text-sm font-semibold">{serverName || "WHY2"}</div>
@@ -3238,7 +3239,7 @@ function App()
 
                     {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}
                     <section className="flex min-w-0 flex-1 flex-col bg-chat">
-                        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+                        <header className={`h-14 shrink-0 items-center gap-2 border-b border-border px-4 ${theater ? "hidden" : "flex"}`}>
                             {/* WHILE THERE IS A SCREEN TO LOOK AT, THE HEAD OF THE COLUMN IS THE CHOICE OF
                                 WHICH TO LOOK AT - THE PICTURE TAKES THE WHOLE COLUMN OR NONE OF IT, BECAUSE
                                 HALF A CHAT ABOVE HALF A SCREEN IS TWO THINGS TOO SMALL TO READ */}
@@ -3306,8 +3307,21 @@ function App()
                                 )}
                             </div>
 
-                            {/* WHOSE PICTURE IT IS, WHO IS DECODING IT, AND THE WAY OUT OF IT */}
+                            {/* WHOSE PICTURE IT IS, WHO IS DECODING IT, AND THE TWO WAYS OUT OF IT: BACK TO
+                                WHAT IS BEING SAID, OR OUT OF THE SHARE ALTOGETHER */}
                             <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3">
+                                <button
+                                    type="button"
+                                    title="Back to the chat (esc)"
+                                    onClick={() => setView("chat")}
+                                    className="flex shrink-0 items-center gap-1.5 rounded-app px-2 py-1 text-sm text-muted transition-colors hover:bg-hover hover:text-text"
+                                >
+                                    <Icon name="hash" className="h-4 w-4" />
+                                    <span className="max-w-[14ch] truncate">{channelLabel}</span>
+                                </button>
+
+                                <span className="h-4 w-px shrink-0 bg-border" />
+
                                 <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
 
                                 <span className="min-w-0 truncate text-sm">
@@ -3373,7 +3387,10 @@ function App()
                             )}
                         </div>
 
-                        <div className="relative shrink-0 px-4 pb-5 pt-1" onMouseDown={(event) => event.stopPropagation()}>
+                        <div
+                            className={`relative shrink-0 px-4 pb-5 pt-1 ${theater ? "hidden" : ""}`}
+                            onMouseDown={(event) => event.stopPropagation()}
+                        >
                             {/* THE PALETTE SITS ON THE COMPOSER, WHICH IS WHERE THE LINE IT IS TALKING ABOUT IS */}
                             {palette.mode !== "hidden" && (
                                 <div className="rise absolute inset-x-4 bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl">
@@ -3420,7 +3437,7 @@ function App()
                     </section>
 
                     {/* THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN */}
-                    {members && (
+                    {members && !theater && (
                         <aside className="flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar">
                             <div className="scroller scroller-quiet flex-1 px-2 pb-3">
                                 <SectionLabel>Online — {users.length}</SectionLabel>
@@ -3431,7 +3448,7 @@ function App()
 
                                     //WHOEVER WAS SHARING WHEN THE LIST WAS LAST ASKED FOR. IT IS THE ONE
                                     //THING THE SERVER NEVER ANNOUNCES, SO IT IS AS FRESH AS THE LAST ASK
-                                    const sharing = !own && sharers.some((sharer) => sharer.id === user.id);
+                                    const sharing = sharers.some((sharer) => sharer.id === user.id);
                                     const here = watching === user.username;
 
                                     return (

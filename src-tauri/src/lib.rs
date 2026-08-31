@@ -104,12 +104,13 @@ const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
 //PHOTOGRAPH: TEXT HAS TO SURVIVE IT, AND THE BYTES ONLY TRAVEL AS FAR AS THE CANVAS IN THE SAME PROCESS
-const JPEG_QUALITY: u8 = 72;
+const JPEG_QUALITY: u8 = 78;
 
 //AND HOW WIDE IT IS DRAWN AT. THE PANE IS A FRACTION OF THE SCREEN BEING SHARED, AND EVERY PIXEL PAST THIS
 //IS PAID FOR THREE TIMES OVER - THE CONVERSION, THE ENCODE, AND THE TRIP ACROSS THE BRIDGE. TAKING A 4K
-//SHARE DOWN BY THREE IS THE WHOLE DIFFERENCE BETWEEN A PICTURE AND A SLIDESHOW
-const JPEG_WIDTH: usize = 1280;
+//SHARE DOWN BY HALF IS THE WHOLE DIFFERENCE BETWEEN A PICTURE AND A SLIDESHOW. ANYTHING UP TO A 1080p
+//SCREEN IS SENT AS IT IS, BECAUSE THE PANE IS THE WHOLE WINDOW NOW AND HALVING THAT IS VISIBLE
+const JPEG_WIDTH: usize = 1920;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
@@ -168,6 +169,7 @@ struct AppState
     session: AtomicU64,                                                //ONLY THE NEWEST SESSION COUNTS
     last_sent: Mutex<Instant>,                                         //WHEN WE LAST PUT SOMETHING ON THE WIRE
     roster_queued: AtomicBool,                                         //A ROSTER REFRESH IS ALREADY ON ITS WAY
+    screens_queued: AtomicBool,                                        //AND SO IS A SCREENS ONE
     leaving: AtomicBool,                                               //THE DISCONNECT WAS ASKED FOR
     list_requested: AtomicBool,                                        //THE NEXT ROSTER OPENS A MODAL
     version_checked: AtomicBool,                                       //crates.io IS ASKED ONCE PER PROCESS
@@ -726,6 +728,41 @@ fn refresh_online(app: &AppHandle, session: u64)
         let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
 
         send_packet(&state, &write_stream, PacketCode::List { users: None }).await;
+    });
+}
+
+//THE SAME, FOR THE ONE QUESTION THE SERVER NEVER ANSWERS UNASKED: WHO IS SHARING A SCREEN. THE WINDOW ASKS
+//IT ON A CLOCK AND NOT BECAUSE ANYBODY TYPED ANYTHING, SO IT GIVES WAY TO EVERYTHING THAT DID - A Screens
+//PACKET ON THE HEELS OF AN Attach IS EXACTLY WHAT THE SERVER CALLS SPAM
+#[tauri::command]
+fn refresh_screens(app: AppHandle, state: State<'_, AppState>)
+{
+    if state.screens_queued.swap(true, Ordering::Relaxed) { return }
+
+    let session = state.session.load(Ordering::Relaxed);
+    let app = app.clone();
+
+    async_runtime::spawn(async move
+    {
+        loop
+        {
+            let waited = app.state::<AppState>().last_sent.lock().unwrap().elapsed();
+
+            if waited >= ROSTER_GAP { break }
+
+            time::sleep(ROSTER_GAP - waited).await;
+        }
+
+        let state = app.state::<AppState>();
+
+        //THE SESSION IT WAS QUEUED FOR IS GONE, AND SO IS THE POINT OF ASKING
+        if state.session.load(Ordering::Relaxed) != session { return }
+
+        state.screens_queued.store(false, Ordering::Relaxed);
+
+        let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
+
+        send_packet(&state, &write_stream, PacketCode::Screens { users: None }).await;
     });
 }
 
@@ -1543,6 +1580,7 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     state.leaving.store(false, Ordering::Relaxed);
     state.list_requested.store(false, Ordering::Relaxed);
     state.roster_queued.store(false, Ordering::Relaxed);
+    state.screens_queued.store(false, Ordering::Relaxed);
     *state.last_sent.lock().unwrap() = Instant::now();
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
@@ -1880,6 +1918,7 @@ pub fn run()
             session: AtomicU64::new(0),
             last_sent: Mutex::new(Instant::now()),
             roster_queued: AtomicBool::new(false),
+            screens_queued: AtomicBool::new(false),
             leaving: AtomicBool::new(false),
             list_requested: AtomicBool::new(false),
             version_checked: AtomicBool::new(false),
@@ -1921,6 +1960,7 @@ pub fn run()
             upload_file_from_path,
             watch_frames,
             drop_frames,
+            refresh_screens,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
