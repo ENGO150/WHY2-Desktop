@@ -1559,7 +1559,7 @@ function App()
                     className="w-full max-w-[62ch] outline-none"
                 >
                     <Panel active title={title} left={legend} className="flex flex-col bg-background">
-                        <div className="custom-scrollbar overflow-auto py-2" style={{ maxHeight: "60vh" }}>
+                        <div className="custom-scrollbar panel-scroll" style={{ maxHeight: "60vh" }}>
                             {box.rows.map((row, index) =>
                             {
                                 //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS
@@ -1805,7 +1805,7 @@ function App()
                         </div>
                     )}
 
-                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-auto px-3 py-2">
+                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar panel-scroll relative z-10 min-h-0 flex-1 px-3">
                         {pane.map((entry, index) => entry.entry === "message"
                             ? renderMessage(entry.message, index)
                             : renderBlock(entry.title, entry.rows, index))}
@@ -1820,7 +1820,7 @@ function App()
                                 left={active ? " ↑↓ select │ ⇥ complete " : undefined}
                                 className="bg-background"
                             >
-                                <div className="custom-scrollbar overflow-auto py-2" style={{ maxHeight: `${PALETTE_ROWS * 1.5}rem` }}>
+                                <div className="custom-scrollbar panel-scroll" style={{ maxHeight: `calc(${PALETTE_ROWS * 1.5}rem + 1rem)` }}>
                                     {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
                                     {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
                                     {palette.mode === "values" && palette.matches.map(valueRow)}
@@ -1834,7 +1834,7 @@ function App()
                 {connected && (
                     <div className="flex w-[26ch] shrink-0 flex-col gap-2">
                         <Panel title={` Online (${users.length}) `} className="flex flex-1 flex-col">
-                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-2">
+                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
                                 {users.map((user) => (
                                     <div key={user.id} className="whitespace-pre">
                                         <span className="text-muted-foreground">
@@ -1851,7 +1851,7 @@ function App()
                             THERE THE PANEL HAS NOTHING TO SAY - THE LOBBY IS WHERE WE ALREADY ARE */}
                         {channels.length > 1 && (
                         <Panel title={` Channels (${channels.length}) `} className="flex max-h-[40%] flex-col">
-                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-2">
+                            <div className="custom-scrollbar panel-scroll min-h-0 flex-1 px-3">
                                 {channels.map((channel) =>
                                 {
                                     const here = channel === currentChannel;

@@ -91,10 +91,14 @@ bubbles.
 row are absolutely positioned *outside* its border box, so `overflow-hidden` on a `Panel` erases them. The
 scroll container inside it does the clipping instead (`min-h-0 flex-1 overflow-auto`).
 
-Those three are border cells, and they behave like it: each reaches half a line *into* the box, so every
-scroll container needs `py-2` or the first and last rows sit under them. They are opaque and `z-30` so a line
-scrolling past goes under them rather than through them — an absolutely positioned element paints above
-in-flow content whatever the source order says, which is the whole reason they need to be the ones on top.
+Those three are border cells, and they behave like it: each reaches half a line *into* the box, so nothing
+inside may be drawn in that band. Anything that scrolls inside a `Panel` therefore carries `.panel-scroll`
+(`index.css`), whose air is a **transparent border and not padding** — `overflow` clips at the padding box, so
+a line scrolled past is still painted across padding and would go straight through the title, while nothing is
+ever painted in a border. That class is the equivalent of the TUI's `Block::inner`, and it is the fix for
+"the title covers the first row"; reaching for `py-*` on the scroll container instead brings the bug back.
+The three are also opaque and `z-30`, because an absolutely positioned element paints above in-flow content
+whatever the source order says, and a border cell has to be the one on top.
 
 The colors are `tui/theme.rs`, kept as they are there — sky blue titles, pale pink notices, salmon for what
 went right, hot magenta for what went wrong — over the desktop's own near-black surfaces. `index.css` holds
