@@ -91,6 +91,11 @@ bubbles.
 row are absolutely positioned *outside* its border box, so `overflow-hidden` on a `Panel` erases them. The
 scroll container inside it does the clipping instead (`min-h-0 flex-1 overflow-auto`).
 
+Those three are border cells, and they behave like it: each reaches half a line *into* the box, so every
+scroll container needs `py-2` or the first and last rows sit under them. They are opaque and `z-30` so a line
+scrolling past goes under them rather than through them — an absolutely positioned element paints above
+in-flow content whatever the source order says, which is the whole reason they need to be the ones on top.
+
 The colors are `tui/theme.rs`, kept as they are there — sky blue titles, pale pink notices, salmon for what
 went right, hot magenta for what went wrong — over the desktop's own near-black surfaces. `index.css` holds
 the whole palette; both files must stay in step.
@@ -118,6 +123,21 @@ clicking a file row sends `/download <user_id> <file_id>`. Prefer extending the 
 (`CommandInfo::available`), so the palette follows a promotion without a reconnect — the frontend re-invokes it
 whenever a `role` event names no user (that one is ours). Hiding a command is cosmetic; the server checks every
 privileged packet itself.
+
+### The palette
+
+`analyze` in `App.tsx` is `palette::update` rewritten in TypeScript, and the four states are the TUI's
+`PaletteMode`: a **menu** of commands (or, once `/server ` has its space, of *its actions* — a command that is
+a doorway is one row until then, never nine), the **values** a parameter accepts, the **signature** hint for
+one that accepts anything, or hidden. The matching is on `triggers`, not on the canonical name, so `/stfu`
+finds `/server mute` the same way it does in the terminal. ⇥ completes whatever is highlighted; ⏎ completes
+only what is not spelled out already, and otherwise sends the line.
+
+The vocabularies are not shipped with the command list: `get_vocabulary` is invoked when the caret lands on a
+parameter that has one and dropped when it leaves, because a monitor plugged in mid-session is supposed to
+show up. Colors carry their own code so the row can be painted in it. `/screen` is the only user of
+`ArgValues::Monitors` and lives behind `client_screen`, which this build does not enable — the monitors come
+from Tauri's own `available_monitors()` rather than the crate, so the helper works the day the feature is on.
 
 ### TOFU
 

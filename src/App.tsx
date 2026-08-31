@@ -81,16 +81,21 @@ interface OnlineUser
     channel: string | null;
 }
 
+//THE NAME OF THE SET A PARAMETER ACCEPTS - "free" IS EVERYTHING ELSE, AND HAS NOTHING TO OFFER
+type ArgValues = "free" | "colors" | "monitors" | "roles";
+
 interface CommandArgInfo
 {
     name: string;
     description: string;
     required: boolean;
+    values: ArgValues;
 }
 
 interface SubcommandInfo
 {
     name: string;
+    triggers: string[];
     description: string;
     args: CommandArgInfo[];
 }
@@ -98,9 +103,17 @@ interface SubcommandInfo
 interface CommandInfo
 {
     name: string;
+    triggers: string[];
     description: string;
     args: CommandArgInfo[];
     subcommands: SubcommandInfo[];
+}
+
+//ONE ANSWER A PARAMETER ACCEPTS, AS THE BRIDGE HANDS IT OVER
+interface VocabularyValue
+{
+    value: string;
+    color: number | null;
 }
 
 interface ClientConfig
@@ -118,14 +131,30 @@ interface TofuPrompt
     mismatch: boolean;
 }
 
-//ONE ROW OF THE COMMAND PALETTE. A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS LISTED AS
-//ITS ACTIONS, THE WAY THE TUI LISTS THEM - "/server" ALONE RUNS NOTHING
+//ONE ROW OF THE COMMAND PALETTE: A COMMAND, OR ONE ACTION OF A COMMAND THAT TAKES ONE (/server mute).
+//AN ACTION SPEAKS FOR ITSELF FROM HERE ON - ITS OWN PARAMETERS, ITS OWN DESCRIPTION
 interface PaletteEntry
 {
-    name: string;
+    name: string;              //WHAT THE USER TYPES TO GET HERE, WITHOUT THE PARAMETERS (server mute)
+    word: string[];            //EVERY SPELLING OF THE LAST WORD OF IT - THE ONE BEING TYPED
+    parent: string[] | null;   //EVERY SPELLING OF THE COMMAND WORD IN FRONT OF IT, WHERE THERE IS ONE
     description: string;
     args: CommandArgInfo[];
 }
+
+//WHAT THE PALETTE IS SHOWING. THE TUI'S PaletteMode, MINUS NOTHING: A MENU OF COMMANDS OR ACTIONS, THE
+//ANSWERS ONE PARAMETER ACCEPTS WHERE THERE IS A KNOWN LIST OF THEM, OR THE PLAIN SIGNATURE HINT
+type PaletteState =
+    | { mode: "hidden" }
+    | { mode: "menu"; entries: PaletteEntry[] }
+    | { mode: "values"; arg: CommandArgInfo; matches: VocabularyValue[]; start: number }
+    | { mode: "signature"; entry: PaletteEntry; active: number | null };
+
+//THE SHAPE OF THE PALETTE BEFORE ITS VOCABULARY IS IN HAND - EVERYTHING BUT THE VALUES MODE IS ALREADY
+//FINAL, AND THAT ONE STILL HAS TO BE ASKED FOR
+type PaletteShape =
+    | PaletteState
+    | { mode: "pending"; entry: PaletteEntry; active: number; arg: CommandArgInfo; typed: string; start: number };
 
 type BridgeEvent =
     | { event: "connected"; data: { server: string } }
@@ -199,7 +228,154 @@ function branches(rows: BlockRow[]): string[]
     });
 }
 
-//A BORDERED BOX WITH ITS NAME SITTING IN THE TOP BORDER, AND ITS STATUS IN THE BOTTOM ONE
+//HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS - EACH HALF OF THE COLOR
+//VOCABULARY IS EXACTLY THIS LONG, SO AN UNFILTERED POPUP SHOWS ONE HALF AT A TIME. ONE ROW IS leading-6
+const PALETTE_ROWS = 8;
+
+function commandEntry(command: CommandInfo): PaletteEntry
+{
+    return { name: command.name, word: command.triggers, parent: null, description: command.description, args: command.args };
+}
+
+function actionEntry(command: CommandInfo, sub: SubcommandInfo): PaletteEntry
+{
+    return {
+        name: `${command.name} ${sub.name}`,
+        word: sub.triggers,
+        parent: command.triggers,
+        description: sub.description,
+        args: sub.args,
+    };
+}
+
+//<REQUIRED> / [OPTIONAL], SPELLED THE WAY palette::format_arg SPELLS IT
+function formatArg(arg: CommandArgInfo): string
+{
+    return arg.required ? `<${arg.name.toLowerCase()}>` : `[${arg.name.toLowerCase()}]`;
+}
+
+//WHICH PARAMETER THE CARET IS SITTING ON
+function activeArg(args: CommandArgInfo[], tail: string): number
+{
+    const given = tail.split(/\s+/).filter(Boolean).length;
+
+    //A TRAILING SPACE MEANS THE USER MOVED ON TO THE NEXT PARAMETER
+    const index = /\s$/.test(tail) ? given : Math.max(given - 1, 0);
+
+    //THE LAST PARAMETER SWALLOWS THE REST OF THE LINE (A PRIVATE MESSAGE), SO THERE IS NEVER A PARAMETER
+    //BEYOND IT TO ADVANCE TO - KEEP IT ACTIVE NO MATTER HOW MUCH MORE IS TYPED
+    return Math.min(index, args.length - 1);
+}
+
+//THE HALF-TYPED VALUE THE CARET IS ON - EMPTY ONCE THE USER HAS MOVED ON TO THE NEXT PARAMETER
+function partial(tail: string): string
+{
+    if (/\s$/.test(tail)) return "";
+
+    const words = tail.split(/\s+/).filter(Boolean);
+
+    return words[words.length - 1] ?? "";
+}
+
+//THE ENTRY IS ALREADY SPELLED OUT ON THE LINE, SO ENTER SENDS IT INSTEAD OF COMPLETING IT
+function entryTyped(entry: PaletteEntry, input: string): boolean
+{
+    if (!input.trim().startsWith("/")) return false;
+
+    const rest = input.trim().slice(1).toLowerCase();
+
+    if (entry.parent === null) return entry.word.includes(rest);
+
+    //BOTH WORDS HAVE TO BE THERE - THE COMMAND WORD ALONE IS NOT THIS ENTRY
+    const split = rest.search(/\s/);
+    if (split < 0) return false;
+
+    return entry.parent.includes(rest.slice(0, split)) && entry.word.includes(rest.slice(split).trim());
+}
+
+//THE PARAMETER THE CARET IS ON: ITS OWN ANSWERS WHERE IT HAS A CLOSED SET OF THEM, OTHERWISE THE PLAIN
+//SIGNATURE HINT. THE ANSWERS THEMSELVES ARE NOT HERE - THEY ARE ASKED OF THE BRIDGE ONCE THIS SAYS WHICH
+function hint(entry: PaletteEntry, tail: string, input: string): PaletteShape
+{
+    const active = activeArg(entry.args, tail);
+    const arg = entry.args[active];
+
+    if (arg && arg.values !== "free")
+    {
+        const typed = partial(tail);
+
+        return { mode: "pending", entry, active, arg, typed: typed.toLowerCase(), start: input.length - typed.length };
+    }
+
+    return { mode: "signature", entry, active };
+}
+
+//THE ACTION WORD OF /command <action> ... - A MENU WHILE IT IS BEING TYPED, ITS PARAMETERS ONCE IT IS DONE
+function actionShape(command: CommandInfo, tail: string, input: string): PaletteShape
+{
+    const split = tail.search(/\s/);
+
+    //STILL TYPING THE ACTION - FILTER WHAT OUR ROLE MAY RUN (THE BRIDGE ALREADY DID THE FILTERING)
+    if (split < 0)
+    {
+        const candidate = tail.toLowerCase();
+
+        const entries = command.subcommands
+            .filter((sub) => sub.triggers.some((trigger) => trigger.startsWith(candidate)))
+            .map((sub) => actionEntry(command, sub));
+
+        return entries.length > 0 ? { mode: "menu", entries } : { mode: "hidden" };
+    }
+
+    const action = tail.slice(0, split).toLowerCase();
+    const sub = command.subcommands.find((candidate) => candidate.triggers.includes(action));
+
+    //AN ACTION OUT OF OUR REACH IS NOT HINTED EITHER - IT IS NOT SUPPOSED TO BE THERE AT ALL
+    if (!sub || sub.args.length === 0) return { mode: "hidden" };
+
+    return hint(actionEntry(command, sub), tail.slice(split), input);
+}
+
+//WHAT THE PALETTE SHOULD BE SHOWING FOR THIS LINE - palette::update, WITH THE VOCABULARY LEFT FOR LATER.
+//A COMMAND THAT IS A DOORWAY TO ACTIONS IS ONE ROW UNTIL ITS WORD IS FINISHED: /server IS NOT NINE
+//COMMANDS IN THE LIST, IT IS ONE THAT OPENS ITS OWN
+function analyze(input: string, commands: CommandInfo[]): PaletteShape
+{
+    if (!input.startsWith("/")) return { mode: "hidden" };
+
+    const rest = input.slice(1);
+    const split = rest.search(/\s/);
+
+    //STILL TYPING THE COMMAND WORD - FILTER THE LIST
+    if (split < 0)
+    {
+        const candidate = rest.toLowerCase();
+
+        const entries = commands
+            .filter((command) => command.triggers.some((trigger) => trigger.startsWith(candidate)))
+            .map(commandEntry);
+
+        return entries.length > 0 ? { mode: "menu", entries } : { mode: "hidden" };
+    }
+
+    const word = rest.slice(0, split).toLowerCase();
+    const tail = rest.slice(split);
+
+    const command = commands.find((candidate) => candidate.triggers.includes(word));
+    if (!command) return { mode: "hidden" };
+
+    //A COMMAND THAT TAKES AN ACTION HAS NOTHING OF ITS OWN TO HINT - THE ACTION OWNS EVERYTHING PAST IT
+    if (command.subcommands.length > 0) return actionShape(command, tail.trimStart(), input);
+
+    if (command.args.length === 0) return { mode: "hidden" };
+
+    return hint(commandEntry(command), tail, input);
+}
+
+//A BORDERED BOX WITH ITS NAME SITTING IN THE TOP BORDER, AND ITS STATUS IN THE BOTTOM ONE.
+//THE THREE OF THEM SIT OUTSIDE THE BORDER BOX, SO overflow-hidden HERE ERASES THEM - THE SCROLL CONTAINER
+//INSIDE DOES THE CLIPPING INSTEAD. THEY ALSO SIT ABOVE IT: THEY ARE BORDER CELLS, AND A LINE SCROLLING
+//PAST HAS TO GO UNDER THEM RATHER THAN THROUGH THEM, WHICH IS WHY THEY ARE OPAQUE AND WHY THEY ARE z-30
 function Panel(
 {
     title,
@@ -225,13 +401,13 @@ function Panel(
     return (
         <div className={`relative min-h-0 rounded-md border ${border} ${className ?? ""}`}>
             {title && (
-                <span className={`absolute -top-[0.65em] left-3 bg-background px-1 font-bold ${titleColor}`}>
+                <span className={`absolute -top-[0.5em] left-3 z-30 bg-background px-1 font-bold leading-none ${titleColor}`}>
                     {title}
                 </span>
             )}
             {children}
-            {left && <span className="absolute -bottom-[0.65em] left-3 bg-background px-1 text-muted-foreground">{left}</span>}
-            {right && <span className="absolute -bottom-[0.65em] right-3 bg-background px-1 text-muted-foreground">{right}</span>}
+            {left && <span className="absolute -bottom-[0.5em] left-3 z-30 bg-background px-1 leading-none text-muted-foreground">{left}</span>}
+            {right && <span className="absolute -bottom-[0.5em] right-3 z-30 bg-background px-1 leading-none text-muted-foreground">{right}</span>}
         </div>
     );
 }
@@ -259,9 +435,12 @@ function App()
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
     const [selected, setSelected] = useState(0);
+    const [dismissed, setDismissed] = useState(false);
+    const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
 
     const paneRef = useRef<HTMLDivElement>(null);
+    const selectedRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
@@ -604,29 +783,77 @@ function App()
         invoke("upload_file_from_path", { path: selected }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
-    //A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS OFFERED AS ITS ACTIONS
-    const palette = useMemo<PaletteEntry[]>(() => commands.flatMap((command) =>
+    //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
+    const shape = useMemo<PaletteShape>(
+        () => (dismissed ? { mode: "hidden" } : analyze(chatInput, commands)),
+        [chatInput, commands, dismissed],
+    );
+
+    const wanted = shape.mode === "pending" ? shape.arg.values : null;
+
+    //ASKED FOR EVERY TIME THE CARET LANDS ON SUCH A PARAMETER, AND DROPPED THE MOMENT IT LEAVES - THE
+    //MONITORS ARE THE REASON: ONE PLUGGED IN MID-SESSION IS STILL SUPPOSED TO SHOW UP HERE
+    useEffect(() =>
     {
-        if (command.subcommands.length === 0) return [command];
+        if (wanted === null)
+        {
+            setVocabulary({ kind: "free", values: [] });
+            return;
+        }
 
-        return command.subcommands.map((sub) => ({
-            name: `${command.name} ${sub.name}`,
-            description: sub.description,
-            args: sub.args,
-        }));
-    }), [commands]);
+        let live = true;
 
-    const typed = chatInput.startsWith("/") ? chatInput.slice(1).toLowerCase() : null;
+        invoke<VocabularyValue[]>("get_vocabulary", { values: wanted })
+            .then((values) => { if (live) setVocabulary({ kind: wanted, values }); })
+            .catch(() => {});
 
-    const suggestions = useMemo(() =>
+        return () => { live = false; };
+    }, [wanted]);
+
+    const palette = useMemo<PaletteState>(() =>
     {
-        if (typed === null) return [];
+        if (shape.mode !== "pending") return shape;
 
-        //THE ENTRY STAYS UP WHILE ITS PARAMETERS ARE BEING TYPED, SO THE SIGNATURE IS STILL READABLE
-        return palette.filter((entry) => entry.name.startsWith(typed) || typed.startsWith(`${entry.name} `));
-    }, [palette, typed]);
+        //STILL WAITING ON THE ANSWERS - THE SIGNATURE HINT SAYS WHAT THE PARAMETER IS IN THE MEANTIME
+        if (vocabulary.kind !== shape.arg.values) return { mode: "signature", entry: shape.entry, active: shape.active };
 
-    useEffect(() => { setSelected(0); }, [typed]);
+        const matches = vocabulary.values.filter((value) => value.value.toLowerCase().startsWith(shape.typed));
+
+        //A TYPO IS NOT A REASON TO GO BLANK
+        if (matches.length === 0) return { mode: "signature", entry: shape.entry, active: shape.active };
+
+        return { mode: "values", arg: shape.arg, matches, start: shape.start };
+    }, [shape, vocabulary]);
+
+    //A MENU IS OPEN: NAVIGABLE, AND COMPLETABLE. A SIGNATURE HINT IS NEITHER - IT IS ONLY THERE TO BE READ
+    const active = palette.mode === "menu" || palette.mode === "values";
+
+    const count = palette.mode === "menu" ? palette.entries.length : palette.mode === "values" ? palette.matches.length : 0;
+
+    //A FULLY TYPED WORD WINS THE SELECTION, OTHERWISE IT STAYS WHERE IT WAS. WITHOUT THIS, "/screens"
+    //HIGHLIGHTS "/screen" AND ENTER RUNS THE WRONG COMMAND
+    const exact = useMemo(() =>
+    {
+        if (palette.mode === "menu") return palette.entries.findIndex((entry) => entryTyped(entry, chatInput));
+
+        if (palette.mode === "values")
+        {
+            const typed = chatInput.slice(palette.start).trim().toLowerCase();
+
+            return palette.matches.findIndex((value) => value.value.toLowerCase() === typed);
+        }
+
+        return -1;
+    }, [palette, chatInput]);
+
+    useEffect(() =>
+    {
+        if (exact >= 0) setSelected(exact);
+        else setSelected((previous) => Math.min(previous, Math.max(count - 1, 0)));
+    }, [exact, count]);
+
+    //KEEP THE SELECTION IN VIEW, THE WAY THE TUI SCROLLS ITS OWN POPUP RATHER THAN PINNING THE ROW
+    useEffect(() => { selectedRef.current?.scrollIntoView({ block: "nearest" }); }, [selected, palette]);
 
     const channels = useMemo(() =>
     {
@@ -643,45 +870,74 @@ function App()
         });
     }, [activeChannels, currentChannel]);
 
-    const complete = () =>
+    //ESCAPE PUTS THE PALETTE AWAY, AND ANYTHING TYPED AFTERWARDS BRINGS IT BACK
+    const writeInput = (value: string) =>
     {
-        const entry = suggestions[selected];
-        if (!entry) return;
+        setChatInput(value);
+        setDismissed(false);
+    };
 
-        setChatInput(`/${entry.name} `);
-        chatInputRef.current?.focus();
+    //WRITE THE HIGHLIGHTED ROW ONTO THE LINE, WHETHER IT IS A COMMAND OR ONE ANSWER OF A PARAMETER.
+    //force IS TAB, WHICH COMPLETES WHATEVER IS HIGHLIGHTED; ENTER ONLY COMPLETES WHAT IS NOT SPELLED OUT
+    //ALREADY, SO A FINISHED LINE IS SENT INSTEAD OF BEING REWRITTEN. RETURNS WHETHER THE LINE WAS TOUCHED
+    const complete = (force: boolean): boolean =>
+    {
+        if (exact >= 0 && !force) return false;
+
+        if (palette.mode === "values")
+        {
+            const value = palette.matches[selected];
+            if (!value) return false;
+
+            //EVERYTHING UP TO THE HALF-TYPED VALUE STAYS - THE PARAMETERS BEFORE IT WERE ANSWERED ALREADY
+            writeInput(`${chatInput.slice(0, palette.start)}${value.value}`);
+
+            return true;
+        }
+
+        if (palette.mode !== "menu") return false;
+
+        const entry = palette.entries[selected];
+        if (!entry) return false;
+
+        //LEAVE ROOM FOR PARAMETERS RIGHT AWAY - AN ACTION WORD COUNTS AS ONE, SO /server OPENS ITS OWN MENU
+        writeInput(`/${entry.name}${entry.args.length > 0 ? " " : ""}`);
+
+        return true;
     };
 
     const handleChatKey = (event: React.KeyboardEvent<HTMLInputElement>) =>
     {
-        if (suggestions.length === 0) return;
+        if (event.key === "Escape")
+        {
+            setDismissed(true);
+            return;
+        }
+
+        if (event.key === "Enter")
+        {
+            //A HIGHLIGHTED PALETTE ROW THE USER HASN'T FULLY TYPED COMPLETES FIRST
+            if (active && complete(false)) event.preventDefault();
+
+            return;
+        }
+
+        if (!active) return;
 
         if (event.key === "ArrowDown")
         {
             event.preventDefault();
-            setSelected((previous) => (previous + 1) % suggestions.length);
+            setSelected((previous) => (previous + 1) % count);
         }
         else if (event.key === "ArrowUp")
         {
             event.preventDefault();
-            setSelected((previous) => (previous - 1 + suggestions.length) % suggestions.length);
+            setSelected((previous) => (previous - 1 + count) % count);
         }
         else if (event.key === "Tab")
         {
             event.preventDefault();
-            complete();
-        }
-        else if (event.key === "Enter")
-        {
-            const entry = suggestions[selected];
-
-            //ENTER FINISHES THE COMMAND WORD WHILE THE PALETTE IS STILL OFFERING ONE. ONCE IT IS
-            //FINISHED - OR A PARAMETER HAS BEEN STARTED - IT SENDS THE LINE LIKE ANY OTHER
-            if (entry && entry.name !== typed && !typed?.startsWith(`${entry.name} `))
-            {
-                event.preventDefault();
-                complete();
-            }
+            complete(true);
         }
     };
 
@@ -706,6 +962,66 @@ function App()
 
     const color = (code: number | null): string | undefined =>
         (code === null || config.disable_colors ? undefined : ANSI[code]);
+
+    //THE POPUP NAMES WHAT IT IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
+    const paletteTitle = palette.mode === "values"
+        ? ` ${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()} `
+        : palette.mode === "menu" ? " Commands " : " Parameters ";
+
+    //ONE ROW PER COMMAND, OR THE SINGLE PARAMETER HINT. THE ACTIVE PARAMETER'S OWN DESCRIPTION TAKES OVER
+    //THE COLUMN WHILE IT IS BEING TYPED - index IS null FOR THE HINT, WHICH IS THERE TO BE READ, NOT PICKED
+    const entryRow = (entry: PaletteEntry, index: number | null, activeArgument: number | null) =>
+    {
+        const chosen = index !== null && index === selected;
+        const described = activeArgument !== null ? entry.args[activeArgument] : undefined;
+
+        return (
+            <div
+                key={entry.name}
+                ref={chosen ? selectedRef : undefined}
+                onMouseEnter={index === null ? undefined : () => setSelected(index)}
+                onClick={index === null ? undefined : () => { complete(true); chatInputRef.current?.focus(); }}
+                className={`flex items-baseline gap-2 whitespace-pre px-2 leading-6 ${index === null ? "" : "cursor-pointer"} ${chosen ? "bg-selected" : ""}`}
+            >
+                <span className="text-accent">{chosen ? "▌" : " "}</span>
+                <span className="font-bold text-title">/{entry.name}</span>
+                {entry.args.map((arg, position) => (
+                    <span
+                        key={arg.name}
+                        className={position === activeArgument ? "text-accent" : arg.required ? "text-arg-required" : "text-arg-optional"}
+                    >
+                        {formatArg(arg)}
+                    </span>
+                ))}
+                <span className="ml-auto pl-4 text-muted-foreground">{described?.description ?? entry.description}</span>
+            </div>
+        );
+    };
+
+    //ONE ROW PER ANSWER THE PARAMETER ACCEPTS, EACH SHOWING ITS OWN COLOR - A NAME ALONE WOULD STILL BE A GUESS
+    const valueRow = (value: VocabularyValue, index: number) =>
+    {
+        const chosen = index === selected;
+
+        return (
+            <div
+                key={value.value}
+                ref={chosen ? selectedRef : undefined}
+                onMouseEnter={() => setSelected(index)}
+                onClick={() => { complete(true); chatInputRef.current?.focus(); }}
+                className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosen ? "bg-selected" : ""}`}
+            >
+                <span className="text-accent">{chosen ? "▌" : " "}</span>
+
+                {/* THE SWATCH IS PAINTED AS A BACKGROUND, SO EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}
+                {value.color !== null && (
+                    <span className="inline-block w-[4ch] self-center" style={{ backgroundColor: ANSI[value.color] }}>&nbsp;</span>
+                )}
+
+                <span>{value.value}</span>
+            </div>
+        );
+    };
 
     //THE PANE'S TITLE IS THE WHOLE OF WHAT WE ARE CONNECTED TO: WHY2 ── <SERVER> ── <ADDRESS AS TYPED>
     const paneTitle = ` ${["WHY2", serverName, address].filter(Boolean).join(" ── ")} `;
@@ -930,41 +1246,25 @@ function App()
                         </div>
                     )}
 
-                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-auto px-3 py-1">
+                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-auto px-3 py-2">
                         {pane.map((entry, index) => entry.entry === "message"
                             ? renderMessage(entry.message, index)
                             : renderBlock(entry.title, entry.rows, index))}
                     </div>
 
                     {/* THE PALETTE SITS ON THE BOTTOM EDGE OF THE MESSAGE PANE, DIRECTLY ABOVE THE INPUT */}
-                    {connected && typed !== null && (
+                    {connected && palette.mode !== "hidden" && (
                         <div className="absolute inset-x-0 bottom-0 z-20 px-1 pb-1">
                             <Panel
                                 active
-                                title=" Commands "
-                                left={suggestions.length > 0 ? " ↑↓ select │ ⇥ complete " : undefined}
+                                title={paletteTitle}
+                                left={active ? " ↑↓ select │ ⇥ complete " : undefined}
                                 className="bg-background"
                             >
-                                <div className="custom-scrollbar max-h-60 overflow-auto py-1">
-                                    {suggestions.length > 0 ? suggestions.map((entry, index) => (
-                                        <div
-                                            key={entry.name}
-                                            onMouseEnter={() => setSelected(index)}
-                                            onClick={complete}
-                                            className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 ${index === selected ? "bg-selected" : ""}`}
-                                        >
-                                            <span className="text-accent">{index === selected ? "▌" : " "}</span>
-                                            <span className="font-bold text-title">/{entry.name}</span>
-                                            {entry.args.map((arg) => (
-                                                <span key={arg.name} className={arg.required ? "text-arg-required" : "text-arg-optional"}>
-                                                    {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
-                                                </span>
-                                            ))}
-                                            <span className="ml-auto pl-4 text-muted-foreground">{entry.description}</span>
-                                        </div>
-                                    )) : (
-                                        <div className="px-3 text-muted-foreground">No matching commands.</div>
-                                    )}
+                                <div className="custom-scrollbar overflow-auto py-2" style={{ maxHeight: `${PALETTE_ROWS * 1.5}rem` }}>
+                                    {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
+                                    {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
+                                    {palette.mode === "values" && palette.matches.map(valueRow)}
                                 </div>
                             </Panel>
                         </div>
@@ -975,7 +1275,7 @@ function App()
                 {connected && (
                     <div className="flex w-[26ch] shrink-0 flex-col gap-2">
                         <Panel title={` Online (${users.length}) `} className="flex flex-1 flex-col">
-                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-1">
+                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-2">
                                 {users.map((user) => (
                                     <div key={user.id} className="whitespace-pre">
                                         <span className="text-muted-foreground">
@@ -992,7 +1292,7 @@ function App()
                             THERE THE PANEL HAS NOTHING TO SAY - THE LOBBY IS WHERE WE ALREADY ARE */}
                         {channels.length > 1 && (
                         <Panel title={` Channels (${channels.length}) `} className="flex max-h-[40%] flex-col">
-                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-1">
+                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-2">
                                 {channels.map((channel) =>
                                 {
                                     const here = channel === currentChannel;
@@ -1044,7 +1344,7 @@ function App()
                                 id="chat-input"
                                 type="text"
                                 value={chatInput}
-                                onChange={(event) => setChatInput(event.currentTarget.value)}
+                                onChange={(event) => writeInput(event.currentTarget.value)}
                                 onKeyDown={handleChatKey}
                                 className="w-full bg-transparent text-foreground caret-accent outline-none"
                                 autoFocus

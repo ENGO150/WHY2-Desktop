@@ -68,6 +68,7 @@ use why2_chat::
         self,
         Command,
         Subcommand,
+        ArgValues,
     },
     network::
     {
@@ -96,6 +97,30 @@ const ROSTER_GAP: Duration = Duration::from_millis(750);
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
 const ROSTER_COALESCE: Duration = Duration::from_millis(50);
+
+//THE WHOLE VOCABULARY OF /color AND /ucolor, IN CODE ORDER - THE POSITION IN THIS TABLE IS WHAT THE WIRE
+//CARRIES, SO IT IS THE crossterm ORDER THE TUI'S OWN colors::COLORS IS IN AND NOT ONE TO SORT
+const COLORS: [&str; 16] =
+[
+    "black",
+    "dark_red",
+    "dark_green",
+    "dark_yellow",
+    "dark_blue",
+    "dark_magenta",
+    "dark_cyan",
+    "grey",
+    "dark_grey",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+];
+
+const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
 
 //STRUCTS
 struct AppState
@@ -160,12 +185,17 @@ struct CommandArgInfo
     name: String,
     description: String,
     required: bool,
+
+    //THE NAME OF THE SET THIS PARAMETER ACCEPTS, WHERE IT HAS A CLOSED ONE - THE PALETTE ASKS FOR THE
+    //ANSWERS THEMSELVES SEPARATELY, BECAUSE SOME OF THEM ARE ONLY KNOWN AT THE MOMENT THEY ARE NEEDED
+    values: String,
 }
 
 #[derive(Serialize, Clone)]
 struct SubcommandInfo
 {
     name: String,
+    triggers: Vec<String>,
     description: String,
     args: Vec<CommandArgInfo>,
 }
@@ -174,9 +204,19 @@ struct SubcommandInfo
 struct CommandInfo
 {
     name: String,
+    triggers: Vec<String>, //EVERY WORD THAT GETS HERE - THE PALETTE MATCHES ON ALL OF THEM, THE WAY THE TUI DOES
     description: String,
     args: Vec<CommandArgInfo>,
     subcommands: Vec<SubcommandInfo>, //EMPTY UNLESS THE COMMAND IS A DOORWAY TO ACTIONS
+}
+
+//ONE ANSWER A PARAMETER ACCEPTS. A COLOR CARRIES ITS OWN CODE ALONG, SO THE ROW CAN BE PAINTED IN IT -
+//A NAME OUT OF A VOCABULARY NOBODY HAS SEEN IS STILL A GUESS
+#[derive(Serialize, Clone)]
+struct VocabularyValue
+{
+    value: String,
+    color: Option<u8>,
 }
 
 //ENUMS
@@ -317,58 +357,43 @@ fn reset_session()
 fn to_color(color: &str) -> Result<(u8, String), ()> //PARSE A COLOR NAME/NUMBER INTO THE CODE THE WIRE CARRIES
 {
     let mut formatted_color = color.replace(' ', "_").to_lowercase();
+
     if formatted_color.starts_with("dark") && !formatted_color.starts_with("dark_")
     {
         formatted_color = formatted_color.replacen("dark", "dark_", 1);
     }
 
-    let code = match formatted_color.as_str()
+    //gray IS THE SAME COLOR SPELLED THE OTHER WAY - THE TABLE ONLY KNOWS ONE OF THE TWO
+    formatted_color = formatted_color.replace("gray", "grey");
+
+    let code = match COLORS.iter().position(|name| *name == formatted_color)
     {
-        "black"                   => Some(0),
-        "dark_red"                => Some(1),
-        "dark_green"              => Some(2),
-        "dark_yellow"             => Some(3),
-        "dark_blue"               => Some(4),
-        "dark_magenta"            => Some(5),
-        "dark_cyan"               => Some(6),
-        "grey" | "gray"           => Some(7),
-        "dark_grey" | "dark_gray" => Some(8),
-        "red"                     => Some(9),
-        "green"                   => Some(10),
-        "yellow"                  => Some(11),
-        "blue"                    => Some(12),
-        "magenta"                 => Some(13),
-        "cyan"                    => Some(14),
-        "white"                   => Some(15),
+        Some(index) => Some(index as u8),
 
         //A BARE NUMBER IS THE CODE ITSELF, AND ONLY THE SIXTEEN THE PROTOCOL KNOWS ABOUT EXIST
-        _ => color.trim().parse::<u8>().ok().filter(|code| *code <= 15),
+        None => color.trim().parse::<u8>().ok().filter(|code| (*code as usize) < COLORS.len()),
     };
 
     let code = code.ok_or(())?;
 
     //STORED BACK UNDER THE CANONICAL NAME, SO THE CONFIG READS THE SAME WAY IT WAS TYPED
-    let name = match code
-    {
-        0  => "black",
-        1  => "dark_red",
-        2  => "dark_green",
-        3  => "dark_yellow",
-        4  => "dark_blue",
-        5  => "dark_magenta",
-        6  => "dark_cyan",
-        7  => "grey",
-        8  => "dark_grey",
-        9  => "red",
-        10 => "green",
-        11 => "yellow",
-        12 => "blue",
-        13 => "magenta",
-        14 => "cyan",
-        _  => "white",
-    };
+    Ok((code, COLORS[code as usize].to_string()))
+}
 
-    Ok((code, name.to_string()))
+//THE ORDER TO OFFER THE COLORS IN, AS THE TUI OFFERS THEM: THE BRIGHT HALF FIRST, THEN THE DARK ONE, EACH
+//ALPHABETICAL. PICKING A COLOR IS A DIFFERENT QUESTION FROM SENDING ONE, SO IT GETS ITS OWN ORDER RATHER
+//THAN INHERITING THE CODE TABLE'S - AND EACH HALF IS EXACTLY ONE POPUP TALL
+fn offered_colors() -> Vec<VocabularyValue>
+{
+    let mut bright = COLORS.iter().enumerate().skip(BRIGHT).collect::<Vec<(usize, &&str)>>();
+    let mut dark = COLORS.iter().enumerate().take(BRIGHT).collect::<Vec<(usize, &&str)>>();
+
+    bright.sort_unstable_by_key(|(_, name)| **name);
+    dark.sort_unstable_by_key(|(_, name)| **name);
+
+    bright.extend(dark);
+
+    bright.into_iter().map(|(code, name)| VocabularyValue { value: name.to_string(), color: Some(code as u8) }).collect()
 }
 
 fn get_colors() -> MessageColors //READ THE CONFIGURED COLORS
@@ -403,6 +428,13 @@ fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandArgInfo> //D
         name: arg.name.to_string(),
         description: arg.description.to_string(),
         required: arg.required,
+        values: match arg.values
+        {
+            ArgValues::Free => "free",
+            ArgValues::Colors => "colors",
+            ArgValues::Monitors => "monitors",
+            ArgValues::Roles => "roles",
+        }.to_string(),
     }).collect()
 }
 
@@ -940,16 +972,44 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
         .map(|info| CommandInfo
         {
             name: info.triggers[0].to_lowercase(),
+            triggers: info.triggers.iter().map(|trigger| trigger.to_lowercase()).collect(),
             description: info.description.to_string(),
             args: command_args(info.args),
             subcommands: info.actions(role).map(|sub| SubcommandInfo
             {
                 name: sub.triggers[0].to_lowercase(),
+                triggers: sub.triggers.iter().map(|trigger| trigger.to_lowercase()).collect(),
                 description: sub.description.to_string(),
                 args: command_args(sub.args),
             }).collect(),
         })
         .collect()
+}
+
+//THE ANSWERS ONE PARAMETER ACCEPTS. THE COLOR NAMES ARE crossterm'S OWN AND ARE NOWHERE ON THE SCREEN, AND
+//A MONITOR IS NAMED BY THE DISPLAY SERVER (DP-3, \\.\DISPLAY2) - NEITHER IS SOMETHING TO GUESS AT. THIS IS
+//ASKED FOR EVERY TIME THE CARET LANDS ON SUCH A PARAMETER RATHER THAN ONCE: A MONITOR PLUGGED IN MID-SESSION
+//IS STILL SUPPOSED TO SHOW UP HERE
+#[tauri::command]
+fn get_vocabulary(values: String, app: AppHandle) -> Vec<VocabularyValue>
+{
+    match values.as_str()
+    {
+        "colors" => offered_colors(),
+
+        //THE ROLES ARE THE ONE VOCABULARY THAT IS ALSO A PROTOCOL VALUE - THE SERVER STORES THE POSITION IN
+        //THIS LIST, SO OFFERING THE NAMES IS THE ONLY WAY THE TWO CANNOT DRIFT
+        "roles" => Role::ALL.iter().map(|role| VocabularyValue { value: role.to_string(), color: None }).collect(),
+
+        //THE CRATE READS THESE OFF THE DISPLAY SERVER ITSELF, BUT ONLY UNDER client_screen, WHICH THIS BUILD
+        //DOES NOT CARRY - THE WINDOW IS OURS TO OWN HERE, SO THE MONITORS ARE ASKED OF TAURI INSTEAD
+        "monitors" => app.available_monitors().unwrap_or_default().iter()
+            .filter_map(|monitor| monitor.name().cloned())
+            .map(|name| VocabularyValue { value: name, color: None })
+            .collect(),
+
+        _ => Vec::new(),
+    }
 }
 
 #[tauri::command]
@@ -1139,6 +1199,7 @@ pub fn run()
             connect_to_server,
             send_input,
             get_commands,
+            get_vocabulary,
             get_client_config,
             answer_tofu,
             upload_file_from_path,
