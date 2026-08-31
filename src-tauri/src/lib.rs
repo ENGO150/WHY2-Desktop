@@ -82,7 +82,6 @@ use why2_chat::
             ServerSetting,
             SettingValue,
             StoredMessage,
-            UserFile,
         },
     },
 };
@@ -118,11 +117,25 @@ struct AppState
 struct ChatMessage
 {
     kind: MessageKind,
+    prefix: Option<String>, //THE DIM "[server]" THE TUI PUTS IN FRONT OF ITS OWN NARRATION
     username: String,
     text: String,
     id: Option<usize>,
     username_color: Option<u8>,
     message_color: Option<u8>,
+}
+
+//ONE ROW OF A LIST BLOCK. THE TUI PRINTS /files, /list AND THE BAN LIST INTO THE PANE AS TREES RATHER
+//THAN INTO A WINDOW OF THEIR OWN, SO THE ROWS ARRIVE FLAT AND THE BRANCH GLYPHS ARE DRAWN FROM depth
+#[derive(Serialize, Clone)]
+struct BlockRow
+{
+    depth: u8,
+    id: Option<usize>,
+    text: String,
+    note: Option<String>,             //A DIM TRAILING COLUMN - A CHANNEL, A DESCRIPTION
+    accent: bool,
+    download: Option<(usize, usize)>, //UPLOADER AND FILE, WHEN THE ROW IS ONE THAT CAN BE FETCHED
 }
 
 #[derive(Serialize, Clone)]
@@ -134,35 +147,11 @@ struct OnlineUserInfo
 }
 
 #[derive(Serialize, Clone)]
-struct UserFileInfo
+struct ClientConfig
 {
-    username: String,
-    id: usize,
-    uploads: Vec<FileInfo>,
-}
-
-#[derive(Serialize, Clone)]
-struct FileInfo
-{
-    filename: String,
-    id: usize,
-}
-
-#[derive(Serialize, Clone)]
-struct BanInfo
-{
-    id: usize,
-    subject: String,
-}
-
-#[derive(Serialize, Clone)]
-struct SettingInfo
-{
-    key: String,
-    value: String,
-    section: String,
-    description: String,
-    restart: bool,
+    show_id: bool,
+    disable_colors: bool,
+    disable_logo: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -199,6 +188,7 @@ enum MessageKind
     Private, //A PRIVATE MESSAGE, EITHER WAY
     System,  //THE SERVER NARRATING ITSELF (JOINS, LEAVES, UPLOADS)
     Notice,  //SOMETHING WORTH READING TWICE
+    Ok,      //SOMETHING WENT RIGHT
     Error,   //SOMETHING WENT WRONG
 }
 
@@ -226,11 +216,9 @@ enum UiEvent
         pinned: Option<String>,
         mismatch: bool,
     },
-    Users { users: Vec<OnlineUserInfo>, requested: bool },        //THE ROSTER, AND WHETHER /list ASKED
+    Users { users: Vec<OnlineUserInfo> },                         //THE ROSTER BEHIND THE SIDEBAR
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
-    Files { users: Vec<UserFileInfo> },                           //WHAT CAN BE DOWNLOADED
-    Bans { users: Vec<BanInfo>, ips: Vec<BanInfo> },              //server_bans.toml
-    ServerSettings { settings: Vec<SettingInfo>, saved: bool },   //server.toml
+    Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /files, /list, BANS
     ChannelChanged { channel: Option<String> },                   //WE SWITCHED CHANNEL
     ChannelCreated { name: String },                              //SOMEBODY OPENED ONE
     ChannelDestroyed { name: String },                            //THE LAST ONE LEFT IT
@@ -245,6 +233,7 @@ impl ChatMessage
         Self
         {
             kind,
+            prefix: None,
             username: username.into(),
             text: text.into(),
             id: None,
@@ -254,11 +243,23 @@ impl ChatMessage
     }
 
     //A LINE NOBODY SAID - THE SERVER NARRATING, OR US NARRATING THE SERVER
-    fn system(text: impl Into<String>) -> Self { Self::new(MessageKind::System, "", text) }
+    fn system(text: impl Into<String>) -> Self
+    {
+        Self::new(MessageKind::System, "", text).from_server()
+    }
 
     fn notice(text: impl Into<String>) -> Self { Self::new(MessageKind::Notice, "", text) }
 
+    fn ok(text: impl Into<String>) -> Self { Self::new(MessageKind::Ok, "", text) }
+
     fn error(text: impl Into<String>) -> Self { Self::new(MessageKind::Error, "", text) }
+
+    //THE SERVER'S OWN NAME IN FRONT OF THE LINE, THE WAY THE TUI STAMPS EVERYTHING IT SAYS FOR ITSELF
+    fn from_server(mut self) -> Self
+    {
+        self.prefix = Some(format!("[{}]", options::get_server_username()));
+        self
+    }
 
     fn colored(mut self, colors: MessageColors) -> Self
     {
@@ -289,6 +290,11 @@ fn say(app: &AppHandle, message: ChatMessage) //PUSH ONE LINE INTO THE PANE
 fn popup(app: &AppHandle, text: impl Into<String>) //PUSH ONE TOAST
 {
     emit(app, UiEvent::Popup { text: text.into() });
+}
+
+fn block(app: &AppHandle, title: String, rows: Vec<BlockRow>) //PUSH ONE TREE INTO THE PANE
+{
+    emit(app, UiEvent::Block { title, rows });
 }
 
 //EVERY PIECE OF SESSION STATE THAT LIVES IN THE CRATE'S GLOBALS. THE NEXT HANDSHAKE HAS TO START FROM
@@ -572,7 +578,11 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         ClientEvent::UsernameRejected => emit(app, UiEvent::UsernameRejected),
         ClientEvent::PasswordRejected(min) => emit(app, UiEvent::PasswordRejected { min }),
 
-        ClientEvent::Connected(server) => emit(app, UiEvent::Connected { server }),
+        ClientEvent::Connected(server) =>
+        {
+            say(app, ChatMessage::ok(format!("Successfully connected to {server}.")));
+            emit(app, UiEvent::Connected { server });
+        },
 
         ClientEvent::FirstUser =>
         {
@@ -582,7 +592,9 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         ClientEvent::Authenticated(role) =>
         {
             *state.role.lock().unwrap() = role;
+
             emit(app, UiEvent::Authenticated { role: role.to_string() });
+            say(app, ChatMessage::ok("Login successful. Type / for commands."));
 
             //THE SERVER BACKDATES ITS OWN CLOCK BY min_message_delay WHEN IT AUTHENTICATES SOMEBODY, SO
             //THE FIRST PACKET AFTER LOGIN IS FREE BY CONSTRUCTION - OURS IS BACKDATED TO MATCH, WHICH IS
@@ -623,8 +635,9 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
             let messages = messages.into_iter().map(|StoredMessage { username, text, colors }|
             {
                 ChatMessage::new(MessageKind::User, username, text).colored(colors)
-            }).collect();
+            }).collect::<Vec<ChatMessage>>();
 
+            say(app, ChatMessage::notice(format!("Message history ({}):", messages.len())));
             emit(app, UiEvent::History { messages });
         },
 
@@ -651,59 +664,130 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
 
         ClientEvent::List(users) =>
         {
+            //THE ROSTER FEEDS THE SIDEBAR EITHER WAY; ONLY A /list THE USER TYPED ALSO ECHOES A BLOCK
+            if state.list_requested.swap(false, Ordering::Relaxed)
+            {
+                let here = options::get_channel();
+
+                block(app, format!("Online clients ({})", users.len()), users.iter().map(|user| BlockRow
+                {
+                    depth: 0,
+                    id: Some(user.id),
+                    text: user.username.clone(),
+                    note: user.channel.clone().map(|channel| format!("#{channel}")),
+                    accent: user.channel.clone().unwrap_or_default() == here,
+                    download: None,
+                }).collect());
+            }
+
             let users = users.into_iter().map(|OnlineUser { username, id, channel }|
             {
                 OnlineUserInfo { username, id, channel }
             }).collect();
 
-            emit(app, UiEvent::Users { users, requested: state.list_requested.swap(false, Ordering::Relaxed) });
+            emit(app, UiEvent::Users { users });
         },
 
+        //THE OWNER IS THE BRANCH AND THEIR FILES HANG OFF IT - THE TWO IDS SIDE BY SIDE ARE THE TWO
+        //ARGUMENTS TO /download, WHICH IS ALSO WHAT CLICKING ONE SENDS
         ClientEvent::Files(users) =>
         {
-            let users = users.into_iter().map(|UserFile { username, id, upload }| UserFileInfo
-            {
-                username,
-                id,
-                uploads: upload.into_iter().map(|(filename, id)| FileInfo { filename, id }).collect(),
-            }).collect();
+            if users.is_empty() { return say(app, ChatMessage::notice("No available files.")) }
 
-            emit(app, UiEvent::Files { users });
+            let mut rows = Vec::new();
+
+            for user in &users
+            {
+                rows.push(BlockRow
+                {
+                    depth: 0,
+                    id: Some(user.id),
+                    text: user.username.clone(),
+                    note: None,
+                    accent: false,
+                    download: None,
+                });
+
+                rows.extend(user.upload.iter().map(|(filename, file)| BlockRow
+                {
+                    depth: 1,
+                    id: Some(*file),
+                    text: filename.clone(),
+                    note: None,
+                    accent: false,
+                    download: Some((user.id, *file)),
+                }));
+            }
+
+            block(app, format!("Available files ({})", users.len()), rows);
         },
 
         //ASKED FOR BY /server bans, AND SENT AGAIN AFTER EVERY PARDON - THE IDS RENUMBER WHEN ONE IS
         //LIFTED, SO THE ANSWER TO A PARDON IS THE NEW LIST RATHER THAN AN 'OK' OVER A STALE ONE
         ClientEvent::ServerBans(users, ips) =>
         {
-            let ban = |BanEntry { id, subject }| BanInfo { id, subject };
+            if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::notice("No bans.")) }
 
-            emit(app, UiEvent::Bans
+            let total = users.len() + ips.len();
+            let mut rows = Vec::new();
+
+            //TWO SECTIONS, EACH NUMBERED FROM ITS OWN ZERO - THE HEADING NAMES THE ACTION THAT LIFTS IT
+            for (name, bans) in [("users", users), ("addresses", ips)]
             {
-                users: users.into_iter().map(ban).collect(),
-                ips: ips.into_iter().map(ban).collect(),
-            });
+                if bans.is_empty() { continue }
+
+                rows.push(BlockRow
+                {
+                    depth: 0,
+                    id: None,
+                    text: name.to_string(),
+                    note: None,
+                    accent: false,
+                    download: None,
+                });
+
+                rows.extend(bans.into_iter().map(|BanEntry { id, subject }| BlockRow
+                {
+                    depth: 1,
+                    id: Some(id),
+                    text: subject,
+                    note: None,
+                    accent: false,
+                    download: None,
+                }));
+            }
+
+            block(app, format!("Bans ({total})"), rows);
         },
 
         ClientEvent::ServerSettings(settings, saved) =>
         {
-            let settings = settings.into_iter().map(|ServerSetting { key, value, section, description, restart }|
+            //THE ANSWER TO A SAVE IS THE CONFIG AS IT ACTUALLY STANDS, AND NOTHING HERE CAN SAVE ONE
+            if saved { return say(app, ChatMessage::ok("Server settings saved.")) }
+
+            let rows = settings.into_iter().map(|ServerSetting { key, value, description, restart, .. }|
             {
-                SettingInfo
+                BlockRow
                 {
-                    key,
-                    value: match value
+                    depth: 0,
+                    id: None,
+                    text: format!("{key} = {}", match value
                     {
                         SettingValue::Toggle(value) => value.to_string(),
                         SettingValue::Number(value) => value.to_string(),
                         SettingValue::Text(value) => value,
-                    },
-                    section,
-                    description,
-                    restart,
+                    }),
+                    note: Some(match restart
+                    {
+                        true => format!("{description} (restart)"),
+                        false => description,
+                    }),
+                    accent: false,
+                    download: None,
                 }
             }).collect();
 
-            emit(app, UiEvent::ServerSettings { settings, saved });
+            block(app, String::from("Server settings"), rows);
         },
 
         //SIDEBAR-ONLY - THE SERVER BROADCASTS THESE TO EVERYONE, WHICH IS ALREADY THE WHOLE TRUTH ABOUT
@@ -830,6 +914,19 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
 }
 
 //PUBLIC
+//THE THREE client.toml KEYS THAT CHANGE HOW THE PANE LOOKS. THE TUI READS THEM ON EVERY REDRAW; HERE
+//THEY ARE HANDED OVER ONCE, WHICH IS AS OFTEN AS THEY CAN CHANGE WITHOUT A COMMAND OF OUR OWN
+#[tauri::command]
+fn get_client_config() -> ClientConfig
+{
+    ClientConfig
+    {
+        show_id: config::read_config("show_id"),
+        disable_colors: config::read_config("disable_colors"),
+        disable_logo: config::read_config("disable_logo"),
+    }
+}
+
 #[tauri::command]
 fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS OUR ROLE MAY RUN
 {
@@ -1042,6 +1139,7 @@ pub fn run()
             connect_to_server,
             send_input,
             get_commands,
+            get_client_config,
             answer_tofu,
             upload_file_from_path,
         ])

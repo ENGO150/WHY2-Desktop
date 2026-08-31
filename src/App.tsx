@@ -17,7 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Server, ArrowRight, User, Lock, Send, Paperclip, Download, Folder, LogOut, Hash, Plus, ShieldAlert } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -29,13 +28,29 @@ const LOBBY = "";
 //WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS, SO IT CANNOT HAPPEN BY LEANING ON ENTER
 const CHALLENGE = "yes";
 
+//THE PROJECT LOGO, PAINTED IN THE MIDDLE OF THE MESSAGE PANE AS A WATERMARK
+const LOGO = `                ▄█
+  ▄▄▄▄        ▄███  ▄▄██
+  ████▀███▀▀▀▀▀███▄██▀██
+  ███▄▄   ▀██▄  ▀██▀ ▄█▀
+  ▀▀█████▄       ▀▀ ▄██
+    ▀▀ ▀███▄      ▀███
+     ▄▄██▀██       ▀█▄
+  ▄████▄▄██▀        ██
+  ▀███████▄▄▄       ▀██
+        ▀███         ██
+        ███▀      ▄▄███
+        ███▄▄▄▄▄████▀▀
+        ██████▀▀▀▀`;
+
 type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
 
-type MessageKind = "user" | "private" | "system" | "notice" | "error";
+type MessageKind = "user" | "private" | "system" | "notice" | "ok" | "error";
 
 interface ChatMessage
 {
     kind: MessageKind;
+    prefix: string | null;
     username: string;
     text: string;
     id: number | null;
@@ -43,39 +58,27 @@ interface ChatMessage
     message_color: number | null;
 }
 
+interface BlockRow
+{
+    depth: number;
+    id: number | null;
+    text: string;
+    note: string | null;
+    accent: boolean;
+    download: [number, number] | null;
+}
+
+//ONE THING IN THE PANE. THE TUI PRINTS ITS LISTS INTO THE SAME SCROLLBACK THE MESSAGES LIVE IN, SO A
+///files IS AN ENTRY IN THE HISTORY RATHER THAN A WINDOW THAT COVERS IT
+type PaneEntry =
+    | { entry: "message"; message: ChatMessage }
+    | { entry: "block"; title: string; rows: BlockRow[] };
+
 interface OnlineUser
 {
     username: string;
     id: number;
     channel: string | null;
-}
-
-interface FileEntry
-{
-    filename: string;
-    id: number;
-}
-
-interface UserFile
-{
-    username: string;
-    id: number;
-    uploads: FileEntry[];
-}
-
-interface BanEntry
-{
-    id: number;
-    subject: string;
-}
-
-interface ServerSetting
-{
-    key: string;
-    value: string;
-    section: string;
-    description: string;
-    restart: boolean;
 }
 
 interface CommandArgInfo
@@ -100,6 +103,13 @@ interface CommandInfo
     subcommands: SubcommandInfo[];
 }
 
+interface ClientConfig
+{
+    show_id: boolean;
+    disable_colors: boolean;
+    disable_logo: boolean;
+}
+
 interface TofuPrompt
 {
     host: string;
@@ -108,8 +118,8 @@ interface TofuPrompt
     mismatch: boolean;
 }
 
-//ONE ROW OF THE SLASH PALETTE. A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS LISTED AS ITS
-//ACTIONS, THE WAY THE TUI LISTS THEM - "/server" ALONE RUNS NOTHING
+//ONE ROW OF THE COMMAND PALETTE. A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS LISTED AS
+//ITS ACTIONS, THE WAY THE TUI LISTS THEM - "/server" ALONE RUNS NOTHING
 interface PaletteEntry
 {
     name: string;
@@ -117,13 +127,6 @@ interface PaletteEntry
     args: CommandArgInfo[];
 }
 
-type Modal =
-    | { type: "users"; users: OnlineUser[] }
-    | { type: "files"; users: UserFile[] }
-    | { type: "bans"; users: BanEntry[]; ips: BanEntry[] }
-    | { type: "settings"; settings: ServerSetting[] };
-
-//EVERYTHING THE BRIDGE SENDS, TAGGED THE WAY SERDE TAGS IT ON THE OTHER SIDE
 type BridgeEvent =
     | { event: "connected"; data: { server: string } }
     | { event: "request_username"; data: { registration: boolean; min: number; max: number } }
@@ -136,42 +139,22 @@ type BridgeEvent =
     | { event: "history"; data: { messages: ChatMessage[] } }
     | { event: "popup"; data: { text: string } }
     | { event: "tofu_prompt"; data: TofuPrompt }
-    | { event: "users"; data: { users: OnlineUser[]; requested: boolean } }
+    | { event: "users"; data: { users: OnlineUser[] } }
     | { event: "user_left"; data: { id: number } }
-    | { event: "files"; data: { users: UserFile[] } }
-    | { event: "bans"; data: { users: BanEntry[]; ips: BanEntry[] } }
-    | { event: "server_settings"; data: { settings: ServerSetting[]; saved: boolean } }
+    | { event: "block"; data: { title: string; rows: BlockRow[] } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
     | { event: "channel_destroyed"; data: { name: string } }
     | { event: "disconnected"; data: { reason: string | null } };
 
 //THE SIXTEEN COLORS THE PROTOCOL CARRIES, AS THE TERMINAL WOULD HAVE PAINTED THEM
-function getAnsiColor(code: number | null | undefined): string | undefined
+const ANSI: Record<number, string> =
 {
-    if (code === undefined || code === null) return undefined;
-
-    switch (code)
-    {
-        case 0: return "#000000";  //BLACK
-        case 1: return "#800000";  //DARK RED
-        case 2: return "#008000";  //DARK GREEN
-        case 3: return "#808000";  //DARK YELLOW
-        case 4: return "#000080";  //DARK BLUE
-        case 5: return "#800080";  //DARK MAGENTA
-        case 6: return "#008080";  //DARK CYAN
-        case 7: return "#c0c0c0";  //GREY
-        case 8: return "#808080";  //DARK GREY
-        case 9: return "#ff0000";  //RED
-        case 10: return "#00ff00"; //GREEN
-        case 11: return "#ffff00"; //YELLOW
-        case 12: return "#0000ff"; //BLUE
-        case 13: return "#ff00ff"; //MAGENTA
-        case 14: return "#00ffff"; //CYAN
-        case 15: return "#ffffff"; //WHITE
-        default: return undefined;
-    }
-}
+    0: "#000000", 1: "#800000", 2: "#008000", 3: "#808000",
+    4: "#000080", 5: "#800080", 6: "#008080", 7: "#c0c0c0",
+    8: "#808080", 9: "#ff0000", 10: "#00ff00", 11: "#ffff00",
+    12: "#0000ff", 13: "#ff00ff", 14: "#00ffff", 15: "#ffffff",
+};
 
 //THE FINGERPRINT IS 64 HEX CHARS - GROUPED IN EIGHTS AND BROKEN INTO ROWS SO IT CAN ACTUALLY BE
 //COMPARED AGAINST WHAT THE OPERATOR PUBLISHED
@@ -180,12 +163,77 @@ function fingerprint(hash: string): string[]
     const groups = hash.match(/.{1,8}/g) ?? [];
     const rows: string[] = [];
 
-    for (let i = 0; i < groups.length; i += 4)
+    for (let index = 0; index < groups.length; index += 4)
     {
-        rows.push(groups.slice(i, i + 4).join(" "));
+        rows.push(groups.slice(index, index + 4).join(" "));
     }
 
     return rows;
+}
+
+//EVERY LIST BLOCK IS A TREE: ONE BRANCH PER ROW, THEN A RIGHT-ALIGNED ID COLUMN, THEN THE NAME.
+//THE TRUNK KEEPS RUNNING PAST A NESTED ROW UNLESS ITS OWNER WAS THE LAST ONE
+function branches(rows: BlockRow[]): string[]
+{
+    const last = rows.map((row, index) =>
+    {
+        for (let next = index + 1; next < rows.length; next++)
+        {
+            if (rows[next].depth < row.depth) break;
+            if (rows[next].depth === row.depth) return false;
+        }
+
+        return true;
+    });
+
+    return rows.map((row, index) =>
+    {
+        const branch = last[index] ? "╰─ " : "├─ ";
+
+        if (row.depth === 0) return branch;
+
+        let owner = index;
+        while (owner >= 0 && rows[owner].depth !== 0) owner--;
+
+        return `${owner < 0 || last[owner] ? "   " : "│  "}${branch}`;
+    });
+}
+
+//A BORDERED BOX WITH ITS NAME SITTING IN THE TOP BORDER, AND ITS STATUS IN THE BOTTOM ONE
+function Panel(
+{
+    title,
+    active,
+    danger,
+    left,
+    right,
+    className,
+    children,
+}: {
+    title?: string;
+    active?: boolean;
+    danger?: boolean;
+    left?: React.ReactNode;
+    right?: React.ReactNode;
+    className?: string;
+    children: React.ReactNode;
+})
+{
+    const border = danger ? "border-error" : active ? "border-border-active" : "border-border";
+    const titleColor = danger ? "text-error" : "text-title";
+
+    return (
+        <div className={`relative min-h-0 rounded-md border ${border} ${className ?? ""}`}>
+            {title && (
+                <span className={`absolute -top-[0.65em] left-3 bg-background px-1 font-bold ${titleColor}`}>
+                    {title}
+                </span>
+            )}
+            {children}
+            {left && <span className="absolute -bottom-[0.65em] left-3 bg-background px-1 text-muted-foreground">{left}</span>}
+            {right && <span className="absolute -bottom-[0.65em] right-3 bg-background px-1 text-muted-foreground">{right}</span>}
+        </div>
+    );
 }
 
 function App()
@@ -197,26 +245,34 @@ function App()
     const [errorMsg, setErrorMsg] = useState("");
     const [hint, setHint] = useState("");
     const [registering, setRegistering] = useState(false);
+    const [address, setAddress] = useState("");
     const [serverName, setServerName] = useState("");
+    const [username, setUsername] = useState("");
     const [role, setRole] = useState("user");
-    const [messagesByChannel, setMessagesByChannel] = useState<Record<string, ChatMessage[]>>({});
+    const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [modal, setModal] = useState<Modal | null>(null);
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false, disable_logo: false });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
-    const [showCreateChannel, setShowCreateChannel] = useState(false);
-    const [newChannelName, setNewChannelName] = useState("");
+    const [selected, setSelected] = useState(0);
+    const [unread, setUnread] = useState(0);
 
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const paneRef = useRef<HTMLDivElement>(null);
+    const addressRef = useRef("");
     const loginInputRef = useRef<HTMLInputElement>(null);
+    const chatInputRef = useRef<HTMLInputElement>(null);
 
     //THE EVENT LISTENER IS REGISTERED ONCE, SO IT READS THE CHANNEL THROUGH A REF - A CAPTURED ONE
     //WOULD BE WHATEVER IT WAS WHEN THE SESSION STARTED
     const currentChannelRef = useRef(currentChannel);
+
+    //THE PANE FOLLOWS THE BOTTOM ONLY WHILE IT IS ALREADY THERE; SCROLLING UP PARKS IT AND COUNTS
+    //WHAT ARRIVES, WHICH IS WHAT THE "↓ n new" IN THE BOTTOM BORDER IS
+    const pinnedRef = useRef(true);
 
     useEffect(() =>
     {
@@ -240,21 +296,18 @@ function App()
         return () => clearTimeout(timer);
     }, [uiState, connecting]);
 
+    const pane = paneByChannel[currentChannel] ?? [];
+
     useEffect(() =>
     {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messagesByChannel, currentChannel]);
+        if (!pinnedRef.current) return;
 
-    //PUSH ONE LINE INTO WHICHEVER CHANNEL IS OPEN WHEN IT ARRIVES
-    const pushMessage = (message: ChatMessage) =>
-    {
-        const channel = currentChannelRef.current;
-
-        setMessagesByChannel((previous) => ({ ...previous, [channel]: [...(previous[channel] ?? []), message] }));
-    };
+        const node = paneRef.current;
+        if (node) node.scrollTop = node.scrollHeight;
+    }, [paneByChannel, currentChannel]);
 
     //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO THE ROSTER IS THE WHOLE TRUTH ABOUT
-    //WHICH ONES THERE ARE - AND HISTORY OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
+    //WHICH ONES THERE ARE - AND THE SCROLLBACK OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
     useEffect(() =>
     {
         const channels = new Set(users.map((user) => user.channel ?? LOBBY));
@@ -262,7 +315,7 @@ function App()
 
         setActiveChannels(Array.from(channels));
 
-        setMessagesByChannel((previous) =>
+        setPaneByChannel((previous) =>
         {
             const next = { ...previous };
             let changed = false;
@@ -280,6 +333,15 @@ function App()
         });
     }, [users]);
 
+    const push = (...entries: PaneEntry[]) =>
+    {
+        const channel = currentChannelRef.current;
+
+        setPaneByChannel((previous) => ({ ...previous, [channel]: [...(previous[channel] ?? []), ...entries] }));
+
+        if (!pinnedRef.current) setUnread((previous) => previous + entries.length);
+    };
+
     const refreshCommands = () =>
     {
         invoke<CommandInfo[]>("get_commands").then(setCommands).catch(console.error);
@@ -292,21 +354,30 @@ function App()
         setConnecting(false);
         setErrorMsg(reason);
         setHint("");
-        setInputValue("");
-        setMessagesByChannel({});
+
+        //THE BOX COMES BACK AT THE ADDRESS STEP WITH THE ADDRESS STILL IN IT, SO THE NEXT TRY (HERE OR
+        //ELSEWHERE) IS ONE KEYSTROKE AWAY
+        setInputValue(addressRef.current);
+        setChatInput("");
+        setPaneByChannel({});
         setUsers([]);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
         setCommands([]);
-        setModal(null);
         setTofu(null);
         setTofuTyped("");
         setServerName("");
+        setUsername("");
         setRole("user");
+        setUnread(0);
+
+        pinnedRef.current = true;
     };
 
     useEffect(() =>
     {
+        invoke<ClientConfig>("get_client_config").then(setConfig).catch(console.error);
+
         const unlisten = listen<BridgeEvent>("why2-event", ({ payload }) =>
         {
             switch (payload.event)
@@ -324,7 +395,7 @@ function App()
                     setUiState("username_prompt");
                     setConnecting(false);
                     setInputValue("");
-                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled on this server.");
+                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled.");
                     break;
                 }
 
@@ -381,16 +452,19 @@ function App()
 
                 case "message":
                 {
-                    pushMessage(payload.data.message);
+                    push({ entry: "message", message: payload.data.message });
                     break;
                 }
 
                 case "history":
                 {
-                    const { messages } = payload.data;
-                    const channel = currentChannelRef.current;
+                    push(...payload.data.messages.map((message): PaneEntry => ({ entry: "message", message })));
+                    break;
+                }
 
-                    setMessagesByChannel((previous) => ({ ...previous, [channel]: [...messages, ...(previous[channel] ?? [])] }));
+                case "block":
+                {
+                    push({ entry: "block", title: payload.data.title, rows: payload.data.rows });
                     break;
                 }
 
@@ -410,11 +484,7 @@ function App()
 
                 case "users":
                 {
-                    const { users, requested } = payload.data;
-
-                    setUsers(users);
-
-                    if (requested) setModal({ type: "users", users });
+                    setUsers(payload.data.users);
                     break;
                 }
 
@@ -424,30 +494,12 @@ function App()
                     break;
                 }
 
-                case "files":
-                {
-                    setModal({ type: "files", users: payload.data.users });
-                    break;
-                }
-
-                case "bans":
-                {
-                    setModal({ type: "bans", users: payload.data.users, ips: payload.data.ips });
-                    break;
-                }
-
-                case "server_settings":
-                {
-                    const { settings, saved } = payload.data;
-
-                    if (saved) setPopupMessage("Server settings saved.");
-                    else setModal({ type: "settings", settings });
-                    break;
-                }
-
                 case "channel_changed":
                 {
                     setCurrentChannel(payload.data.channel ?? LOBBY);
+
+                    pinnedRef.current = true;
+                    setUnread(0);
                     break;
                 }
 
@@ -464,7 +516,7 @@ function App()
 
                     setActiveChannels((previous) => previous.filter((channel) => channel !== name));
 
-                    setMessagesByChannel((previous) =>
+                    setPaneByChannel((previous) =>
                     {
                         if (!(name in previous) || name === currentChannelRef.current) return previous;
 
@@ -504,8 +556,19 @@ function App()
 
         try
         {
-            if (uiState === "server_select") await invoke("connect_to_server", { address: inputValue });
-            else await invoke("send_input", { input: inputValue });
+            if (uiState === "server_select")
+            {
+                setAddress(inputValue);
+                addressRef.current = inputValue;
+
+                await invoke("connect_to_server", { address: inputValue });
+            }
+            else
+            {
+                if (uiState === "username_prompt") setUsername(inputValue);
+
+                await invoke("send_input", { input: inputValue });
+            }
         }
         catch (error: unknown)
         {
@@ -514,19 +577,12 @@ function App()
         }
     };
 
-    const handleChatSubmit = (event: React.FormEvent) =>
-    {
-        event.preventDefault();
-        if (!chatInput.trim()) return;
-
-        send(chatInput);
-        setChatInput("");
-    };
-
     //THE PROMPT IS ANSWERED IN-BAND: THE LISTENING TASK IS PARKED ON IT, AND ON A YES IT PINS THE KEY
     //AND DIALS AGAIN ITSELF - NOTHING HERE HAS TO RECONNECT
     const answerTofu = (accept: boolean) =>
     {
+        if (accept && tofu?.mismatch && tofuTyped !== CHALLENGE) return;
+
         setTofu(null);
         setTofuTyped("");
 
@@ -570,6 +626,8 @@ function App()
         return palette.filter((entry) => entry.name.startsWith(typed) || typed.startsWith(`${entry.name} `));
     }, [palette, typed]);
 
+    useEffect(() => { setSelected(0); }, [typed]);
+
     const channels = useMemo(() =>
     {
         const set = new Set(activeChannels);
@@ -585,510 +643,420 @@ function App()
         });
     }, [activeChannels, currentChannel]);
 
-    const messages = messagesByChannel[currentChannel] ?? [];
-
-    const renderIcon = () =>
+    const complete = () =>
     {
-        switch (uiState)
+        const entry = suggestions[selected];
+        if (!entry) return;
+
+        setChatInput(`/${entry.name} `);
+        chatInputRef.current?.focus();
+    };
+
+    const handleChatKey = (event: React.KeyboardEvent<HTMLInputElement>) =>
+    {
+        if (suggestions.length === 0) return;
+
+        if (event.key === "ArrowDown")
         {
-            case "server_select": return <Server size={32} />;
-            case "username_prompt": return <User size={32} />;
-            case "password_prompt": return <Lock size={32} />;
-            default: return null;
+            event.preventDefault();
+            setSelected((previous) => (previous + 1) % suggestions.length);
+        }
+        else if (event.key === "ArrowUp")
+        {
+            event.preventDefault();
+            setSelected((previous) => (previous - 1 + suggestions.length) % suggestions.length);
+        }
+        else if (event.key === "Tab")
+        {
+            event.preventDefault();
+            complete();
+        }
+        else if (event.key === "Enter")
+        {
+            const entry = suggestions[selected];
+
+            //ENTER FINISHES THE COMMAND WORD WHILE THE PALETTE IS STILL OFFERING ONE. ONCE IT IS
+            //FINISHED - OR A PARAMETER HAS BEEN STARTED - IT SENDS THE LINE LIKE ANY OTHER
+            if (entry && entry.name !== typed && !typed?.startsWith(`${entry.name} `))
+            {
+                event.preventDefault();
+                complete();
+            }
         }
     };
 
-    const renderTitle = () =>
+    const handleChatSubmit = (event: React.FormEvent) =>
     {
-        switch (uiState)
-        {
-            case "server_select": return "Connect to Server";
-            case "username_prompt": return "Enter Username";
-            case "password_prompt": return registering ? "Register" : "Log In";
-            default: return "";
-        }
+        event.preventDefault();
+        if (!chatInput.trim()) return;
+
+        send(chatInput);
+        setChatInput("");
     };
 
-    const renderDescription = () =>
+    const onPaneScroll = () =>
     {
-        switch (uiState)
-        {
-            case "server_select": return "Enter the address of the WHY2 server";
-            case "username_prompt": return "Choose a username to join the server";
-            case "password_prompt": return registering ? "Pick a password for your new account" : "Authenticate to secure your session";
-            default: return "";
-        }
+        const node = paneRef.current;
+        if (!node) return;
+
+        pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 8;
+
+        if (pinnedRef.current) setUnread(0);
     };
 
-    //THE IDENTITY PROMPT IS A MODAL OVERLAY ON BOTH SCREENS - WHILE IT IS UP THE SESSION IS PARKED ON
-    //ITS ANSWER, SO NOTHING TYPED ANYWHERE ELSE CAN REACH AN UNTRUSTED SERVER
-    const tofuOverlay = tofu && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
-            <div className="w-full max-w-md rounded-md border border-border bg-card p-6 shadow-2xl">
-                <div className="mb-4 flex items-center gap-3">
-                    <ShieldAlert size={20} className="text-destructive" />
-                    <h2 className="text-lg font-bold text-destructive">
-                        {tofu.mismatch ? "Server identity changed" : "Unknown server identity"}
-                    </h2>
-                </div>
+    const color = (code: number | null): string | undefined =>
+        (code === null || config.disable_colors ? undefined : ANSI[code]);
 
-                <p className="mb-4 text-sm text-muted-foreground">
-                    {tofu.mismatch
-                        ? `The key pinned for ${tofu.host} does not match the one it just offered. This is what a
-                           machine-in-the-middle looks like - unless the operator has told you they replaced it.`
-                        : `${tofu.host} has not been seen before. Compare the fingerprint against the one its
-                           operator published before trusting it.`}
-                </p>
+    //THE PANE'S TITLE IS THE WHOLE OF WHAT WE ARE CONNECTED TO: WHY2 ── <SERVER> ── <ADDRESS AS TYPED>
+    const paneTitle = ` ${["WHY2", serverName, address].filter(Boolean).join(" ── ")} `;
 
-                <div className="mb-4 rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground/80">
-                    {fingerprint(tofu.hash).map((row) => <div key={row}>{row}</div>)}
-                </div>
+    const status = [currentChannel && `#${currentChannel}`, username].filter(Boolean).join(" │ ");
 
-                {tofu.pinned && (
+    //ID FIRST, RIGHT-ALIGNED, SO THE USERNAMES LINE UP IN ONE COLUMN
+    const idWidth = useMemo(() => Math.max(...users.map((user) => String(user.id).length), 1), [users]);
+
+    const renderMessage = (message: ChatMessage, key: number) =>
+    {
+        const spoken = message.kind === "user" || message.kind === "private";
+
+        const tone =
+        {
+            user: "",
+            private: "text-accent",
+            system: "text-muted-foreground",
+            notice: "text-notice",
+            ok: "text-ok",
+            error: "text-error",
+        }[message.kind];
+
+        return (
+            <div key={key} className="whitespace-pre-wrap break-words">
+                {message.prefix && <span className="text-muted-foreground">{message.prefix} </span>}
+                {spoken && (
                     <>
-                        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Pinned</p>
-                        <div className="mb-4 rounded-md border border-border bg-background p-3 font-mono text-xs text-muted-foreground">
-                            {fingerprint(tofu.pinned).map((row) => <div key={row}>{row}</div>)}
-                        </div>
+                        <span style={{ color: color(message.username_color) }}>{message.username}</span>
+                        {config.show_id && message.id !== null && (
+                            <span className="text-muted-foreground"> ({message.id})</span>
+                        )}
+                        <span>: </span>
                     </>
                 )}
-
-                {/* REPLACING A PINNED KEY HAS TO BE TYPED OUT - THE FIRST CONTACT IS THE ONLY ONE ANSWERED BY A BUTTON */}
-                {tofu.mismatch && (
-                    <div className="mb-6">
-                        <label htmlFor="tofu-challenge" className="text-sm text-muted-foreground">
-                            Type <span className="font-mono font-bold text-foreground">{CHALLENGE}</span> to replace the pinned key.
-                        </label>
-                        <input
-                            id="tofu-challenge"
-                            type="text"
-                            value={tofuTyped}
-                            onChange={(event) => setTofuTyped(event.currentTarget.value.toLowerCase())}
-                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            autoFocus
-                        />
-                    </div>
-                )}
-
-                <div className="flex space-x-3">
-                    <button
-                        onClick={() => answerTofu(false)}
-                        className="flex-1 rounded-md bg-primary py-2.5 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
-                    >
-                        Reject
-                    </button>
-                    <button
-                        onClick={() => answerTofu(true)}
-                        disabled={tofu.mismatch && tofuTyped !== CHALLENGE}
-                        className="flex-1 rounded-md bg-destructive/10 py-2.5 font-medium text-destructive shadow-sm transition-colors hover:bg-destructive hover:text-destructive-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-destructive/10 disabled:hover:text-destructive"
-                    >
-                        Trust
-                    </button>
-                </div>
+                <span className={tone} style={{ color: spoken ? color(message.message_color) : undefined }}>
+                    {message.text}
+                </span>
             </div>
-        </div>
-    );
-
-    if (uiState === "connected")
-    {
-        return (
-            <main className="dark flex h-screen w-screen flex-col bg-background text-foreground noise-overlay">
-                <header className="z-10 flex items-center justify-between border-b border-border bg-card/50 px-6 py-3 backdrop-blur-md">
-                    <div></div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-end">
-                            <span className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Connected to</span>
-                            <h1 className="text-sm font-medium text-foreground/90">{serverName}</h1>
-                        </div>
-                        <div className="mx-1 h-8 w-px bg-border"></div>
-                        <span className="rounded-sm bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">
-                            {role}
-                        </span>
-                        <button
-                            onClick={() => send("/exit")}
-                            className="flex items-center justify-center rounded-md bg-destructive/10 p-2 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
-                            title="Disconnect"
-                        >
-                            <LogOut size={16} />
-                        </button>
-                    </div>
-                </header>
-
-                {tofuOverlay}
-
-                {popupMessage && (
-                    <div className="absolute right-6 top-16 z-50 whitespace-nowrap rounded-md border border-border bg-card px-6 py-2 text-sm text-muted-foreground shadow-lg backdrop-blur-md animate-fade-in">
-                        {popupMessage}
-                    </div>
-                )}
-
-                {modal && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
-                        <div className="w-full min-w-[300px] max-w-md rounded-md border border-border bg-card p-6 shadow-2xl">
-                            <h2 className="mb-4 text-lg font-bold">
-                                {modal.type === "users" && "Users Online"}
-                                {modal.type === "files" && "Available Files"}
-                                {modal.type === "bans" && "Bans"}
-                                {modal.type === "settings" && "Server Settings"}
-                            </h2>
-
-                            <div className="custom-scrollbar mb-6 max-h-64 space-y-2 overflow-y-auto pr-2">
-                                {modal.type === "users" && (modal.users.length > 0 ? modal.users.map((user) => (
-                                    <div key={user.id} className="flex items-center justify-between border-b border-border/50 py-1 text-sm last:border-0">
-                                        <span className="font-semibold">{user.username}</span>
-                                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                            {user.channel && <span className="text-primary">#{user.channel}</span>}
-                                            <span>ID: {user.id}</span>
-                                        </div>
-                                    </div>
-                                )) : <div className="text-sm text-muted-foreground">No users online.</div>)}
-
-                                {modal.type === "files" && (modal.users.length > 0 ? modal.users.map((user) => (
-                                    <div key={user.id} className="mb-4 last:mb-0">
-                                        <div className="mb-2 text-sm font-semibold">{user.username} (ID: {user.id})</div>
-                                        <div className="space-y-2 border-l-2 border-primary/20 pl-3">
-                                            {user.uploads.map((file) => (
-                                                <div key={file.id} className="flex items-center justify-between py-0.5 text-xs">
-                                                    <span className="font-medium text-foreground/90">{file.filename}</span>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-muted-foreground">ID: {file.id}</span>
-                                                        <button
-                                                            className="rounded-sm p-1 text-primary transition-colors hover:bg-primary/10 hover:text-primary/80"
-                                                            onClick={() =>
-                                                            {
-                                                                send(`/download ${user.id} ${file.id}`);
-                                                                setModal(null);
-                                                            }}
-                                                            title="Download File"
-                                                        >
-                                                            <Download size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )) : <div className="text-sm text-muted-foreground">No files available.</div>)}
-
-                                {/* THE IDS RENUMBER WHENEVER ONE IS LIFTED, SO EACH SECTION COUNTS FROM ITS OWN ZERO */}
-                                {modal.type === "bans" && (modal.users.length + modal.ips.length > 0
-                                    ? ([["users", modal.users], ["addresses", modal.ips]] as const).map(([name, bans]) => bans.length > 0 && (
-                                        <div key={name} className="mb-4 last:mb-0">
-                                            <div className="mb-2 text-sm font-semibold capitalize">{name}</div>
-                                            <div className="space-y-1 border-l-2 border-primary/20 pl-3">
-                                                {bans.map((ban) => (
-                                                    <div key={ban.id} className="flex items-center justify-between py-0.5 text-xs">
-                                                        <span className="font-medium text-foreground/90">{ban.subject}</span>
-                                                        <span className="text-muted-foreground">ID: {ban.id}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))
-                                    : <div className="text-sm text-muted-foreground">No bans.</div>)}
-
-                                {modal.type === "settings" && (
-                                    <>
-                                        <p className="mb-3 text-xs text-muted-foreground">
-                                            Read-only here - edit them with the terminal client.
-                                        </p>
-                                        {modal.settings.map((setting) => (
-                                            <div key={`${setting.section}.${setting.key}`} className="border-b border-border/50 py-1 last:border-0">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="font-mono font-medium">{setting.key}</span>
-                                                    <span className="font-mono text-xs text-muted-foreground">{setting.value}</span>
-                                                </div>
-                                                <div className="text-xs text-muted-foreground">{setting.description}</div>
-                                            </div>
-                                        ))}
-                                    </>
-                                )}
-                            </div>
-
-                            <button
-                                onClick={() => setModal(null)}
-                                className="w-full rounded-md bg-primary py-2.5 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {showCreateChannel && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
-                        <div className="w-full min-w-[300px] max-w-sm rounded-md border border-border bg-card p-6 shadow-2xl">
-                            <h2 className="mb-4 text-lg font-bold">Create Channel</h2>
-                            <input
-                                type="text"
-                                value={newChannelName}
-                                onChange={(event) => setNewChannelName(event.currentTarget.value)}
-                                onKeyDown={(event) =>
-                                {
-                                    if (event.key === "Enter" && newChannelName.trim())
-                                    {
-                                        send(`/channel ${newChannelName.trim()}`);
-                                        setShowCreateChannel(false);
-                                        setNewChannelName("");
-                                    }
-                                }}
-                                className="mb-6 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                placeholder="Channel name..."
-                                autoFocus
-                            />
-                            <div className="flex space-x-3">
-                                <button
-                                    onClick={() =>
-                                    {
-                                        if (newChannelName.trim()) send(`/channel ${newChannelName.trim()}`);
-
-                                        setShowCreateChannel(false);
-                                        setNewChannelName("");
-                                    }}
-                                    className="flex-1 rounded-md bg-primary py-2 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
-                                >
-                                    Create
-                                </button>
-                                <button
-                                    onClick={() => { setShowCreateChannel(false); setNewChannelName(""); }}
-                                    className="flex-1 rounded-md bg-secondary py-2 font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/90 focus:outline-none"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div className="flex flex-1 overflow-hidden">
-                    <div className="relative flex min-w-0 flex-1 flex-col">
-                        <div className="custom-scrollbar z-10 flex-1 overflow-y-auto p-6">
-                            {messages.map((message, index) =>
-                            {
-                                const spoken = message.kind === "user" || message.kind === "private";
-
-                                const usernameColor = getAnsiColor(message.username_color) ?? "var(--primary)";
-                                const messageColor = getAnsiColor(message.message_color)
-                                    ?? (message.kind === "error" ? "var(--destructive)" : "inherit");
-
-                                //CONSECUTIVE LINES BY THE SAME PERSON HANG UNDER THE FIRST ONE'S NAME
-                                const previous = index > 0 ? messages[index - 1] : null;
-                                const consecutive = spoken && previous?.kind === message.kind && previous.username === message.username;
-
-                                if (!spoken)
-                                {
-                                    return (
-                                        <div key={index} className="my-2 flex w-full items-center justify-center px-2">
-                                            <div className="h-px flex-1 bg-border/60"></div>
-                                            <span
-                                                className={`whitespace-pre-wrap px-4 text-sm italic ${message.kind === "system" ? "text-muted-foreground" : "font-medium"}`}
-                                                style={{ color: messageColor }}
-                                            >
-                                                {message.text}
-                                            </span>
-                                            <div className="h-px flex-1 bg-border/60"></div>
-                                        </div>
-                                    );
-                                }
-
-                                return (
-                                    <div
-                                        key={index}
-                                        className={`flex w-full items-start space-x-4 rounded-md px-2 transition-colors hover:bg-white/5 ${consecutive ? "my-0 py-0" : "mb-0 mt-4 pb-0 pt-2"}`}
-                                    >
-                                        <div className={`shrink-0 ${consecutive ? "w-10" : "flex h-10 w-10 items-center justify-center"}`}>
-                                            {!consecutive && (
-                                                <div
-                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold uppercase text-background shadow-sm"
-                                                    style={{ backgroundColor: usernameColor }}
-                                                >
-                                                    {message.username.charAt(0)}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className={`flex min-w-0 flex-1 flex-col ${consecutive ? "pt-0" : "pt-0.5"}`}>
-                                            {!consecutive && (
-                                                <span className="mb-0.5 text-sm font-semibold" style={{ color: usernameColor }}>
-                                                    {message.username}
-                                                </span>
-                                            )}
-                                            <span className="whitespace-pre-wrap break-words text-sm leading-snug" style={{ color: messageColor }}>
-                                                {message.text}
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            <div ref={messagesEndRef} className="h-4" />
-                        </div>
-
-                        <div className="relative z-10 border-t border-border bg-background/80 p-4 backdrop-blur-md">
-                            {typed !== null && (
-                                <div className="absolute bottom-full left-0 right-0 z-50 mx-auto w-full max-w-6xl pb-4">
-                                    <div className="custom-scrollbar max-h-64 overflow-hidden overflow-y-auto rounded-md border border-border bg-card shadow-2xl backdrop-blur-md animate-fade-in-up">
-                                        {suggestions.length > 0 ? (
-                                            <ul className="py-2">
-                                                {suggestions.map((entry) => (
-                                                    <li
-                                                        key={entry.name}
-                                                        className="cursor-pointer px-6 py-2 transition-colors hover:bg-white/5"
-                                                        onClick={() =>
-                                                        {
-                                                            setChatInput(`/${entry.name} `);
-                                                            document.getElementById("chat-input")?.focus();
-                                                        }}
-                                                    >
-                                                        <div className="flex items-baseline space-x-2">
-                                                            <span className="font-bold text-primary">/{entry.name}</span>
-                                                            {entry.args.map((arg) => (
-                                                                <span
-                                                                    key={arg.name}
-                                                                    className={`text-xs font-semibold ${arg.required ? "text-foreground/80" : "text-muted-foreground"}`}
-                                                                    title={arg.description}
-                                                                >
-                                                                    {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                        <div className="mt-0.5 text-xs text-muted-foreground">{entry.description}</div>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        ) : (
-                                            <div className="px-6 py-4 text-sm text-muted-foreground">No matching commands found.</div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            <form onSubmit={handleChatSubmit} className="relative mx-auto flex w-full max-w-6xl items-center">
-                                <div className="absolute left-2 z-10 flex items-center gap-1">
-                                    <button
-                                        type="button"
-                                        onClick={uploadFile}
-                                        className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
-                                        title="Upload File"
-                                    >
-                                        <Paperclip size={18} />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => send("/files")}
-                                        className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
-                                        title="View Files"
-                                    >
-                                        <Folder size={18} />
-                                    </button>
-                                </div>
-                                <input
-                                    id="chat-input"
-                                    type="text"
-                                    value={chatInput}
-                                    onChange={(event) => setChatInput(event.currentTarget.value)}
-                                    className="w-full rounded-md border border-input bg-card/50 py-3 pl-20 pr-12 text-sm text-foreground shadow-sm transition-all placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                    placeholder="Type your message..."
-                                    autoFocus
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!chatInput.trim()}
-                                    className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-primary transition-all hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <Send size={18} />
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div className="z-10 flex w-64 flex-col border-l border-border bg-card/30">
-                        <div className="flex items-center justify-between border-b border-border p-4">
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Channels</h2>
-                            <button
-                                onClick={() => setShowCreateChannel(true)}
-                                className="rounded-sm p-1 text-primary transition-colors hover:bg-primary/10 hover:text-primary/80"
-                                title="Create Channel"
-                            >
-                                <Plus size={16} />
-                            </button>
-                        </div>
-                        <div className="custom-scrollbar flex-1 space-y-1 overflow-y-auto p-2">
-                            {channels.map((channel) =>
-                            {
-                                const current = channel === currentChannel;
-                                const display = channel === LOBBY ? "chat lobby" : channel;
-                                const here = users.filter((user) => (user.channel ?? LOBBY) === channel).length;
-
-                                return (
-                                    <React.Fragment key={display}>
-                                        <button
-                                            onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
-                                            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                                current
-                                                    ? "bg-primary/20 font-medium text-primary"
-                                                    : "text-foreground/70 hover:bg-white/5 hover:text-foreground"
-                                            }`}
-                                        >
-                                            <Hash size={14} className={current ? "text-primary" : "text-muted-foreground"} />
-                                            <span className="truncate">{display}</span>
-                                            <span className="ml-auto flex items-center gap-2">
-                                                {here > 0 && <span className="text-xs text-muted-foreground">{here}</span>}
-                                                {current && <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
-                                            </span>
-                                        </button>
-                                        {channel === LOBBY && channels.length > 1 && <div className="mx-2 my-2 border-b border-border/50" />}
-                                    </React.Fragment>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-            </main>
         );
-    }
+    };
 
-    return (
-        <main className="dark flex h-screen w-screen items-center justify-center bg-background text-foreground noise-overlay">
-            {tofuOverlay}
+    const renderBlock = (title: string, rows: BlockRow[], key: number) =>
+    {
+        const glyphs = branches(rows);
 
-            <div className="relative z-10 w-full max-w-md rounded-md border border-border bg-card/50 p-8 shadow-2xl backdrop-blur-sm animate-fade-in-up">
-                <div className="mb-8 flex flex-col items-center justify-center text-center">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-md bg-primary/10 text-primary transition-all duration-300">
-                        {renderIcon()}
+        //THE ID COLUMN IS AS WIDE AS THE WIDEST ID ON ITS OWN LEVEL, SO THE NAMES LINE UP UNDER EACH OTHER
+        const widths = rows.reduce<Record<number, number>>((widths, row) =>
+        {
+            const width = row.id === null ? 1 : String(row.id).length;
+            widths[row.depth] = Math.max(widths[row.depth] ?? 1, width);
+
+            return widths;
+        }, {});
+
+        return (
+            <div key={key}>
+                <div className="font-bold text-title">{title}:</div>
+                {rows.map((row, index) =>
+                {
+                    //THE TWO IDS A FILE ROW CARRIES ARE THE TWO ARGUMENTS TO /download, SO CLICKING ONE
+                    //SENDS EXACTLY WHAT TYPING IT OUT WOULD HAVE
+                    const download = row.download;
+
+                    return (
+                    <div
+                        key={index}
+                        className={`whitespace-pre ${download ? "cursor-pointer hover:bg-selected" : ""}`}
+                        onClick={download ? () => send(`/download ${download[0]} ${download[1]}`) : undefined}
+                        title={download ? "Download" : undefined}
+                    >
+                        <span className="text-border">{glyphs[index]}</span>
+                        {row.id !== null && (
+                            <span className="text-muted-foreground">{String(row.id).padStart(widths[row.depth])}  </span>
+                        )}
+                        <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
+                        {row.note && <span className="text-muted-foreground">  {row.note}</span>}
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-foreground">{renderTitle()}</h1>
-                    <p className="mt-2 text-sm text-muted-foreground">{renderDescription()}</p>
-                </div>
+                    );
+                })}
+            </div>
+        );
+    };
 
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="space-y-2">
-                        <label htmlFor="inputField" className="text-sm font-medium capitalize text-foreground">
-                            {uiState === "server_select" ? "Server address" : uiState.split("_")[0]}
-                        </label>
+    const connected = uiState === "connected";
+
+    //THE CONNECT BOX ASKS FOR EVERYTHING UNTIL WE ARE IN, AND THE SERVER-KEY PROMPT COVERS EVEN THAT,
+    //BECAUSE IT IS THE ONLY THING THE USER MAY ANSWER WHILE IT IS UP
+    const loginBox = !connected && !tofu && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 px-4">
+            <Panel
+                active
+                title={` ${
+                    {
+                        server_select: "Connect",
+                        username_prompt: "Identify",
+                        password_prompt: registering ? "Register" : "Log in",
+                        connected: "",
+                    }[uiState]
+                } `}
+                left={connecting ? undefined : uiState === "server_select" ? " ⏎ connect " : " ⏎ continue "}
+                className="w-full max-w-[52ch] bg-background p-3"
+            >
+                <form onSubmit={handleSubmit}>
+                    <div className="text-muted-foreground">
+                        {uiState === "server_select" ? "Server address" : uiState === "username_prompt" ? "Username" : "Password"}
+                    </div>
+                    <div className="flex items-baseline">
+                        <span className="text-accent">&gt;&nbsp;</span>
                         <input
-                            id="inputField"
                             ref={loginInputRef}
                             type={uiState === "password_prompt" ? "password" : "text"}
                             value={inputValue}
                             onChange={(event) => setInputValue(event.currentTarget.value)}
-                            placeholder={uiState === "server_select" ? "e.g., 192.168.1.100" : ""}
-                            className="w-full rounded-md border border-input bg-background px-4 py-3 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            autoFocus
+                            className="w-full bg-transparent text-foreground caret-accent outline-none"
                             disabled={connecting}
+                            autoFocus
+                            spellCheck={false}
                         />
-                        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-                        {errorMsg && <p className="mt-1 text-sm text-destructive">{errorMsg}</p>}
                     </div>
 
-                    <button
-                        type="submit"
-                        disabled={!inputValue || connecting}
-                        className="group flex w-full items-center justify-center rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-md transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {connecting ? "Processing..." : "Continue"}
-                        {!connecting && <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />}
-                    </button>
+                    {/* THE STATUS ROW, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG,
+                        OR THE SERVER'S RULES */}
+                    <div className="mt-2 min-h-[1.5em]">
+                        {connecting
+                            ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
+                            : errorMsg
+                                ? <span className="text-error">{errorMsg}</span>
+                                : <span className="text-muted-foreground">{hint}</span>}
+                    </div>
                 </form>
+            </Panel>
+        </div>
+    );
+
+    const tofuBox = tofu && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 px-4">
+            <Panel
+                danger
+                title={` ${tofu.mismatch ? "Server identity changed" : "Unknown server identity"} `}
+                left={tofu.mismatch ? " type the word │ ⏎ confirm " : " ⏎ confirm "}
+                className="w-full max-w-[64ch] bg-background p-3"
+            >
+                <p className="whitespace-pre-wrap text-notice">
+                    {tofu.mismatch
+                        ? "The server is presenting a different identity key than the one pinned for this address. Either the operator replaced the server's keys, or somebody is sitting between you and it."
+                        : "This address has no pinned identity key yet. Accept it only if the fingerprint below matches the one the server's operator published."}
+                </p>
+
+                <div className="mt-3 whitespace-pre">
+                    <div>
+                        <span className="text-muted-foreground">Server   </span>
+                        {tofu.host}
+                    </div>
+                    {fingerprint(tofu.pinned ?? "").map((row, index) => (
+                        <div key={row} className="text-muted-foreground">
+                            <span>{index === 0 ? "Pinned   " : "         "}</span>
+                            {row}
+                        </div>
+                    ))}
+                    {fingerprint(tofu.hash).map((row, index) => (
+                        <div key={row}>
+                            <span className="text-muted-foreground">
+                                {index === 0 ? (tofu.mismatch ? "New key  " : "Key      ") : "         "}
+                            </span>
+                            <span className="text-accent">{row}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* REPLACING A PINNED KEY HAS TO BE TYPED OUT - A FIRST CONTACT IS THE ONLY ONE A BUTTON ANSWERS */}
+                {tofu.mismatch && (
+                    <div className="mt-3">
+                        <div>Type '{CHALLENGE}' to replace the pinned key with this one:</div>
+                        <div className="flex items-baseline justify-center">
+                            <input
+                                type="text"
+                                value={tofuTyped}
+                                onChange={(event) => setTofuTyped(event.currentTarget.value.toLowerCase())}
+                                onKeyDown={(event) => { if (event.key === "Enter") answerTofu(true); }}
+                                className="w-[8ch] bg-transparent text-center text-accent caret-accent outline-none"
+                                autoFocus
+                                spellCheck={false}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                <div className="mt-3 flex justify-center gap-4">
+                    <button onClick={() => answerTofu(false)} className="px-2 text-error hover:bg-selected">
+                        &nbsp;Reject&nbsp;
+                    </button>
+                    <button
+                        onClick={() => answerTofu(true)}
+                        disabled={tofu.mismatch && tofuTyped !== CHALLENGE}
+                        className="px-2 text-ok hover:bg-selected disabled:opacity-40 disabled:hover:bg-transparent"
+                    >
+                        &nbsp;{tofu.mismatch ? "Replace pinned key" : "Trust & save"}&nbsp;
+                    </button>
+                </div>
+            </Panel>
+        </div>
+    );
+
+    return (
+        <main className="noise-overlay relative flex h-screen w-screen flex-col bg-background font-mono text-sm text-foreground">
+            {popupMessage && (
+                <div className="absolute right-6 top-4 z-50 whitespace-nowrap rounded-md border border-border bg-background px-3 py-1 text-muted-foreground">
+                    {popupMessage}
+                </div>
+            )}
+
+            <div className="flex min-h-0 flex-1 gap-2 p-2">
+                <Panel
+                    title={paneTitle}
+                    right={unread > 0 ? <span className="text-notice">{` ↓ ${unread} new `}</span> : undefined}
+                    className="flex flex-1 flex-col"
+                >
+                    {!config.disable_logo && (
+                        <div className="pointer-events-none absolute inset-0 z-0 flex select-none items-center justify-center">
+                            <pre className="whitespace-pre text-logo">{LOGO}</pre>
+                        </div>
+                    )}
+
+                    <div ref={paneRef} onScroll={onPaneScroll} className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-auto px-3 py-1">
+                        {pane.map((entry, index) => entry.entry === "message"
+                            ? renderMessage(entry.message, index)
+                            : renderBlock(entry.title, entry.rows, index))}
+                    </div>
+
+                    {/* THE PALETTE SITS ON THE BOTTOM EDGE OF THE MESSAGE PANE, DIRECTLY ABOVE THE INPUT */}
+                    {connected && typed !== null && (
+                        <div className="absolute inset-x-0 bottom-0 z-20 px-1 pb-1">
+                            <Panel
+                                active
+                                title=" Commands "
+                                left={suggestions.length > 0 ? " ↑↓ select │ ⇥ complete " : undefined}
+                                className="bg-background"
+                            >
+                                <div className="custom-scrollbar max-h-60 overflow-auto py-1">
+                                    {suggestions.length > 0 ? suggestions.map((entry, index) => (
+                                        <div
+                                            key={entry.name}
+                                            onMouseEnter={() => setSelected(index)}
+                                            onClick={complete}
+                                            className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 ${index === selected ? "bg-selected" : ""}`}
+                                        >
+                                            <span className="text-accent">{index === selected ? "▌" : " "}</span>
+                                            <span className="font-bold text-title">/{entry.name}</span>
+                                            {entry.args.map((arg) => (
+                                                <span key={arg.name} className={arg.required ? "text-arg-required" : "text-arg-optional"}>
+                                                    {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
+                                                </span>
+                                            ))}
+                                            <span className="ml-auto pl-4 text-muted-foreground">{entry.description}</span>
+                                        </div>
+                                    )) : (
+                                        <div className="px-3 text-muted-foreground">No matching commands.</div>
+                                    )}
+                                </div>
+                            </Panel>
+                        </div>
+                    )}
+                </Panel>
+
+                {/* THE SIDEBAR HAS NOBODY TO LIST UNTIL WE ARE AUTHENTICATED - DO NOT SPEND THE WIDTH ON IT */}
+                {connected && (
+                    <div className="flex w-[26ch] shrink-0 flex-col gap-2">
+                        <Panel title={` Online (${users.length}) `} className="flex flex-1 flex-col">
+                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-1">
+                                {users.map((user) => (
+                                    <div key={user.id} className="whitespace-pre">
+                                        <span className="text-muted-foreground">
+                                            {String(user.id).padStart(idWidth)}
+                                            &nbsp;&nbsp;
+                                        </span>
+                                        <span className={user.username === username ? "text-accent" : ""}>{user.username}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </Panel>
+
+                        {/* A CHANNEL LIVES EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO WITH NOBODY OUT
+                            THERE THE PANEL HAS NOTHING TO SAY - THE LOBBY IS WHERE WE ALREADY ARE */}
+                        {channels.length > 1 && (
+                        <Panel title={` Channels (${channels.length}) `} className="flex max-h-[40%] flex-col">
+                            <div className="custom-scrollbar min-h-0 flex-1 overflow-auto px-3 py-1">
+                                {channels.map((channel) =>
+                                {
+                                    const here = channel === currentChannel;
+
+                                    return (
+                                        <div
+                                            key={channel || "lobby"}
+                                            onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
+                                            className="cursor-pointer whitespace-pre hover:bg-selected"
+                                        >
+                                            <span className="text-accent">{here ? "▸ " : "  "}</span>
+                                            <span className="text-muted-foreground">#</span>
+                                            <span className={here ? "text-accent" : ""}>{channel === LOBBY ? "lobby" : channel}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Panel>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* THE INPUT HAS NOTHING TO SAY UNTIL WE ARE IN, THE SAME WAY THE SIDEBAR HAS NOBODY TO LIST */}
+            {connected && (
+                <div className="px-2 pb-2">
+                    <Panel
+                        active
+                        left={status && ` ${status} `}
+                        right={
+                            <span className="whitespace-pre">
+                                {" "}
+                                <button onClick={uploadFile} className="hover:text-accent">upload</button>
+                                {" │ "}
+                                <button onClick={() => send("/files")} className="hover:text-accent">files</button>
+                                {" │ "}
+                                <span className="text-accent">{role}</span>
+                                {" │ "}
+                                <button onClick={() => send("/exit")} className="hover:text-error">exit</button>
+                                {" "}
+                            </span>
+                        }
+                        className="p-2"
+                    >
+                        <form onSubmit={handleChatSubmit} className="flex items-baseline">
+                            <span className="text-accent">&gt;&nbsp;</span>
+                            <input
+                                ref={chatInputRef}
+                                id="chat-input"
+                                type="text"
+                                value={chatInput}
+                                onChange={(event) => setChatInput(event.currentTarget.value)}
+                                onKeyDown={handleChatKey}
+                                className="w-full bg-transparent text-foreground caret-accent outline-none"
+                                autoFocus
+                                spellCheck={false}
+                            />
+                        </form>
+                    </Panel>
+                </div>
+            )}
+
+            {loginBox}
+            {tofuBox}
         </main>
     );
 }
