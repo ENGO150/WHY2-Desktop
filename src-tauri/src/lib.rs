@@ -21,6 +21,7 @@ use std::
     fs::File,
     io::Read,
     path::Path,
+    time::{ Duration, Instant },
     sync::
     {
         Arc,
@@ -32,6 +33,7 @@ use std::
 use tokio::
 {
     task,
+    time,
     net::tcp::OwnedWriteHalf,
     sync::
     {
@@ -88,6 +90,14 @@ use why2_chat::
 //CONSTS
 const EVENT: &str = "why2-event"; //THE ONE EVENT THE WEBVIEW LISTENS ON
 
+//THE SERVER'S DEFAULT min_message_delay. IT COUNTS EVERY PACKET, NOT ONLY THE ONES THE USER TYPED, AND
+//IT IS NEVER SENT TO US - SO THE ONLY THING A CLIENT CAN DO IS KEEP ITS OWN CHATTER THIS FAR APART
+const ROSTER_GAP: Duration = Duration::from_millis(750);
+
+//LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
+//ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
+const ROSTER_COALESCE: Duration = Duration::from_millis(50);
+
 //STRUCTS
 struct AppState
 {
@@ -95,6 +105,8 @@ struct AppState
     tofu_reply: Mutex<Option<oneshot::Sender<bool>>>,                  //THE HANDSHAKE IS PARKED ON THIS
     role: Mutex<Role>,                                                 //WHAT THIS SERVER GRANTED US
     session: AtomicU64,                                                //ONLY THE NEWEST SESSION COUNTS
+    last_sent: Mutex<Instant>,                                         //WHEN WE LAST PUT SOMETHING ON THE WIRE
+    roster_queued: AtomicBool,                                         //A ROSTER REFRESH IS ALREADY ON ITS WAY
     leaving: AtomicBool,                                               //THE DISCONNECT WAS ASKED FOR
     list_requested: AtomicBool,                                        //THE NEXT ROSTER OPENS A MODAL
     version_checked: AtomicBool,                                       //crates.io IS ASKED ONCE PER PROCESS
@@ -388,9 +400,56 @@ fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandArgInfo> //D
     }).collect()
 }
 
+//EVERY PACKET THIS SIDE ORIGINATES GOES THROUGH HERE, BECAUSE THE SPAM COUNTER ON THE SERVER IS ABOUT
+//PACKETS AND NOT ABOUT MESSAGES - A ROSTER REFRESH TUCKED IN BEHIND A CHAT LINE COUNTS AGAINST BOTH
+async fn send_packet(state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, code: PacketCode)
+{
+    network::send(&mut *write_stream.lock().await, code, options::get_keys().as_ref()).await;
+
+    *state.last_sent.lock().unwrap() = Instant::now();
+}
+
+//ASK FOR THE ROSTER - EVENTUALLY. THE ROSTER IS ALSO THE CHANNEL LIST, SO IT HAS TO FOLLOW EVERY JOIN,
+//AND JOINS ARRIVE IN CLUMPS: LOGGING IN ALONE BRINGS Accept AND OUR OWN Join ONE AFTER THE OTHER, WHICH
+//AS TWO SEPARATE List PACKETS IS EXACTLY WHAT THE SERVER CALLS SPAM. ONE REQUEST ANSWERS THE WHOLE
+//CLUMP, AND IT WAITS OUT WHATEVER WE LAST SENT BEFORE GOING OUT
+fn refresh_online(app: &AppHandle, session: u64)
+{
+    //THE FIRST CALLER QUEUES IT; EVERY OTHER ONE UNTIL IT GOES OUT *IS* THAT SAME REQUEST
+    if app.state::<AppState>().roster_queued.swap(true, Ordering::Relaxed) { return }
+
+    let app = app.clone();
+
+    async_runtime::spawn(async move
+    {
+        time::sleep(ROSTER_COALESCE).await;
+
+        //NOBODY IS WAITING ON A ROSTER, SO IT GIVES WAY TO ANYTHING THE USER ACTUALLY TYPED
+        loop
+        {
+            let waited = app.state::<AppState>().last_sent.lock().unwrap().elapsed();
+
+            if waited >= ROSTER_GAP { break }
+
+            time::sleep(ROSTER_GAP - waited).await;
+        }
+
+        let state = app.state::<AppState>();
+
+        //THE SESSION IT WAS QUEUED FOR IS GONE, AND SO IS THE POINT OF ASKING
+        if state.session.load(Ordering::Relaxed) != session { return }
+
+        state.roster_queued.store(false, Ordering::Relaxed);
+
+        let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
+
+        send_packet(&state, &write_stream, PacketCode::List { users: None }).await;
+    });
+}
+
 //UPLOAD ONE FILE. THE SERVER IS ASKED FIRST AND ANSWERS WITH A TOKEN, WHICH IS WHAT THE CRATE'S UPLOAD
 //TASK DIALS THE SIDE CHANNEL WITH - ALL WE DO HERE IS NAME THE FILE BY ITS HASH AND ASK
-async fn upload_file(app: &AppHandle, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, path: &str)
+async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, path: &str)
 {
     let path = Path::new(path.trim());
 
@@ -425,8 +484,7 @@ async fn upload_file(app: &AppHandle, write_stream: &Arc<MutexAsync<OwnedWriteHa
     //THE UPLOAD TASK LOOKS THE PATH UP BY HASH WHEN THE APPROVAL COMES BACK
     client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
 
-    network::send(&mut *write_stream.lock().await,
-        PacketCode::Upload { hash, token: None, uid: None }, options::get_keys().as_ref()).await;
+    send_packet(state, write_stream, PacketCode::Upload { hash, token: None, uid: None }).await;
 }
 
 //MODERATION ACTIONS - /server <action> [parameters]
@@ -493,11 +551,11 @@ async fn server_command(app: &AppHandle, state: &AppState, write_stream: &Arc<Mu
         },
     };
 
-    network::send(&mut *write_stream.lock().await, code, options::get_keys().as_ref()).await;
+    send_packet(state, write_stream, code).await;
 }
 
 //TRANSLATES ONE EVENT OF THE SESSION INTO SOMETHING THE WEBVIEW CAN RENDER
-async fn handle_event(app: &AppHandle, event: ClientEvent)
+async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
 {
     let state = app.state::<AppState>();
 
@@ -526,12 +584,13 @@ async fn handle_event(app: &AppHandle, event: ClientEvent)
             *state.role.lock().unwrap() = role;
             emit(app, UiEvent::Authenticated { role: role.to_string() });
 
-            //THE ROSTER IS ALSO WHERE THE CHANNEL LIST COMES FROM, SO IT IS ASKED FOR RIGHT AWAY
-            if let Some(write_stream) = state.write_stream.lock().await.as_ref()
-            {
-                network::send(&mut *write_stream.lock().await,
-                    PacketCode::List { users: None }, options::get_keys().as_ref()).await;
-            }
+            //THE SERVER BACKDATES ITS OWN CLOCK BY min_message_delay WHEN IT AUTHENTICATES SOMEBODY, SO
+            //THE FIRST PACKET AFTER LOGIN IS FREE BY CONSTRUCTION - OURS IS BACKDATED TO MATCH, WHICH IS
+            //WHAT LETS THE ROSTER LAND IMMEDIATELY INSTEAD OF A SECOND INTO THE SESSION
+            *state.last_sent.lock().unwrap() = Instant::now() - ROSTER_GAP;
+
+            //THE ROSTER IS ALSO WHERE THE CHANNEL LIST COMES FROM
+            refresh_online(app, session);
         },
 
         //A ROLE WAS SET. THE SERVER NAMES THE USER WHEN IT IS SOMEBODY ELSE, SO THE ONE WITHOUT A NAME
@@ -579,11 +638,7 @@ async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::system(format!("{username} connected.")));
 
             //A NEW USER MEANS A NEW ROW, AND POSSIBLY A CHANNEL NOBODY WAS IN BEFORE
-            if let Some(write_stream) = state.write_stream.lock().await.as_ref()
-            {
-                network::send(&mut *write_stream.lock().await,
-                    PacketCode::List { users: None }, options::get_keys().as_ref()).await;
-            }
+            refresh_online(app, session);
         },
 
         //NO PacketCode::List HERE: A KICK WOULD PUT ONE RIGHT BEHIND THE ServerKick PACKET AND EARN A
@@ -759,7 +814,7 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
     {
         if app.state::<AppState>().session.load(Ordering::Relaxed) != session { return }
 
-        handle_event(&app, event).await;
+        handle_event(&app, event, session).await;
     }
 
     let state = app.state::<AppState>();
@@ -769,6 +824,7 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
     *state.write_stream.lock().await = None;
     *state.role.lock().unwrap() = Role::default();
     state.tofu_reply.lock().unwrap().take();
+    state.roster_queued.store(false, Ordering::Relaxed);
 
     reset_session();
 }
@@ -827,6 +883,8 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     *state.role.lock().unwrap() = Role::default();
     state.leaving.store(false, Ordering::Relaxed);
     state.list_requested.store(false, Ordering::Relaxed);
+    state.roster_queued.store(false, Ordering::Relaxed);
+    *state.last_sent.lock().unwrap() = Instant::now();
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
 
@@ -863,7 +921,7 @@ async fn upload_file_from_path(path: String, app: AppHandle, state: State<'_, Ap
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
 
-    upload_file(&app, &write_stream, &path).await;
+    upload_file(&app, &state, &write_stream, &path).await;
 
     Ok(())
 }
@@ -891,6 +949,9 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
             //SEND THE CODE ON A SIMPLE COMMAND, HANDLE IT HERE OTHERWISE
             let sent = command::send_command_code(&mut *write_stream.lock().await, &command, &parameters).await;
 
+            //THE CRATE PUT IT ON THE WIRE FOR US, SO THE CLOCK IS OURS TO KEEP
+            if sent == Some(true) { *state.last_sent.lock().unwrap() = Instant::now(); }
+
             //A REQUEST/RESPONSE COMMAND THE USER TYPED WANTS ITS ANSWER PUT ON SCREEN
             if sent == Some(true)
             {
@@ -915,7 +976,7 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
                 {
                     Command::Upload => match parameters
                     {
-                        Some(path) => upload_file(&app, &write_stream, &path).await,
+                        Some(path) => upload_file(&app, &state, &write_stream, &path).await,
                         None => popup(&app, "Usage: /upload <PATH>"),
                     },
 
@@ -948,7 +1009,7 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
         LoginState::None => PacketCode::Message { text: input, colors: get_colors(), username: None, id: None },
     };
 
-    network::send(&mut *write_stream.lock().await, code, options::get_keys().as_ref()).await;
+    send_packet(&state, &write_stream, code).await;
 
     Ok(())
 }
@@ -970,6 +1031,8 @@ pub fn run()
             tofu_reply: Mutex::new(None),
             role: Mutex::new(Role::default()),
             session: AtomicU64::new(0),
+            last_sent: Mutex::new(Instant::now()),
+            roster_queued: AtomicBool::new(false),
             leaving: AtomicBool::new(false),
             list_requested: AtomicBool::new(false),
             version_checked: AtomicBool::new(false),

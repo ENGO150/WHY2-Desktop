@@ -39,7 +39,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base"] }
-tokio = { version = "1", features = ["net", "rt", "sync"] }
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
 sha2 = "0.11"
 
 
