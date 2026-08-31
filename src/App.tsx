@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./index.css";
@@ -66,6 +66,13 @@ interface ScreenState
 {
     sharing: boolean;
     monitor: string | null;
+}
+
+//ONE USER WHOSE SCREEN IS UP FOR WATCHING
+interface ScreenUser
+{
+    id: number;
+    username: string;
 }
 
 interface FileOwner
@@ -292,6 +299,8 @@ type BridgeEvent =
     | { event: "client_settings"; data: { settings: ClientSetting[] } }
     | { event: "voice"; data: { voice: VoiceState } }
     | { event: "screen"; data: { screen: ScreenState } }
+    | { event: "screens"; data: { users: ScreenUser[] } }
+    | { event: "watching"; data: { username: string | null } }
     | { event: "server_settings"; data: { settings: SettingRow[]; saved: boolean } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
@@ -411,6 +420,29 @@ const ICONS: Record<string, string[]> =
     code: ["M9 18l-6-6 6-6", "M15 6l6 6-6 6"],
     monitor: ["M3 5h18v11H3z", "M9 20h6", "M12 16v4"],
 };
+
+//AN ACCESS UNIT IS A KEYFRAME WHEN IT CARRIES AN IDR SLICE, OR THE PARAMETER SETS THAT COME IN FRONT OF
+//ONE. A DECODER CANNOT START ANYWHERE ELSE, AND ANNEX-B PUTS THE TYPE IN THE LOW FIVE BITS OF THE FIRST
+//BYTE AFTER EVERY START CODE - WHICH IS THE WHOLE OF WHAT HAS TO BE UNDERSTOOD ABOUT H.264 HERE
+function isKeyFrame(bytes: Uint8Array): boolean
+{
+    for (let index = 0; index + 3 < bytes.length; index++)
+    {
+        if (bytes[index] !== 0 || bytes[index + 1] !== 0) continue;
+
+        const start = bytes[index + 2] === 1
+            ? index + 3
+            : bytes[index + 2] === 0 && bytes[index + 3] === 1 ? index + 4 : -1;
+
+        if (start < 0 || start >= bytes.length) continue;
+
+        const kind = bytes[start] & 0x1f;
+
+        if (kind === 5 || kind === 7) return true;
+    }
+
+    return false;
+}
 
 //WHAT A NAME SAYS THE FILE IS. THE PROTOCOL SENDS NO TYPE AND NO SIZE, SO THE EXTENSION IS THE ONLY
 //THING THERE IS TO GO ON - AND AN UNKNOWN ONE STILL NAMES ITSELF RATHER THAN SAYING NOTHING
@@ -907,9 +939,16 @@ function App()
     const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [] });
     const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null });
 
-    //THE MONITORS, WHILE THE PICKER IS ASKING WHICH ONE TO SHARE. THEY ARE ENUMERATED WHEN IT OPENS AND
-    //NOT KEPT - ONE PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT
-    const [monitors, setMonitors] = useState<string[] | null>(null);
+    //THE SCREEN WINDOW: WHICH OF OURS TO SHARE, AND WHOSE TO WATCH. THE MONITORS ARE ENUMERATED WHEN IT
+    //OPENS AND NOT KEPT - ONE PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT - AND THE
+    //SHARERS ARE WHATEVER THE SERVER LAST ANSWERED, SINCE IT NEVER SAYS ON ITS OWN THAT SOMEBODY STARTED
+    const [screensOpen, setScreensOpen] = useState(false);
+    const [monitors, setMonitors] = useState<string[]>([]);
+    const [sharers, setSharers] = useState<ScreenUser[]>([]);
+
+    //WHOSE SCREEN THE PANE IS DRAWING, AND WHAT STOPPED IT FROM DRAWING ONE
+    const [watching, setWatching] = useState<string | null>(null);
+    const [viewerError, setViewerError] = useState("");
 
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
@@ -930,6 +969,7 @@ function App()
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1050,7 +1090,11 @@ function App()
         setUnread(0);
         setVoice({ enabled: false, mic: false, users: [] });
         setScreen({ sharing: false, monitor: null });
-        setMonitors(null);
+        setScreensOpen(false);
+        setMonitors([]);
+        setSharers([]);
+        setWatching(null);
+        setViewerError("");
         setCreating(null);
         setFiles(null);
 
@@ -1205,6 +1249,21 @@ function App()
                 case "screen":
                 {
                     setScreen(payload.data.screen);
+                    break;
+                }
+
+                //TYPING /screens OPENS THE WINDOW THE ANSWER BELONGS IN, THE WAY /files OPENS ITS OWN
+                case "screens":
+                {
+                    setSharers(payload.data.users);
+                    setScreensOpen(true);
+                    break;
+                }
+
+                case "watching":
+                {
+                    setWatching(payload.data.username);
+                    setViewerError("");
                     break;
                 }
 
@@ -1467,31 +1526,114 @@ function App()
 
     useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
 
-    //THE MONITORS ARE ASKED FOR WHEN THE LIST OPENS AND NOT KEPT, WHICH IS WHAT THE PALETTE DOES FOR THE
-    //SAME PARAMETER - A MONITOR PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT
-    const pickMonitor = () =>
+    //ONE DOOR FOR BOTH HALVES OF THE SUBJECT: WHICH OF OUR SCREENS TO SHARE, AND WHOSE TO WATCH. THE
+    //MONITORS ARE ASKED OF THE SAME VOCABULARY THE PALETTE USES, AND THE SHARERS OF THE SERVER, BECAUSE
+    //IT ONLY EVER ANSWERS THAT QUESTION AND NEVER VOLUNTEERS IT
+    const openScreens = () =>
     {
+        setScreensOpen(true);
+
         invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors" })
             .then((values) => setMonitors(values.map((value) => value.value)))
             .catch(() => setMonitors([]));
+
+        send("/screens");
     };
 
-    //THE BUTTON IS THE WHOLE SHARE: IT ENDS THE ONE THAT IS RUNNING, AND OTHERWISE ASKS WHICH SCREEN TO
-    //START ON - UNLESS THERE IS ONLY ONE, WHICH IS NOT A CHOICE ANYBODY NEEDS TO BE SHOWN
-    const shareScreen = () =>
+    //SOMEBODY ELSE'S SCREEN, DRAWN HERE RATHER THAN IN A WINDOW OF THE CRATE'S OWN. THE FRAMES ARRIVE AS
+    //H.264 ACCESS UNITS ON A BINARY CHANNEL AND THE WEBVIEW DECODES THEM - THE PICTURE NEVER TOUCHES THE
+    //MAIN THREAD'S EVENT LOOP, WHICH IS TAURI'S AND NOT winit'S
+    useEffect(() =>
     {
-        if (screen.sharing) { send("/screen"); return; }
+        if (!watching) return;
 
-        invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors" })
-            .then((values) =>
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext("2d");
+
+        if (!canvas || !context) return;
+
+        if (typeof VideoDecoder === "undefined")
+        {
+            setViewerError("This webview has no video decoder (WebCodecs is missing).");
+            return;
+        }
+
+        let live = true;
+        let ready = false;    //NOTHING IS DECODED BEFORE THE DECODER HAS BEEN TOLD WHAT IT IS DECODING
+        let started = false;  //AND NOTHING BEFORE THE FIRST KEYFRAME, WHICH IS THE ONLY PLACE TO START
+        let stamp = 0;
+
+        const decoder = new VideoDecoder(
+        {
+            output: (frame) =>
             {
-                const names = values.map((value) => value.value);
+                //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT DOWN TO THE PANE
+                if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight)
+                {
+                    canvas.width = frame.displayWidth;
+                    canvas.height = frame.displayHeight;
+                }
 
-                if (names.length < 2) send("/screen");
-                else setMonitors(names);
-            })
-            .catch(() => send("/screen"));
-    };
+                context.drawImage(frame, 0, 0);
+                frame.close();
+            },
+
+            error: (error) => { if (live) setViewerError(String(error)); },
+        });
+
+        //THE LEVEL IN THE CODEC STRING ONLY HAS TO BE AT LEAST THE STREAM'S, AND THE STREAM'S DEPENDS ON
+        //THE MONITOR SOMEBODY ELSE IS SHARING - SO THE HIGHEST ONE THAT IS SUPPORTED IS THE ONE TO ASK FOR
+        void (async () =>
+        {
+            for (const codec of ["avc1.42E034", "avc1.42E028", "avc1.42E01E"])
+            {
+                try
+                {
+                    const { supported } = await VideoDecoder.isConfigSupported({ codec, optimizeForLatency: true });
+
+                    if (!supported || !live) continue;
+
+                    decoder.configure({ codec, optimizeForLatency: true });
+                    ready = true;
+
+                    return;
+                }
+                catch { /* THE NEXT ONE */ }
+            }
+
+            if (live) setViewerError("No H.264 decoder in this webview.");
+        })();
+
+        const channel = new Channel<ArrayBuffer>();
+
+        channel.onmessage = (data) =>
+        {
+            if (!live || !ready || decoder.state !== "configured") return;
+
+            const bytes = new Uint8Array(data);
+            const key = isKeyFrame(bytes);
+
+            //A DELTA FRAME BEFORE THE FIRST KEY ONE IS PREDICTED FROM A PICTURE NOBODY HAS
+            if (!started && !key) return;
+
+            started = true;
+
+            decoder.decode(new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: stamp, data: bytes }));
+
+            stamp += 33333;
+        };
+
+        invoke("watch_frames", { channel }).catch((error: unknown) => setViewerError(String(error)));
+
+        return () =>
+        {
+            live = false;
+
+            invoke("drop_frames").catch(() => {});
+
+            if (decoder.state !== "closed") decoder.close();
+        };
+    }, [watching]);
 
     const closeFiles = () =>
     {
@@ -1505,7 +1647,7 @@ function App()
     //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
     useEffect(() =>
     {
-        if (!connected || settingsOpen || filesOpen || monitors || tofu) return;
+        if (!connected || settingsOpen || filesOpen || screensOpen || tofu) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
@@ -1521,7 +1663,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [connected, settingsOpen, filesOpen, monitors, tofu]);
+    }, [connected, settingsOpen, filesOpen, screensOpen, tofu]);
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
@@ -2572,55 +2714,97 @@ function App()
         );
     })();
 
-    //WHICH SCREEN TO SHARE. THE PICK NEVER LEAVES THIS MACHINE - THE SERVER ONLY EVER KNOWS *THAT* WE ARE
-    //SHARING - AND NAMING ANOTHER MONITOR WHILE THE SHARE IS UP SWAPS THE CAPTURE OVER WITHOUT STOPPING IT
-    const monitorBox = monitors && (
+    //SCREENS, BOTH WAYS ROUND: WHICH OF OURS TO SHARE AND WHOSE TO WATCH. THE PICK NEVER LEAVES THIS
+    //MACHINE - THE SERVER ONLY EVER KNOWS *THAT* WE ARE SHARING - AND NAMING ANOTHER MONITOR WHILE THE
+    //SHARE IS UP SWAPS THE CAPTURE OVER WITHOUT STOPPING IT
+    const screensBox = screensOpen && (
         <div
-            onMouseDown={(event) => { if (event.target === event.currentTarget) setMonitors(null); }}
+            onMouseDown={(event) => { if (event.target === event.currentTarget) setScreensOpen(false); }}
             className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4"
         >
             <div
                 ref={(node) => { node?.focus(); }}
                 tabIndex={-1}
-                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setMonitors(null); } }}
-                className="rise w-full max-w-[420px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none"
+                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setScreensOpen(false); } }}
+                className="rise flex max-h-[84vh] w-full max-w-[480px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none"
             >
                 <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
                     <Icon name="monitor" className="h-4 w-4 shrink-0 text-muted" />
-                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
-                        {screen.sharing ? "Share a different screen" : "Share a screen"}
-                    </h2>
+                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Screens</h2>
 
-                    <IconButton icon="close" label="Close" onClick={() => setMonitors(null)} />
+                    <IconButton icon="close" label="Close" onClick={() => setScreensOpen(false)} />
                 </header>
 
-                <div className="scroller p-1.5" style={{ maxHeight: "50vh" }}>
+                <div className="scroller flex-1 px-2.5 pb-3">
+                    <SectionLabel>Yours</SectionLabel>
+
                     {monitors.length === 0 && (
-                        <div className="px-2 py-8 text-center text-sm text-faint">No monitor to share.</div>
+                        <div className="px-2 py-2 text-sm text-faint">No monitor to share.</div>
                     )}
 
-                    {monitors.map((name) => (
-                        <button
-                            key={name}
-                            type="button"
-                            onClick={() => { send(`/screen ${name}`); setMonitors(null); }}
-                            className="flex w-full items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover"
-                        >
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
-                                <Icon name="monitor" className="h-4 w-4" />
-                            </span>
+                    {monitors.map((name) =>
+                    {
+                        const live = screen.sharing && screen.monitor === name;
 
-                            <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+                        return (
+                            <button
+                                key={name}
+                                type="button"
+                                title={live ? "Stop sharing this screen" : screen.sharing ? "Share this one instead" : "Share this screen"}
+                                onClick={() => { send(live ? "/screen" : `/screen ${name}`); if (!live) setScreensOpen(false); }}
+                                className="flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
+                            >
+                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-app bg-deep ${live ? "text-online" : "text-muted"}`}>
+                                    <Icon name="monitor" className="h-4 w-4" />
+                                </span>
 
-                            {screen.monitor === name && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
-                        </button>
-                    ))}
+                                <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
+
+                                {live && <span className="shrink-0 rounded bg-online/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-online">sharing</span>}
+                            </button>
+                        );
+                    })}
+
+                    <SectionLabel>Everybody else</SectionLabel>
+
+                    {sharers.filter((user) => user.username !== username).length === 0 && (
+                        <div className="px-2 py-2 text-sm text-faint">Nobody else is sharing right now.</div>
+                    )}
+
+                    {sharers.filter((user) => user.username !== username).map((user) =>
+                    {
+                        const here = watching === user.username;
+
+                        return (
+                            <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
+                                <Avatar name={user.username} size={28} />
+
+                                <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
+                                    className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
+                                        ? "border border-border text-muted hover:border-error hover:text-error"
+                                        : "bg-accent text-black/85 hover:brightness-110"}`}
+                                >
+                                    {here ? "Stop watching" : "Watch"}
+                                </button>
+                            </div>
+                        );
+                    })}
                 </div>
 
-                <footer className="border-t border-border bg-deep/40 px-5 py-3 text-xs text-faint">
-                    {screen.sharing
-                        ? "Swapping keeps the share running - nobody watching is dropped."
-                        : "Everybody on the server can watch what you share."}
+                <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
+                    <span className="flex-1 text-xs text-faint">Everybody on the server can watch what you share.</span>
+
+                    <button
+                        type="button"
+                        onClick={() => send("/screens")}
+                        className="rounded-app border border-border px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-border-strong hover:text-text"
+                    >
+                        Refresh
+                    </button>
                 </footer>
             </div>
         </div>
@@ -2881,7 +3065,7 @@ function App()
                                 <button
                                     type="button"
                                     title="Share a different screen"
-                                    onClick={pickMonitor}
+                                    onClick={openScreens}
                                     className="min-w-0 flex-1 text-left"
                                 >
                                     <div className="text-xs font-semibold text-online">Sharing your screen</div>
@@ -2946,10 +3130,10 @@ function App()
                                 />
                                 <IconButton
                                     icon="monitor"
-                                    label={screen.sharing ? "Stop sharing your screen" : "Share your screen"}
+                                    label="Screens"
                                     tone={screen.sharing ? "ok" : "default"}
-                                    active={screen.sharing}
-                                    onClick={shareScreen}
+                                    active={screen.sharing || screensOpen}
+                                    onClick={openScreens}
                                 />
                                 <IconButton
                                     icon="headset"
@@ -2960,6 +3144,33 @@ function App()
                                 <IconButton icon="users" label="Members" active={members} onClick={() => setMembers((previous) => !previous)} />
                             </div>
                         </header>
+
+                        {/* SOMEBODY ELSE'S SCREEN, IN THE WINDOW AND NOT BESIDE IT - THE CHAT KEEPS RUNNING
+                            UNDERNEATH IT, WHICH IS THE WHOLE POINT OF WATCHING ONE IN A CHAT PROGRAM */}
+                        {watching && (
+                            <div className="flex min-h-0 shrink-0 basis-[52%] flex-col border-b border-border bg-deep">
+                                <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+                                    <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
+
+                                    <span className="min-w-0 flex-1 truncate text-sm">
+                                        <span className="font-semibold">{watching}</span>
+                                        <span className="text-muted">&apos;s screen</span>
+                                    </span>
+
+                                    <IconButton icon="close" label="Stop watching" tone="error" onClick={() => send("/deattach")} />
+                                </div>
+
+                                <div className="relative min-h-0 flex-1">
+                                    <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
+
+                                    {viewerError && (
+                                        <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-error">
+                                            {viewerError}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="relative flex min-h-0 flex-1 flex-col">
                             <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative min-h-0 flex-1 pb-4">
@@ -3089,7 +3300,7 @@ function App()
 
             {settingsBox}
             {filesBox}
-            {monitorBox}
+            {screensBox}
             {loginScreen}
             {tofuBox}
         </main>

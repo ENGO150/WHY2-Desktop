@@ -16,7 +16,8 @@ That resolves to `/mnt/data/Rust/WHY2` relative to `src-tauri/`. **The sibling c
 Rust build fails.** `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
 script, not in this code. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
-own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**. When behaviour looks wrong, the cause is often in that crate, not here — read
+own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
+which also documents the one change this app needs in the sibling crate. When behaviour looks wrong, the cause is often in that crate, not here — read
 `/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
 assuming a bug in this repo. This app is a thin presentation layer over it.
 
@@ -172,7 +173,8 @@ The UI drives itself through this same path rather than adding IPC commands: cli
 `send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
 header gear sends `/server settings` (drawn only when `get_commands` says our role has that action) while the
 gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
-and its headset `/voice`; the monitor button sends `/screen` (bare to stop, with a name to start or swap);
+and its headset `/voice`; the monitor button opens the Screens window, whose rows send `/screen <name>`, `/attach <id>` and
+`/deattach`;
 the microphone button sends `/mute`; a row of the file list sends
 `/download <user_id> <file_id>`, and a row of the voice roster sends `/mute <id>` — or `/mute` on our own
 row, the one the command takes no ID for. Prefer extending the command path over adding a
@@ -267,35 +269,55 @@ session takes its streams with it.
 
 ### Screen sharing
 
-`client_screen` is on, and the split in it is the thing to understand: **sharing is protocol, watching is a
-window.** Capture, H.264 encode and upload happen entirely inside the crate with no surface involved, so
-`/screen [MONITOR]` works here exactly as it does in the terminal. Watching does not: `screen::client::attach`
-hands its decoded frames to a `winit` event loop through `SCREEN_SHARE_PROXY`, and that loop has to own the
-main thread — which in this process belongs to Tauri. `SCREEN_SHARE_PROXY` is therefore never set, so
-`/attach` and `/deattach` are filtered out of `get_commands` next to `Help` and `Info`, and a stray
-`ClientEvent::Attach` says plainly that there is nowhere to draw it. **Getting watching to work here needs a
-change in the crate**, not here: a way to receive the incoming frames (the H.264 access units are the cheap
-form — the webview can decode them with `VideoDecoder`) instead of having them drawn into a window of the
-crate's own. Until then, everything below is the sharing half.
+`client_screen` is on, and both halves of it work in this window — but the watching half **depends on a
+change in the sibling crate**, described below, without which this app will not compile.
 
-The monitor is picked on this machine and never leaves it — the server only ever knows *that* we are sharing
-— so `emit_screen` reads both halves back out of the crate's globals (`screen_options::get_use_screen`,
-`screen_capture::current_monitor`) rather than keeping any state of its own, and the window draws itself from
-one `UiEvent::Screen` carrying both. A bare `/screen` toggles; a named monitor starts on it, or, **while a
-share is already running, swaps the capture over without telling the server anything at all** — that is the
-one case where `send_command_code` returns `None` for this command, and the pane's line comes from us.
+**Sharing** needs no surface at all: capture, H.264 encode and upload happen inside the crate, so
+`/screen [MONITOR]` behaves exactly as it does in the terminal. The monitor is picked on this machine and
+never leaves it — the server only ever knows *that* we are sharing — so `emit_screen` reads both halves back
+out of the crate's globals (`screen_options::get_use_screen`, `screen_capture::current_monitor`) rather than
+keeping state of its own, and the window draws itself from one `UiEvent::Screen`. A bare `/screen` toggles; a
+named monitor starts on it, or, **while a share is already running, swaps the capture over without telling
+the server anything at all** — that is the one case where `send_command_code` returns `None` for this
+command, and the pane's line comes from us.
 
-The header's monitor button is the whole feature: it stops a running share, and otherwise asks which screen
-to start on — unless there is only one, which is not a choice worth showing anybody. The picker is the same
-`get_vocabulary("monitors")` the palette uses, asked for when it opens and dropped when it closes. While a
-share is up, the sidebar carries a strip beside the call's own: the monitor's name (clicking it reopens the
-picker to swap) and the button that stops it.
+**Watching** used to be impossible here: `screen::client::attach` handed its frames to a `winit` event loop
+through `SCREEN_SHARE_PROXY`, and that loop has to own the main thread, which in this process is Tauri's.
+The crate now carries a second way out —
 
-`/screens` is poll-only — the server answers it and says nothing when somebody starts sharing — so it is
-drawn as a list card in the pane like `/list` and the bans, not as a window that could go stale in place.
+```rust
+//network/screen/client/mod.rs
+pub static SCREEN_FRAME_SINK: RwLock<Option<UnboundedSender<Vec<u8>>>> = RwLock::new(None);
+```
 
-`reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, which is exactly what
-`tui/state.rs::reset_session` clears: the pick lasts as long as the share does.
+— which `attach` prefers over the proxy: with a sink set it hands over each H.264 access unit as it arrives
+and opens no window. That is the whole crate-side change (three edits in one file: the static, the `Video`
+branch, and an early return before `UserEvent::NewSession`); the TUI is untouched, because with no sink set
+nothing about its path changes.
+
+This app sets the sink once in `run()`'s `setup`, for the life of the process, and forwards frames to
+whatever `Channel<InvokeResponseBody>` the pane last handed it through `watch_frames` (`drop_frames` takes it
+back). A frame is tens of kilobytes thirty times a second — nothing on Tauri's binary channel, hopeless as a
+JSON array of bytes — and frames arriving while nobody is watching are **dropped rather than queued**, since
+a picture nobody sees is worth nothing a second later.
+
+The webview does the decoding: one `VideoDecoder` (WebCodecs) into a `<canvas>` that sits above the message
+pane, so the chat keeps running underneath the picture. Two things that path insists on, both handled in the
+effect keyed on `watching`: a decoder cannot start anywhere but a **keyframe** (`isKeyFrame` reads the NAL
+type out of the low five bits after each Annex-B start code — an IDR slice or the parameter sets in front of
+one), and the **codec string's level only has to be at least the stream's**, so the highest supported of
+`avc1.42E034`/`42E028`/`42E01E` is the one asked for. A webview without WebCodecs says so in the pane rather
+than drawing nothing. The frames are Annex-B, which is why the decoder is configured with no `description`.
+
+`/screens` is poll-only — the server answers it and never says that somebody started — so it opens the
+**Screens** window, which is one door for both directions: our monitors (the live one badged, clicking
+another swaps) over everybody else's shares (`Watch` sends `/attach <id>`, `Stop watching` sends
+`/deattach`). The header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to
+swap, and `Refresh` re-asks.
+
+`reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, exactly what
+`tui/state.rs::reset_session` clears: the pick lasts as long as the share does. The session teardown also
+drops the frame channel, so a picture cannot outlive the socket it came from.
 
 ### Input history
 

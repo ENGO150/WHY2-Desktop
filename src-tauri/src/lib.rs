@@ -54,6 +54,7 @@ use tauri::
     AppHandle,
     State,
     async_runtime,
+    ipc::{ Channel, InvokeResponseBody },
 };
 
 use why2_chat::
@@ -74,7 +75,7 @@ use why2_chat::
     {
         self,
         voice::client::{ self as voice, options as voice_options },
-        screen::client::{ capture as screen_capture, options as screen_options },
+        screen::client::{ self as screen, capture as screen_capture, options as screen_options },
         client::{ self, ClientEvent, VoiceUser },
         codes::
         {
@@ -162,6 +163,10 @@ struct AppState
     //WHO WAS IN IT WHEN WE LAST HEARD. VoiceActivity ARRIVES ONLY WHILE THERE IS AUDIO TO ARRIVE WITH, SO
     //A MUTE TOGGLED IN A SILENT CALL HAS NOTHING TO REDRAW IT - THE ROSTER IS KEPT HERE AND SENT AGAIN
     voice_users: Mutex<Vec<VoiceUserInfo>>,
+
+    //WHERE AN ATTACHED SHARE'S FRAMES GO. THE CRATE HANDS THEM OVER AS H.264 ACCESS UNITS AND THE WEBVIEW
+    //DECODES THEM, SO THE PICTURE LANDS IN THE CHAT WINDOW RATHER THAN IN A WINDOW OF THE CRATE'S OWN
+    screen_channel: Mutex<Option<Channel<InvokeResponseBody>>>,
 }
 
 //ONE LINE OF THE CHAT PANE. EVERY EVENT THAT HAS SOMETHING TO SAY BECOMES ONE OF THESE, SO THE
@@ -197,6 +202,15 @@ struct ScreenState
 {
     sharing: bool,
     monitor: Option<String>,
+}
+
+//ONE USER WHOSE SCREEN IS UP. THE LIST IS ASKED FOR AND NEVER PUSHED - THE SERVER ANSWERS /screens AND
+//SAYS NOTHING WHEN SOMEBODY STARTS, SO IT IS A PHOTOGRAPH THE WAY THE FILE LIST IS
+#[derive(Serialize, Clone)]
+struct ScreenUserInfo
+{
+    id: usize,
+    username: String,
 }
 
 //ONE FILE SOMEBODY HAS UP, AND EVERYTHING /download NEEDS TO FETCH IT. THE PROTOCOL CARRIES NOTHING ELSE
@@ -408,6 +422,8 @@ enum UiEvent
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
     Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
     Screen { screen: ScreenState },                               //OUR OWN SHARE, WHOLE
+    Screens { users: Vec<ScreenUserInfo> },                       //WHO ELSE IS SHARING, AS OF WHEN IT WAS ASKED
+    Watching { username: Option<String> },                        //WHOSE SCREEN THE PANE IS DRAWING, IF ANY
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
     ClientSettings { settings: Vec<ClientSetting> },              //OUR OWN ROWS AGAIN, WHEN SOMETHING ELSE MOVED THEM
     Voice { voice: VoiceState },                                  //THE CALL, WHOLE - THE PANEL DRAWS ITSELF FROM IT
@@ -1129,32 +1145,32 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         },
 
         //ASKED FOR AND NEVER PUSHED: THE SERVER ANSWERS /screens AND SAYS NOTHING WHEN SOMEBODY STARTS,
-        //SO IT IS A LIST OF NAMES LIKE /list IS, AND IT GOES INTO THE PANE THE SAME WAY
+        //SO IT OPENS THE SAME WINDOW THE MONITORS ARE PICKED IN - THE TWO HALVES OF ONE SUBJECT
         ClientEvent::Screens(users) =>
         {
-            if users.is_empty() { return say(app, ChatMessage::notice("Nobody is sharing a screen.")) }
-
-            block(app, format!("Screensharing clients ({})", users.len()),
-                users.into_iter().map(|UserScreen { id, username }| BlockRow
-                {
-                    depth: 0,
-                    id: Some(id),
-                    text: username,
-                    note: None,
-                    accent: false,
-                }).collect());
+            emit(app, UiEvent::Screens
+            {
+                users: users.into_iter().map(|UserScreen { id, username }| ScreenUserInfo { id, username }).collect(),
+            });
         },
 
-        //WATCHING SOMEBODY ELSE'S SCREEN NEEDS A SURFACE TO PUT THE FRAMES ON, AND THIS BUILD HAS NONE:
-        //THE TWO COMMANDS FOR IT ARE KEPT OUT OF THE PALETTE, AND A STRAY ONE IS ANSWERED HONESTLY
+        //THE FRAMES ARE ALREADY ON THEIR WAY TO THE SINK BY NOW - ALL THIS DOES IS TELL THE PANE WHOSE
+        //PICTURE IT IS ABOUT TO BE DRAWING, SO IT CAN ASK FOR THE FRAMES AND MAKE ROOM FOR THEM
         ClientEvent::Attach(username) =>
         {
-            say(app, ChatMessage::error(format!("Cannot watch {username}'s screen: this app has nowhere to draw it yet.")));
+            say(app, ChatMessage::system(format!("Watching {username}'s screen.")));
+
+            emit(app, UiEvent::Watching { username: Some(username) });
         },
 
+        //EITHER WE STOPPED WATCHING OR THE SHARE DID - EITHER WAY THERE IS NOTHING LEFT TO DRAW
         ClientEvent::Deattach(username) =>
         {
+            state.screen_channel.lock().unwrap().take();
+
             say(app, ChatMessage::system(format!("Stopped watching {username}'s screen.")));
+
+            emit(app, UiEvent::Watching { username: None });
         },
 
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
@@ -1224,6 +1240,7 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
     state.roster_queued.store(false, Ordering::Relaxed);
     state.voice_enabled.store(false, Ordering::Relaxed);
     state.voice_users.lock().unwrap().clear();
+    state.screen_channel.lock().unwrap().take();
 
     reset_session();
 }
@@ -1249,8 +1266,7 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
     command::COMMAND_LIST.iter()
         //THE TWO THE TUI PRINTS INTO ITS OWN PANE HAVE NOWHERE TO GO HERE - THE PALETTE IS THE HELP,
         //AND IT SAYS WHAT EVERY COMMAND AND EVERY PARAMETER OF ONE IS FOR WHILE IT IS BEING TYPED
-        //THE TWO THAT WATCH SOMEBODY ELSE'S SCREEN GO WITH THEM UNTIL THERE IS A SURFACE TO DRAW ON
-        .filter(|info| !matches!(info.command, Command::Help | Command::Info | Command::Attach | Command::Deattach))
+        .filter(|info| !matches!(info.command, Command::Help | Command::Info))
         .filter(|info| info.available(role))
         .map(|info| CommandInfo
         {
@@ -1489,6 +1505,7 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     //DOES NOT CLEAN UP AFTER THE SESSION THAT REPLACED IT
     state.voice_enabled.store(false, Ordering::Relaxed);
     state.voice_users.lock().unwrap().clear();
+    state.screen_channel.lock().unwrap().take();
 
     //THE MUTED SET OUTLIVES A SESSION, AND THE WINDOW HAS NOTHING TO DRAW THE MICROPHONE FROM UNTIL THE
     //FIRST VOICE EVENT - WHICH IN A CALL NOBODY HAS STARTED NEVER ARRIVES, SO THE FIRST /mute WOULD LOOK
@@ -1532,6 +1549,21 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     async_runtime::spawn(pump_events(app, rx, session));
 
     Ok(())
+}
+
+//THE PANE ASKS FOR THE PICTURE, AND HANDS OVER THE PIPE IT WANTS IT ON. A FRAME IS TENS OF KILOBYTES OF
+//H.264 THIRTY TIMES A SECOND, WHICH IS NOTHING ON A BINARY CHANNEL AND HOPELESS AS A JSON ARRAY OF BYTES -
+#[tauri::command]
+fn watch_frames(channel: Channel<InvokeResponseBody>, state: State<'_, AppState>)
+{
+    *state.screen_channel.lock().unwrap() = Some(channel);
+}
+
+//AND SAYS SO WHEN IT HAS STOPPED LOOKING - THE FRAMES ARE DROPPED FROM THEN ON RATHER THAN QUEUED
+#[tauri::command]
+fn drop_frames(state: State<'_, AppState>)
+{
+    state.screen_channel.lock().unwrap().take();
 }
 
 #[tauri::command]
@@ -1718,6 +1750,34 @@ pub fn run()
             version_checked: AtomicBool::new(false),
             voice_enabled: AtomicBool::new(false),
             voice_users: Mutex::new(Vec::new()),
+            screen_channel: Mutex::new(None),
+        })
+        //THE FRAMES OF A WATCHED SHARE ARE PULLED OUT OF THE CRATE ONCE, FOR THE LIFE OF THE PROCESS: THE
+        //SINK IS WHAT KEEPS IT FROM OPENING A WINDOW OF ITS OWN, AND IT MUST BE SET BEFORE ANY ATTACH
+        .setup(|app|
+        {
+            let (frames_tx, mut frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+            *screen::SCREEN_FRAME_SINK.write().unwrap() = Some(frames_tx);
+
+            let handle = app.handle().clone();
+
+            async_runtime::spawn(async move
+            {
+                while let Some(frame) = frames_rx.recv().await
+                {
+                    //NOBODY IS WATCHING (OR THE PANE HAS NOT ASKED FOR THEM YET) - THE FRAME IS DROPPED
+                    //RATHER THAN QUEUED, SINCE A PICTURE NOBODY SEES IS WORTH NOTHING A SECOND LATER
+                    let channel = handle.state::<AppState>().screen_channel.lock().unwrap().clone();
+
+                    if let Some(channel) = channel
+                    {
+                        channel.send(InvokeResponseBody::Raw(frame)).ok();
+                    }
+                }
+            });
+
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler!
         [
@@ -1735,6 +1795,8 @@ pub fn run()
             restart_server,
             answer_tofu,
             upload_file_from_path,
+            watch_frames,
+            drop_frames,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
