@@ -126,7 +126,7 @@ const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
 //THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: THE HEADING THEY SIT UNDER,
 //THE LABEL, THE KEY, AND WHAT KIND OF ANSWER THE KEY TAKES. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT
 //MEANS - disable_colors HELD IS "Message colors" TURNED OFF, WHICH IS WHY A TOGGLE CARRIES invert
-const CLIENT_SETTINGS: [(&str, &str, &str, ClientKind); 9] =
+const CLIENT_SETTINGS: [(&str, &str, &str, ClientKind); 8] =
 [
     ("Audio", "Input device",      "input_device",      ClientKind::Device { input: true }),
     ("Audio", "Output device",     "output_device",     ClientKind::Device { input: false }),
@@ -136,7 +136,6 @@ const CLIENT_SETTINGS: [(&str, &str, &str, ClientKind); 9] =
     ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
 
     ("Interface", "Message colors",  "disable_colors", ClientKind::Toggle { invert: true }),
-    ("Interface", "Background logo", "disable_logo",   ClientKind::Toggle { invert: true }),
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
@@ -203,7 +202,6 @@ struct ClientConfig
 {
     show_id: bool,
     disable_colors: bool,
-    disable_logo: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -1146,7 +1144,7 @@ async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, session: u64
 }
 
 //PUBLIC
-//THE THREE client.toml KEYS THAT CHANGE HOW THE PANE LOOKS. THE TUI READS THEM ON EVERY REDRAW; HERE
+//THE client.toml KEYS THAT CHANGE HOW THE PANE LOOKS. THE TUI READS THEM ON EVERY REDRAW; HERE
 //THEY ARE HANDED OVER ONCE, WHICH IS AS OFTEN AS THEY CAN CHANGE WITHOUT A COMMAND OF OUR OWN
 #[tauri::command]
 fn get_client_config() -> ClientConfig
@@ -1155,7 +1153,6 @@ fn get_client_config() -> ClientConfig
     {
         show_id: config::read_config("show_id"),
         disable_colors: config::read_config("disable_colors"),
-        disable_logo: config::read_config("disable_logo"),
     }
 }
 
@@ -1402,6 +1399,16 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
 
     //A NEW CONNECTION COUNTS FROM ZERO ON BOTH SIDES - THE PREVIOUS SESSION LEFT ITS OWN NUMBERS BEHIND
     reset_session();
+
+    //WHATEVER THE LAST CALL LEFT BEHIND IS NOT THIS ONE'S - A pump_events THAT OUTLIVED ITS SOCKET
+    //DOES NOT CLEAN UP AFTER THE SESSION THAT REPLACED IT
+    state.voice_enabled.store(false, Ordering::Relaxed);
+    state.voice_users.lock().unwrap().clear();
+
+    //THE MUTED SET OUTLIVES A SESSION, AND THE WINDOW HAS NOTHING TO DRAW THE MICROPHONE FROM UNTIL THE
+    //FIRST VOICE EVENT - WHICH IN A CALL NOBODY HAS STARTED NEVER ARRIVES, SO THE FIRST /mute WOULD LOOK
+    //LIKE IT DID NOTHING. THE CALL AS IT ACTUALLY STANDS GOES OUT WITH THE CONNECTION
+    emit_voice(&app);
 
     //THE RECONNECT AFTER PINNING A SERVER KEY DIALS THIS, SO IT HAS TO BE THE RESOLVED ADDRESS
     options::set_server_address(&connecting_addr);

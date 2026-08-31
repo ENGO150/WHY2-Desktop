@@ -28,21 +28,6 @@ const LOBBY = "";
 //WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS, SO IT CANNOT HAPPEN BY LEANING ON ENTER
 const CHALLENGE = "yes";
 
-//THE PROJECT LOGO, PAINTED BEHIND AN EMPTY PANE AND OVER THE CONNECT SCREEN
-const LOGO = `                ▄█
-  ▄▄▄▄        ▄███  ▄▄██
-  ████▀███▀▀▀▀▀███▄██▀██
-  ███▄▄   ▀██▄  ▀██▀ ▄█▀
-  ▀▀█████▄       ▀▀ ▄██
-    ▀▀ ▀███▄      ▀███
-     ▄▄██▀██       ▀█▄
-  ▄████▄▄██▀        ██
-  ▀███████▄▄▄       ▀██
-        ▀███         ██
-        ███▀      ▄▄███
-        ███▄▄▄▄▄████▀▀
-        ██████▀▀▀▀`;
-
 type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
 
 type MessageKind = "user" | "private" | "system" | "notice" | "ok" | "error";
@@ -230,7 +215,6 @@ interface ClientConfig
 {
     show_id: boolean;
     disable_colors: boolean;
-    disable_logo: boolean;
 }
 
 interface TofuPrompt
@@ -503,9 +487,14 @@ function Switch({ on, onClick }: { on: boolean; onClick: () => void })
 }
 
 //THE LABEL OVER A GROUP OF ROWS IN EITHER SIDEBAR
-function SectionLabel({ children }: { children: React.ReactNode })
+function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode })
 {
-    return <div className="px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-faint">{children}</div>;
+    return (
+        <div className="flex items-center gap-1 px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-faint">
+            <span className="min-w-0 flex-1 truncate">{children}</span>
+            {action}
+        </div>
+    );
 }
 
 function commandEntry(command: CommandInfo): PaletteEntry
@@ -850,7 +839,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false, disable_logo: false });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
@@ -865,6 +854,10 @@ function App()
 
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
+
+    //THE NAME OF THE CHANNEL BEING MADE, WHILE ONE IS BEING MADE. THERE IS NO COMMAND FOR CREATING ONE -
+    //A CHANNEL IS WHEREVER SOMEBODY IS STANDING, SO THIS IS /channel WITH A NAME NOBODY IS IN YET
+    const [creating, setCreating] = useState<string | null>(null);
 
     //THE LINES ALREADY SENT. IT IS A REF AND NOT STATE BECAUSE NOTHING IS DRAWN FROM IT - IT IS READ AND
     //WRITTEN BY ONE KEYPRESS AT A TIME, AND A RE-RENDER PER ARROW WOULD BE ONE PER RECALLED LINE ANYWAY
@@ -910,6 +903,11 @@ function App()
     }, [uiState, connecting]);
 
     const connected = uiState === "connected";
+
+    //THE SERVER'S OWN CONFIG IS BEHIND A ROLE, AND THE COMMAND LIST IS ALREADY FILTERED BY THE ONE THE
+    //SERVER GRANTED US - SO THE DOOR IS DRAWN EXACTLY WHERE THERE IS SOMETHING BEHIND IT
+    const canServerSettings = commands.some((command) => command.name === "server"
+        && command.subcommands.some((sub) => sub.triggers.includes("settings")));
 
     const pane = paneByChannel[currentChannel] ?? [];
 
@@ -987,6 +985,7 @@ function App()
         setRole("user");
         setUnread(0);
         setVoice({ enabled: false, mic: false, users: [] });
+        setCreating(null);
 
         pinnedRef.current = true;
         historyRef.current = { entries: [], pos: 0, stash: null, prefix: null };
@@ -2187,7 +2186,12 @@ function App()
         };
 
         return (
-            <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
+            <div
+                //ANYWHERE OUTSIDE THE BOX IS "I AM DONE HERE" - ON THE PRESS AND NOT THE RELEASE, SO A
+                //SELECTION DRAGGED OUT OF THE DIALOG DOES NOT CLOSE IT ON LETTING GO
+                onMouseDown={(event) => { if (event.target === event.currentTarget) closeSettings(); }}
+                className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4"
+            >
                 <div
                     ref={settingsRef}
                     tabIndex={-1}
@@ -2291,7 +2295,16 @@ function App()
                     {/* THE DEVICE LIST, ON TOP OF THE ROWS AND NOT BESIDE THEM - IT IS ANSWERING THE ROW
                         UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE DIALOG UNTIL IT IS ANSWERED */}
                     {box.picker && (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 px-6">
+                        <div
+                            onMouseDown={(event) =>
+                            {
+                                if (event.target !== event.currentTarget) return;
+
+                                editSettings((current) => ({ ...current, picker: null }));
+                                settingsRef.current?.focus();
+                            }}
+                            className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 px-6"
+                        >
                             <div className="rise w-full max-w-[440px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl">
                                 <div className="border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
                                     {box.picker.title}
@@ -2341,9 +2354,6 @@ function App()
 
         return (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-deep px-4">
-                {/* THE WATERMARK IS THE ONE PIECE OF THE TERMINAL CLIENT THAT IS KEPT AS IT WAS DRAWN */}
-                <pre className="pointer-events-none absolute select-none font-mono text-[13px] leading-[1.05] text-logo opacity-60">{LOGO}</pre>
-
                 <div className="rise relative w-full max-w-[420px]">
                     <div className="mb-6 text-center">
                         <div className="text-2xl font-bold tracking-tight">WHY2</div>
@@ -2469,7 +2479,12 @@ function App()
     );
 
     return (
-        <main className="noise-overlay relative flex h-screen w-screen overflow-hidden bg-chat text-[15px] text-text">
+        <main
+            //A CLICK ANYWHERE THAT IS NOT THE COMPOSER PUTS THE PALETTE AWAY - IT IS A MENU LIKE ANY OTHER,
+            //AND THE NEXT KEYSTROKE IN THE LINE BRINGS IT STRAIGHT BACK
+            onMouseDown={() => setDismissed(true)}
+            className="noise-overlay relative flex h-screen w-screen overflow-hidden bg-chat text-[15px] text-text"
+        >
             {connected && (
                 <>
                     {/* THE LEFT COLUMN: WHERE WE ARE, WHERE WE COULD BE, AND WHO WE ARE WHILE WE ARE THERE */}
@@ -2479,11 +2494,58 @@ function App()
                                 <div className="truncate text-sm font-semibold">{serverName || "WHY2"}</div>
                                 <div className="truncate text-[11px] text-faint">{address}</div>
                             </div>
-                            <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
+                            {canServerSettings && (
+                                <IconButton icon="gear" label="Server settings" onClick={() => send("/server settings")} />
+                            )}
                         </header>
 
                         <div className="scroller scroller-quiet flex-1 px-2 pb-3">
-                            <SectionLabel>Channels</SectionLabel>
+                            <SectionLabel
+                                action={(
+                                    <button
+                                        type="button"
+                                        title="Create a channel"
+                                        aria-label="Create a channel"
+                                        onClick={() => setCreating("")}
+                                        className="flex h-4 w-4 items-center justify-center rounded text-faint transition-colors hover:text-text"
+                                    >
+                                        <Icon name="plus" className="h-4 w-4" />
+                                    </button>
+                                )}
+                            >
+                                Channels
+                            </SectionLabel>
+
+                            {/* A NAME NOBODY IS IN YET IS A CHANNEL THE MOMENT WE WALK INTO IT, SO THE ROW IS
+                                THE SAME /channel THE LIST ITSELF SENDS - AND IT IS GONE THE MOMENT IT IS LEFT ALONE */}
+                            {creating !== null && (
+                                <div className="flex items-center gap-1.5 rounded-app bg-deep px-2 py-1.5">
+                                    <Icon name="hash" className="h-4 w-4 shrink-0 text-faint" />
+
+                                    <input
+                                        autoFocus
+                                        value={creating}
+                                        placeholder="new-channel"
+                                        onChange={(event) => setCreating(event.currentTarget.value)}
+                                        onBlur={() => setCreating(null)}
+                                        onKeyDown={(event) =>
+                                        {
+                                            if (event.key === "Escape") { event.preventDefault(); setCreating(null); }
+                                            else if (event.key === "Enter")
+                                            {
+                                                event.preventDefault();
+
+                                                const name = creating.trim();
+                                                if (name) send(`/channel ${name}`);
+
+                                                setCreating(null);
+                                            }
+                                        }}
+                                        className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint"
+                                        spellCheck={false}
+                                    />
+                                </div>
+                            )}
 
                             {channels.map((channel) =>
                             {
@@ -2559,6 +2621,7 @@ function App()
                                 tone={voice.mic ? "default" : "error"}
                                 onClick={() => send("/mute")}
                             />
+                            <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
                             <IconButton icon="logout" label="Disconnect from the server" tone="error" onClick={() => send("/exit")} />
                         </div>
                     </aside>
@@ -2589,9 +2652,6 @@ function App()
                                 {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
                                     IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
                                 <div className="px-4 pb-2 pt-8">
-                                    {!config.disable_logo && (
-                                        <pre className="pointer-events-none mb-4 select-none font-mono text-[11px] leading-[1.05] text-logo">{LOGO}</pre>
-                                    )}
                                     <h1 className="text-2xl font-bold">Welcome to #{channelLabel}</h1>
                                     <p className="mt-1 text-sm text-muted">
                                         {currentChannel
@@ -2624,7 +2684,7 @@ function App()
                             )}
                         </div>
 
-                        <div className="relative shrink-0 px-4 pb-5 pt-1">
+                        <div className="relative shrink-0 px-4 pb-5 pt-1" onMouseDown={(event) => event.stopPropagation()}>
                             {/* THE PALETTE SITS ON THE COMPOSER, WHICH IS WHERE THE LINE IT IS TALKING ABOUT IS */}
                             {palette.mode !== "hidden" && (
                                 <div className="rise absolute inset-x-4 bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl">

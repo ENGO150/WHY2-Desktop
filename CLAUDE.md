@@ -90,13 +90,16 @@ chat program has settled on, because that is the one a user already knows how to
 
 Three columns, and a screen in front of them while there is no session:
 
-- **Left** — the server (name over the address as it was typed) and a gear, the channel list, then the call:
-  the voice roster while there is one, the `Voice connected` strip with the button that hangs up, and at the
-  bottom the person using the program — face, name, role, microphone, and the way out.
-- **Middle** — the channel header (`#name`, how many are online, and the buttons for upload, files, voice and
-  the member column), the messages, and the composer. The command palette floats on the composer.
-- **Right** — everybody on the server, with the channel each of them is sitting in. It is toggled by the
-  header's own button, and is the first thing a narrow window drops (`lg:` on the column).
+- **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
+  *its* config; the channel list with a `+` that makes one; then the call: the voice roster while there is
+  one, the `Voice connected` strip with the button that hangs up, and at the bottom the person using the
+  program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
+  different configs and sit with what they belong to: the server's by the server's name, ours by ours.
+- **Middle** — the channel header (`#name`, how many are online, and the buttons for files, voice and the
+  member column), the messages, and the composer, whose `+` is the one upload button. The command palette
+  floats on the composer.
+- **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
+  own button.
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
@@ -108,6 +111,15 @@ name over the color the user picked — or, where they picked none, the one `ava
 `↑`/`↓` still walk what was typed before, the palette still answers `/`, and every button still goes through
 `send_input`. What changed is what it looks like, not what it does.
 
+There is no command for creating a channel, because there is nothing to create — a channel is wherever
+somebody is standing. The `+` opens a row that takes a name and sends the same `/channel` the list itself
+sends; leaving it alone puts it away.
+
+Every menu closes by being clicked out of: the settings dialog, the device picker inside it and the command
+palette all watch for a press that landed outside them. It is `onMouseDown` and not a click, so a selection
+dragged out of a dialog does not dismiss it on letting go — and the palette's dismissal is undone by the next
+keystroke in the line, because `writeInput` clears the flag.
+
 Two things the layout depends on:
 
 - **A column that scrolls must be `min-h-0`.** A flex child's default `min-height: auto` refuses to shrink
@@ -116,18 +128,21 @@ Two things the layout depends on:
   that does. The palette is absolutely positioned against the composer's wrapper (`bottom-full`), so it grows
   upwards off a fixed edge rather than pushing the input around.
 
-The colors are still `tui/theme.rs` where they mean something — sky blue for the active thing, pale pink
-notices, salmon for what went right — but the surfaces are a dark stack of their own (`deep` → `sidebar` →
-`chat` → `raised` → `overlay`), and every one of them carries the same rose tint so the window still reads as
-WHY2. `index.css` holds the whole palette as CSS custom properties, mapped to Tailwind tokens in one
-`@theme inline` block.
+The window is nearly monochrome on purpose. The surfaces are a near-black stack (`deep` → `sidebar` →
+`chat` → `raised` → `overlay`) with a trace of rose in every one of them, and the accents are still
+`tui/theme.rs`'s meanings — the active thing, a notice, what went right, an error, presence — pulled most of
+the way towards grey, so **the only saturated thing in the window is what somebody said**: the sixteen
+protocol colors in `ANSI`. `index.css` holds the whole palette as CSS custom properties, mapped to Tailwind
+tokens in one `@theme inline` block.
 
 The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
-characters**: the fingerprints, the list-block rows and their branch glyphs, the logo, the palette's command
+characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
 signatures, IDs and latencies.
 
-`get_client_config` hands over the three `client.toml` keys that change how the pane looks (`show_id`,
-`disable_colors`, `disable_logo`), which the TUI re-reads on every redraw.
+There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
+characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the two `client.toml` keys that still
+change how the pane looks (`show_id`, `disable_colors`), which the TUI re-reads on every redraw.
 
 ### The command path
 
@@ -141,7 +156,9 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   `/ucolor`, `/color`, `/mute`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
-`send_input("/channel <name>")`, the sidebar's gear sends `/settings` and its door `/exit`, the header's
+`send_input("/channel <name>")`, the sidebar's `+` sends `/channel <new name>`, its header gear sends
+`/server settings` (drawn only when `get_commands` says our role has that action) while the gear by our own
+name sends `/settings`, the door sends `/exit`, the header's
 folder sends `/files` and its headset `/voice`, the microphone button sends `/mute`, clicking a file row sends
 `/download <user_id> <file_id>`, and clicking a row of the voice roster sends `/mute <id>` — or `/mute` on
 our own row, the one the command takes no ID for. Prefer extending the command path over adding a
@@ -222,7 +239,11 @@ microphone button had better agree.
 
 `VoiceActivity` fires per voice packet, which means it stops entirely in a silent call — so the roster is
 kept in `AppState::voice_users` and sent again after a mute, rather than waiting for somebody to speak. The
-`muted` flag on a row is ours and not the server's, and the roster only exists while the call does and
+`connect_to_server` emits it once before anything else, because the muted set outlives a session and a call
+nobody has started sends nothing of its own: without that, the microphone button would start out drawn as
+muted, and the first press of it would look like it did nothing.
+
+The `muted` flag on a row is ours and not the server's, and the roster only exists while the call does and
 somebody is in it (`voice_visible` in the TUI) — the `Voice connected` strip stands on `enabled` alone, so a
 call nobody else has joined yet still says so.
 

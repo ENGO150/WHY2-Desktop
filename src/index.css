@@ -18,46 +18,45 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /* THE FONTS COME FIRST - @import ONLY COUNTS BEFORE ANY RULE, AND THE TAILWIND IMPORT EXPANDS INTO RULES.
    THE INTERFACE IS PROPORTIONAL NOW; THE MONOSPACE IS KEPT FOR WHAT IS ACTUALLY MEASURED IN CHARACTERS -
-   FINGERPRINTS, THE LIST BLOCKS AND THEIR BRANCH GLYPHS, THE LOGO */
+   FINGERPRINTS, THE LIST BLOCKS AND THEIR BRANCH GLYPHS, THE COMMAND SIGNATURES */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
-/* THE SURFACES ARE A DARK STACK - RAIL, SIDEBAR, CHAT, RAISED, OVERLAY - AND EVERY ONE OF THEM CARRIES
-   THE SAME ROSE TINT, SO THE WINDOW STILL READS AS WHY2 AND NOT AS A GREY CHAT APP. THE FOREGROUND AND
-   THE ACCENTS ARE THE TERMINAL CLIENT'S OWN PALETTE, WHICH IS WHERE THE PROTOCOL'S COLORS COME FROM */
+/* THE SURFACES ARE A DARK STACK - RAIL, SIDEBAR, CHAT, RAISED, OVERLAY - AND EVERY ONE OF THEM IS THE
+   SAME NEAR-BLACK WITH A TRACE OF ROSE IN IT, SO THE WINDOW READS AS ONE MATERIAL LIT FROM ONE SIDE.
+   THE ACCENTS ARE THE TERMINAL CLIENT'S PALETTE PULLED MOST OF THE WAY TOWARDS GREY - THE CHROME IS
+   NEARLY MONOCHROME ON PURPOSE, SO THE ONLY SATURATED THING IN THE WINDOW IS WHAT SOMEBODY SAID */
 :root
 {
-    --deep: #100d10;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
-    --sidebar: #191418;          /* THE CHANNEL AND MEMBER COLUMNS */
-    --chat: #201a1e;             /* WHERE THE MESSAGES ARE */
-    --raised: #2a2327;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
-    --overlay: #2f272c;          /* DIALOGS */
+    --deep: #0a0809;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
+    --sidebar: #100e0f;          /* THE CHANNEL AND MEMBER COLUMNS */
+    --chat: #141112;             /* WHERE THE MESSAGES ARE */
+    --raised: #1a1617;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
+    --overlay: #1f1a1c;          /* DIALOGS */
 
-    --hover: #ffffff0d;
-    --selected: #ffffff14;
-    --active: #ffffff1f;
+    --hover: #ffffff0a;
+    --selected: #ffffff10;
+    --active: #ffffff17;
 
-    --border: #342c30;
-    --border-strong: #473c41;
+    --border: #241f21;
+    --border-strong: #37302f;
 
-    --text: #ece0e3;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
-    --muted: #b09ba0;            /* EVERY DIM LABEL */
-    --faint: #7c6a6f;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
+    --text: #d6cecf;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
+    --muted: #8d8285;           /* EVERY DIM LABEL */
+    --faint: #5f5659;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
 
-    --accent: #9dceff;           /* SKY BLUE - LINKS, THE ACTIVE THING, THE CARET */
-    --brand: #f646c6;            /* HOT MAGENTA - WHY2 ITSELF */
-    --notice: #ffdde2;           /* PALE PINK */
-    --ok: #ffbbba;               /* SALMON */
-    --error: #ff5f7e;
-    --online: #3fd08a;           /* PRESENCE, AND A CALL THAT IS UP */
-    --warning: #ffcf6b;
+    --accent: #9aa7b2;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
+    --brand: #b98aa6;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
+    --notice: #b7a8ab;           /* PALE ASH */
+    --ok: #a89293;               /* SALMON, WORN DOWN */
+    --error: #b8636f;
+    --online: #7b9c88;           /* PRESENCE, AND A CALL THAT IS UP */
+    --warning: #b09a6c;
 
-    --logo: #4a373c;             /* THE WATERMARK BEHIND AN EMPTY PANE */
-
-    --arg-required: #d7af87;     /* SOFT SAND */
-    --arg-optional: #ffb4ab;     /* FADED CORAL */
+    --arg-required: #a0937f;     /* SOFT SAND */
+    --arg-optional: #a58c88;     /* FADED CORAL */
 
     --radius: 8px;
 }
@@ -91,8 +90,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --color-error: var(--error);
     --color-online: var(--online);
     --color-warning: var(--warning);
-
-    --color-logo: var(--logo);
 
     --color-arg-required: var(--arg-required);
     --color-arg-optional: var(--arg-optional);
