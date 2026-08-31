@@ -323,7 +323,14 @@ a picture nobody sees is worth nothing a second later.
   draw-only-the-newest shape as the TUI's `display.rs`; what the TUI has and this cannot is the GPU, where
   the YUV planes go up as they are and a shader does the conversion.
 
-Either way the picture lands in a `<canvas>` above the message pane, so the chat keeps running underneath it.
+Either way the picture lands in a `<canvas>` that **takes the whole middle column or none of it**: while
+there is a screen to watch, the head of the column becomes two tabs (the channel, and whose screen it is)
+and `view` says which is in front — half a chat above half a screen is two things too small to read. The
+composer stays under both, so a line can still be typed at a picture. The screen pane is **hidden and never
+unmounted** while it is being watched: a canvas that left the page would take the decoder's target with it
+and come back black. A badge in the pane's footer says which of the two paths is live (`h.264` or `jpeg`),
+which is the only way to tell from the outside — and on WebKitGTK the answer changes once `avdec_h264` is
+installed **and the app is restarted**, since the GStreamer registry is read when the process starts.
 
 `/screens` is poll-only — the server answers it and never says that somebody started — so the app asks on a
 clock (`SCREENS_POLL`, and the first ask waits for the roster to be out of the way, since the server counts
@@ -331,7 +338,8 @@ packets and not messages). That keeps the **member list** honest, which is where
 green monitor button appears beside anybody who is sharing and sends `/attach <id>`, or `/deattach` while it
 is their screen in the pane. `pollingRef` is what separates the two kinds of answer — the one we asked for
 quietly fills the list in, and the one somebody typed opens the **Screens** window, one door for both
-directions: our monitors (the live one badged, clicking another swaps) over everybody else's shares. The
+directions: everybody who is sharing (whole rows, and ours among them marked `you` — a list that hid the
+reader could look empty while they were plainly sharing) over our own monitors, the live one badged. The
 header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap, and
 `Refresh` re-asks.
 

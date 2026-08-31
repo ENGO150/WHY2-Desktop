@@ -975,6 +975,10 @@ function App()
     const [watching, setWatching] = useState<string | null>(null);
     const [viewerError, setViewerError] = useState("");
 
+    //WHICH OF THE TWO THE MIDDLE COLUMN IS SHOWING WHILE A SCREEN IS BEING WATCHED, AND WHO IS DECODING IT
+    const [view, setView] = useState<"chat" | "screen">("chat");
+    const [decoding, setDecoding] = useState<"webview" | "bridge" | "">("");
+
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
 
@@ -1128,6 +1132,8 @@ function App()
         setSharers([]);
         setWatching(null);
         setViewerError("");
+        setView("chat");
+        setDecoding("");
         setCreating(null);
         setFiles(null);
 
@@ -1297,10 +1303,13 @@ function App()
                     break;
                 }
 
+                //A SCREEN ARRIVING IS WORTH LOOKING AT, SO THE COLUMN TURNS TO IT - AND GOES BACK TO WHAT
+                //WAS BEING SAID WHEN THERE IS NOTHING LEFT TO WATCH
                 case "watching":
                 {
                     setWatching(payload.data.username);
                     setViewerError("");
+                    setView(payload.data.username ? "screen" : "chat");
                     break;
                 }
 
@@ -1628,6 +1637,8 @@ function App()
 
             if (!live) return;
 
+            setDecoding(codec ? "webview" : "bridge");
+
             if (codec)
             {
                 decoder = new VideoDecoder(
@@ -1688,11 +1699,23 @@ function App()
         {
             live = false;
 
+            setDecoding("");
             invoke("drop_frames").catch(() => {});
 
             if (decoder && decoder.state !== "closed") decoder.close();
         };
     }, [watching]);
+
+    //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
+    //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
+    useEffect(() =>
+    {
+        if (view !== "chat" || !pinnedRef.current) return;
+
+        const node = paneRef.current;
+
+        if (node) node.scrollTop = node.scrollHeight;
+    }, [view]);
 
     const closeFiles = () =>
     {
@@ -2831,26 +2854,38 @@ function App()
                         const own = user.username === username;
                         const here = watching === user.username;
 
+                        //OUR OWN SHARE IS THE ONE ROW THAT IS NOT A DOOR - THE SERVER WILL NOT SHOW US OURSELVES
+                        if (own)
+                        {
+                            return (
+                                <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
+                                    <Avatar name={user.username} size={28} />
+
+                                    <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
+                                    <span className="shrink-0 text-[11px] text-faint">you</span>
+                                </div>
+                            );
+                        }
+
                         return (
-                            <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
+                            <button
+                                key={user.id}
+                                type="button"
+                                title={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
+                                onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
+                                className="flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
+                            >
                                 <Avatar name={user.username} size={28} />
 
                                 <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
 
-                                {own
-                                    ? <span className="shrink-0 text-[11px] text-faint">you</span>
-                                    : (
-                                        <button
-                                            type="button"
-                                            onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
-                                            className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
-                                                ? "border border-border text-muted hover:border-error hover:text-error"
-                                                : "bg-accent text-black/85 hover:brightness-110"}`}
-                                        >
-                                            {here ? "Stop watching" : "Watch"}
-                                        </button>
-                                    )}
-                            </div>
+                                <span className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
+                                    ? "border border-border text-muted"
+                                    : "bg-accent text-black/85"}`}
+                                >
+                                    {here ? "Stop watching" : "Watch"}
+                                </span>
+                            </button>
                         );
                     })}
 
@@ -3204,11 +3239,34 @@ function App()
                     {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}
                     <section className="flex min-w-0 flex-1 flex-col bg-chat">
                         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
-                            <Icon name="hash" className="h-5 w-5 shrink-0 text-faint" />
-                            <span className="truncate font-semibold">{channelLabel}</span>
+                            {/* WHILE THERE IS A SCREEN TO LOOK AT, THE HEAD OF THE COLUMN IS THE CHOICE OF
+                                WHICH TO LOOK AT - THE PICTURE TAKES THE WHOLE COLUMN OR NONE OF IT, BECAUSE
+                                HALF A CHAT ABOVE HALF A SCREEN IS TWO THINGS TOO SMALL TO READ */}
+                            {watching ? (
+                                <div className="flex min-w-0 items-center gap-1 rounded-app bg-deep p-1">
+                                    {([["chat", "hash", channelLabel], ["screen", "monitor", watching]] as const).map(([which, icon, label]) => (
+                                        <button
+                                            key={which}
+                                            type="button"
+                                            onClick={() => setView(which)}
+                                            className={`flex min-w-0 items-center gap-1.5 rounded-app px-2.5 py-1.5 text-sm transition-colors ${view === which
+                                                ? "bg-active font-semibold text-text"
+                                                : "text-muted hover:bg-hover hover:text-text"}`}
+                                        >
+                                            <Icon name={icon} className={`h-4 w-4 shrink-0 ${which === "screen" && view !== which ? "text-online" : ""}`} />
+                                            <span className="max-w-[14ch] truncate">{label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <>
+                                    <Icon name="hash" className="h-5 w-5 shrink-0 text-faint" />
+                                    <span className="truncate font-semibold">{channelLabel}</span>
 
-                            <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
-                            <span className="hidden min-w-0 truncate text-xs text-faint sm:block">{users.length} online</span>
+                                    <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
+                                    <span className="hidden min-w-0 truncate text-xs text-faint sm:block">{users.length} online</span>
+                                </>
+                            )}
 
                             <div className="ml-auto flex items-center gap-1">
                                 <IconButton
@@ -3234,34 +3292,51 @@ function App()
                             </div>
                         </header>
 
-                        {/* SOMEBODY ELSE'S SCREEN, IN THE WINDOW AND NOT BESIDE IT - THE CHAT KEEPS RUNNING
-                            UNDERNEATH IT, WHICH IS THE WHOLE POINT OF WATCHING ONE IN A CHAT PROGRAM */}
-                        {watching && (
-                            <div className="flex min-h-0 shrink-0 basis-[52%] flex-col border-b border-border bg-deep">
-                                <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-                                    <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
+                        {/* SOMEBODY ELSE'S SCREEN. IT IS ONLY HIDDEN AND NEVER UNMOUNTED WHILE IT IS BEING
+                            WATCHED - A CANVAS THAT LEFT THE PAGE WOULD TAKE THE DECODER'S TARGET WITH IT,
+                            AND THE PICTURE WOULD COME BACK BLACK */}
+                        <div className={`min-h-0 flex-1 flex-col bg-deep ${watching && view === "screen" ? "flex" : "hidden"}`}>
+                            <div className="relative min-h-0 flex-1">
+                                <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
-                                    <span className="min-w-0 flex-1 truncate text-sm">
-                                        <span className="font-semibold">{watching}</span>
-                                        <span className="text-muted">&apos;s screen</span>
-                                    </span>
-
-                                    <IconButton icon="close" label="Stop watching" tone="error" onClick={() => send("/deattach")} />
-                                </div>
-
-                                <div className="relative min-h-0 flex-1">
-                                    <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
-
-                                    {viewerError && (
-                                        <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-error">
-                                            {viewerError}
-                                        </div>
-                                    )}
-                                </div>
+                                {viewerError && (
+                                    <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-error">
+                                        {viewerError}
+                                    </div>
+                                )}
                             </div>
-                        )}
 
-                        <div className="relative flex min-h-0 flex-1 flex-col">
+                            {/* WHOSE PICTURE IT IS, WHO IS DECODING IT, AND THE WAY OUT OF IT */}
+                            <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3">
+                                <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
+
+                                <span className="min-w-0 truncate text-sm">
+                                    <span className="font-semibold">{watching}</span>
+                                    <span className="text-muted">&apos;s screen</span>
+                                </span>
+
+                                {decoding && (
+                                    <span
+                                        title={decoding === "webview"
+                                            ? "The window is decoding the H.264 stream itself"
+                                            : "This webview has no H.264 decoder, so the frames are decoded for it and sent on as pictures"}
+                                        className="shrink-0 rounded bg-hover px-1.5 py-px font-mono text-[10px] uppercase tracking-wide text-faint"
+                                    >
+                                        {decoding === "webview" ? "h.264" : "jpeg"}
+                                    </span>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => send("/deattach")}
+                                    className="ml-auto shrink-0 rounded-app border border-border px-3 py-1 text-xs font-semibold text-muted transition hover:border-error hover:text-error"
+                                >
+                                    Stop watching
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className={`relative min-h-0 flex-1 flex-col ${watching && view === "screen" ? "hidden" : "flex"}`}>
                             <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative min-h-0 flex-1 pb-4">
                                 {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
                                     IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
