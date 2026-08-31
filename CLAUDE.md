@@ -305,11 +305,16 @@ a picture nobody sees is worth nothing a second later.
 `VideoDecoder.isConfigSupported` and `watch_frames(channel, decode)` carries the answer.
 
 - **It can** (Chromium, and WebKitGTK with an H.264 decoder behind WebCodecs): the H.264 travels as it
-  arrived and one `VideoDecoder` feeds the canvas. Two things that path insists on: a decoder cannot start
+  arrived and one `VideoDecoder` feeds the canvas. Four things that path insists on: a decoder cannot start
   anywhere but a **keyframe** (`isKeyFrame` reads the NAL type out of the low five bits after each Annex-B
-  start code — an IDR slice, or the parameter sets in front of one), and the **codec string's level only has
-  to be at least the stream's**, so the highest supported of `avc1.42E034`/`42E028`/`42E01E` wins. The
-  stream is Annex-B, which is why the config carries no `description`.
+  start code — an IDR slice, or the parameter sets in front of one); the **codec string's level only has to
+  be at least the stream's**, so the highest supported of `avc1.42E034`/`42E028`/`42E01E` wins; the stream
+  is Annex-B, which is why the config carries no `description`; and what is drawn is the frame's
+  **`visibleRect`**, with the source rectangle named in the `drawImage` call, because H.264 codes whole
+  macroblocks — a 900-row screen travels as 912 — and the padding is not picture. `h264Config` also asks for
+  `prefer-software` before `no-preference`: everything else in this project decodes the same stream with
+  `openh264` and draws it correctly, so a picture torn only here is the machine's video hardware rather than
+  the stream.
 - **It cannot** — the common case on WebKitGTK, where WebCodecs exists but the GStreamer H.264 decoder
   behind it often is not installed (`avdec_h264` from gst-libav, or `openh264dec`; without one,
   `isConfigSupported` says no to every spelling) — `screen_frames` decodes with `openh264` (the crate's own

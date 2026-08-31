@@ -448,22 +448,29 @@ function isKeyFrame(bytes: Uint8Array): boolean
     return false;
 }
 
-//WHETHER THIS WEBVIEW CAN DECODE THE SHARE ITSELF, AND WITH WHICH SPELLING. THE LEVEL IN THE STRING ONLY
-//HAS TO BE AT LEAST THE STREAM'S, AND THE STREAM'S DEPENDS ON THE MONITOR SOMEBODY ELSE IS SHARING - SO
-//THE HIGHEST SUPPORTED ONE WINS, AND null MEANS THE PICTURE HAS TO ARRIVE ALREADY DECODED
-async function h264Codec(): Promise<string | null>
+//HOW THIS WEBVIEW WOULD DECODE THE SHARE, IF IT CAN. THE LEVEL IN THE CODEC STRING ONLY HAS TO BE AT LEAST
+//THE STREAM'S, AND THE STREAM'S DEPENDS ON THE MONITOR SOMEBODY ELSE IS SHARING, SO THE HIGHEST SUPPORTED
+//ONE WINS - AND null MEANS THE PICTURE HAS TO ARRIVE ALREADY DECODED.
+//SOFTWARE IS ASKED FOR FIRST. THE REST OF THIS PROJECT DECODES THE SAME STREAM WITH openh264 AND DRAWS IT
+//CORRECTLY, SO A PICTURE THAT IS TORN ONLY HERE IS THE MACHINE'S VIDEO HARDWARE, NOT THE STREAM
+async function h264Config(): Promise<VideoDecoderConfig | null>
 {
     if (typeof VideoDecoder === "undefined") return null;
 
-    for (const codec of ["avc1.42E034", "avc1.42E028", "avc1.42E01E"])
+    for (const hardwareAcceleration of ["prefer-software", "no-preference"] as const)
     {
-        try
+        for (const codec of ["avc1.42E034", "avc1.42E028", "avc1.42E01E"])
         {
-            const { supported } = await VideoDecoder.isConfigSupported({ codec, optimizeForLatency: true });
+            const config: VideoDecoderConfig = { codec, optimizeForLatency: true, hardwareAcceleration };
 
-            if (supported) return codec;
+            try
+            {
+                const { supported } = await VideoDecoder.isConfigSupported(config);
+
+                if (supported) return config;
+            }
+            catch { /* THE NEXT ONE */ }
         }
-        catch { /* THE NEXT ONE */ }
     }
 
     return null;
@@ -1628,7 +1635,11 @@ function App()
                 context.imageSmoothingQuality = "high";
             }
 
-            context.drawImage(frame, 0, 0);
+            //THE SOURCE RECTANGLE IS NAMED AND NOT ASSUMED. H.264 ENCODES IN WHOLE MACROBLOCKS, SO A 900-ROW
+            //SCREEN TRAVELS AS 912 ROWS WITH THE LAST TWELVE PADDED OUT, AND A DECODER THAT HANDS OVER THE
+            //CODED FRAME RATHER THAN THE VISIBLE ONE PUTS THAT PADDING ALONG THE BOTTOM EDGE. NAMING THE
+            //RECTANGLE CROPS IT WHERE THAT HAPPENS AND CHANGES NOTHING WHERE IT DOES NOT
+            context.drawImage(frame, 0, 0, width, height, 0, 0, width, height);
         };
 
         const channel = new Channel<ArrayBuffer>();
@@ -1639,26 +1650,30 @@ function App()
 
         void (async () =>
         {
-            const codec = await h264Codec();
+            const config = await h264Config();
 
             if (!live) return;
 
-            setDecoding(codec ? "webview" : "bridge");
+            setDecoding(config ? "webview" : "bridge");
 
-            if (codec)
+            if (config)
             {
                 decoder = new VideoDecoder(
                 {
                     output: (frame) =>
                     {
-                        paint(frame, frame.displayWidth, frame.displayHeight);
+                        //THE VISIBLE RECTANGLE FIRST, AND THE DISPLAY SIZE ONLY WHERE THERE IS NONE: THE
+                        //CODED FRAME IS PADDED OUT TO WHOLE MACROBLOCKS, AND THE PADDING IS NOT PICTURE
+                        const rect = frame.visibleRect;
+
+                        paint(frame, rect?.width ?? frame.displayWidth, rect?.height ?? frame.displayHeight);
                         frame.close();
                     },
 
                     error: (error) => { if (live) setViewerError(String(error)); },
                 });
 
-                decoder.configure({ codec, optimizeForLatency: true });
+                decoder.configure(config);
 
                 channel.onmessage = (data) =>
                 {
@@ -1697,7 +1712,7 @@ function App()
                 };
             }
 
-            await invoke("watch_frames", { channel, decode: codec === null })
+            await invoke("watch_frames", { channel, decode: config === null })
                 .catch((error: unknown) => setViewerError(String(error)));
         })();
 
