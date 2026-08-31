@@ -317,9 +317,12 @@ a picture nobody sees is worth nothing a second later.
   task**: decode plus re-encode is tens of milliseconds of unbroken CPU. Every frame is decoded, because
   H.264 is predicted and skipping one breaks the frames after it, but only the newest of whatever piled up
   is re-encoded — the older ones would be wrong by the time they were drawn. This is the path that has to be
-  kept cheap, and the two things that keep it cheap are `JPEG_WIDTH` and `JPEG_QUALITY`: `write_rgb` takes
-  every *step*-th pixel while it converts, so a 4K share is converted, encoded and shipped at a third of its
-  width — every pixel past the pane's own is paid for three times over. It is the same drain-the-backlog,
+  kept cheap without going soft, which is what `JPEG_WIDTH`, `JPEG_QUALITY` and the shape of `write_rgb`
+  are for: anything up to 1080p is converted and sent as it is, and above that the block is **averaged**
+  rather than sampled — picking every *step*-th pixel is exactly the aliasing the TUI never shows, since it
+  hands the planes to the GPU and lets a linear sampler scale them, and for a whole-number factor averaging
+  the block is that same thing done on the CPU. The JPEG keeps full-resolution color (`R_4_4_4`): a shared
+  screen is mostly text, and text is where 4:2:0 turns a colored letter to mush. It is the same drain-the-backlog,
   draw-only-the-newest shape as the TUI's `display.rs`; what the TUI has and this cannot is the GPU, where
   the YUV planes go up as they are and a shader does the conversion.
 

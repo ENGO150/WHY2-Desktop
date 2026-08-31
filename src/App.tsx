@@ -1617,11 +1617,15 @@ function App()
 
         const paint = (frame: CanvasImageSource, width: number, height: number) =>
         {
-            //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT DOWN TO THE PANE
+            //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT TO THE PANE. RESIZING A CANVAS
+            //RESETS EVERYTHING ABOUT ITS CONTEXT, SO THE SCALING QUALITY IS ASKED FOR AGAIN EVERY TIME
             if (canvas.width !== width || canvas.height !== height)
             {
                 canvas.width = width;
                 canvas.height = height;
+
+                context.imageSmoothingEnabled = true;
+                context.imageSmoothingQuality = "high";
             }
 
             context.drawImage(frame, 0, 0);

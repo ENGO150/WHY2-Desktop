@@ -47,7 +47,7 @@ use sha2::{ Sha256, Digest };
 
 use openh264::{ decoder::Decoder, formats::YUVSource };
 
-use jpeg_encoder::{ Encoder as JpegEncoder, ColorType };
+use jpeg_encoder::{ Encoder as JpegEncoder, ColorType, SamplingFactor };
 
 use serde::{ Serialize, Deserialize };
 
@@ -104,7 +104,7 @@ const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
 //PHOTOGRAPH: TEXT HAS TO SURVIVE IT, AND THE BYTES ONLY TRAVEL AS FAR AS THE CANVAS IN THE SAME PROCESS
-const JPEG_QUALITY: u8 = 78;
+const JPEG_QUALITY: u8 = 88;
 
 //AND HOW WIDE IT IS DRAWN AT. THE PANE IS A FRACTION OF THE SCREEN BEING SHARED, AND EVERY PIXEL PAST THIS
 //IS PAID FOR THREE TIMES OVER - THE CONVERSION, THE ENCODE, AND THE TRIP ACROSS THE BRIDGE. TAKING A 4K
@@ -1604,9 +1604,10 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     Ok(())
 }
 
-//I420 TO RGB, TAKING EVERY step-TH PIXEL ON THE WAY. openh264 HAS A SIMD CONVERTER OF ITS OWN, BUT IT ONLY
-//CONVERTS EVERY PIXEL - AND THE ONES THIS DROPS ARE THE ONES THE PANE WOULD SCALE AWAY ANYHOW. THE MATH IS
-//THE USUAL BT.601 LIMITED-RANGE ONE, WHICH IS WHAT THE CAPTURE ENCODED WITH
+//I420 TO RGB, step PIXELS AT A TIME. THE BLOCK IS *AVERAGED* AND NOT SAMPLED: PICKING EVERY step-TH PIXEL
+//IS THE ALIASING THE TUI NEVER SHOWS, BECAUSE IT HANDS THE PLANES TO THE GPU AND LETS A LINEAR SAMPLER
+//SCALE THEM - AND FOR A WHOLE-NUMBER FACTOR, AVERAGING THE BLOCK IS THAT, DONE ON THE CPU. THE MATH IS THE
+//USUAL BT.601 LIMITED-RANGE ONE, WHICH IS WHAT THE CAPTURE ENCODED WITH
 fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>) -> (usize, usize)
 {
     let (width, height) = yuv.dimensions();
@@ -1619,19 +1620,49 @@ fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>
 
     let (luma, blue, red) = (yuv.y(), yuv.u(), yuv.v());
 
+    //THE CHROMA PLANES ARE ALREADY HALF THE SIZE, SO THEY ARE AVERAGED OVER HALF THE BLOCK
+    let chroma_step = (step / 2).max(1);
+
+    let luma_pixels = (step * step) as u32;
+    let chroma_pixels = (chroma_step * chroma_step) as u32;
+
     for row in 0..out_height
     {
         let line = row * step;
-        let chroma = (line / 2) * u_stride;
-        let chroma_v = (line / 2) * v_stride;
+        let chroma_line = line / 2;
 
         for column in 0..out_width
         {
             let pixel = column * step;
+            let chroma_pixel = pixel / 2;
 
-            let y = luma[line * y_stride + pixel] as i32 - 16;
-            let u = blue[chroma + pixel / 2] as i32 - 128;
-            let v = red[chroma_v + pixel / 2] as i32 - 128;
+            let mut y = 0u32;
+
+            for down in 0..step
+            {
+                let start = (line + down) * y_stride + pixel;
+
+                for right in 0..step { y += luma[start + right] as u32 }
+            }
+
+            let mut u = 0u32;
+            let mut v = 0u32;
+
+            for down in 0..chroma_step
+            {
+                let u_start = (chroma_line + down) * u_stride + chroma_pixel;
+                let v_start = (chroma_line + down) * v_stride + chroma_pixel;
+
+                for right in 0..chroma_step
+                {
+                    u += blue[u_start + right] as u32;
+                    v += red[v_start + right] as u32;
+                }
+            }
+
+            let y = (y / luma_pixels) as i32 - 16;
+            let u = (u / chroma_pixels) as i32 - 128;
+            let v = (v / chroma_pixels) as i32 - 128;
 
             let r = (298 * y + 409 * v + 128) >> 8;
             let g = (298 * y - 100 * u - 208 * v + 128) >> 8;
@@ -1711,9 +1742,13 @@ fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver<Vec<u8>>)
             let (width, height) = write_rgb(&yuv, step, &mut rgb);
 
             let mut jpeg = Vec::with_capacity(rgb.len() / 8);
+            let mut encoder = JpegEncoder::new(&mut jpeg, JPEG_QUALITY);
 
-            if JpegEncoder::new(&mut jpeg, JPEG_QUALITY)
-                .encode(&rgb, width as u16, height as u16, ColorType::Rgb).is_ok()
+            //A SHARED SCREEN IS MOSTLY TEXT, AND TEXT IS EXACTLY WHERE HALF-RESOLUTION COLOR SHOWS: A RED
+            //LETTER ON GREY GOES TO MUSH AT 4:2:0 AND STAYS A LETTER AT 4:4:4
+            encoder.set_sampling_factor(SamplingFactor::R_4_4_4);
+
+            if encoder.encode(&rgb, width as u16, height as u16, ColorType::Rgb).is_ok()
             {
                 channel.send(InvokeResponseBody::Raw(jpeg)).ok();
             }
