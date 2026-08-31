@@ -16,28 +16,80 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import React, { useState, useEffect, useRef } from "react";
-import { Server, ArrowRight, ArrowLeft, Info, User, Lock, Send, Paperclip, Download, Folder, LogOut, Hash, Plus } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Server, ArrowRight, User, Lock, Send, Paperclip, Download, Folder, LogOut, Hash, Plus, ShieldAlert } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./index.css";
 
+//THE LOBBY HAS NO NAME - EVERY CHANNEL-KEYED MAP USES THE EMPTY STRING FOR IT
+const LOBBY = "";
+
+//WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS, SO IT CANNOT HAPPEN BY LEANING ON ENTER
+const CHALLENGE = "yes";
+
 type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
+
+type MessageKind = "user" | "private" | "system" | "notice" | "error";
 
 interface ChatMessage
 {
+    kind: MessageKind;
     username: string;
     text: string;
+    id: number | null;
+    username_color: number | null;
+    message_color: number | null;
+}
+
+interface OnlineUser
+{
+    username: string;
     id: number;
-    username_color?: number;
-    message_color?: number;
+    channel: string | null;
+}
+
+interface FileEntry
+{
+    filename: string;
+    id: number;
+}
+
+interface UserFile
+{
+    username: string;
+    id: number;
+    uploads: FileEntry[];
+}
+
+interface BanEntry
+{
+    id: number;
+    subject: string;
+}
+
+interface ServerSetting
+{
+    key: string;
+    value: string;
+    section: string;
+    description: string;
+    restart: boolean;
 }
 
 interface CommandArgInfo
 {
     name: string;
+    description: string;
     required: boolean;
+}
+
+interface SubcommandInfo
+{
+    name: string;
+    description: string;
+    args: CommandArgInfo[];
 }
 
 interface CommandInfo
@@ -45,31 +97,95 @@ interface CommandInfo
     name: string;
     description: string;
     args: CommandArgInfo[];
+    subcommands: SubcommandInfo[];
 }
 
-function getAnsiColor(code?: number)
+interface TofuPrompt
+{
+    host: string;
+    hash: string;
+    pinned: string | null;
+    mismatch: boolean;
+}
+
+//ONE ROW OF THE SLASH PALETTE. A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS LISTED AS ITS
+//ACTIONS, THE WAY THE TUI LISTS THEM - "/server" ALONE RUNS NOTHING
+interface PaletteEntry
+{
+    name: string;
+    description: string;
+    args: CommandArgInfo[];
+}
+
+type Modal =
+    | { type: "users"; users: OnlineUser[] }
+    | { type: "files"; users: UserFile[] }
+    | { type: "bans"; users: BanEntry[]; ips: BanEntry[] }
+    | { type: "settings"; settings: ServerSetting[] };
+
+//EVERYTHING THE BRIDGE SENDS, TAGGED THE WAY SERDE TAGS IT ON THE OTHER SIDE
+type BridgeEvent =
+    | { event: "connected"; data: { server: string } }
+    | { event: "request_username"; data: { registration: boolean; min: number; max: number } }
+    | { event: "request_password"; data: { register: boolean } }
+    | { event: "username_rejected"; data?: null }
+    | { event: "password_rejected"; data: { min: number } }
+    | { event: "authenticated"; data: { role: string } }
+    | { event: "role"; data: { role: string; username: string | null } }
+    | { event: "message"; data: { message: ChatMessage } }
+    | { event: "history"; data: { messages: ChatMessage[] } }
+    | { event: "popup"; data: { text: string } }
+    | { event: "tofu_prompt"; data: TofuPrompt }
+    | { event: "users"; data: { users: OnlineUser[]; requested: boolean } }
+    | { event: "user_left"; data: { id: number } }
+    | { event: "files"; data: { users: UserFile[] } }
+    | { event: "bans"; data: { users: BanEntry[]; ips: BanEntry[] } }
+    | { event: "server_settings"; data: { settings: ServerSetting[]; saved: boolean } }
+    | { event: "channel_changed"; data: { channel: string | null } }
+    | { event: "channel_created"; data: { name: string } }
+    | { event: "channel_destroyed"; data: { name: string } }
+    | { event: "disconnected"; data: { reason: string | null } };
+
+//THE SIXTEEN COLORS THE PROTOCOL CARRIES, AS THE TERMINAL WOULD HAVE PAINTED THEM
+function getAnsiColor(code: number | null | undefined): string | undefined
 {
     if (code === undefined || code === null) return undefined;
+
     switch (code)
     {
-        case 0: return "#000000"; // Black
-        case 1: return "#800000"; // DarkRed
-        case 2: return "#008000"; // DarkGreen
-        case 3: return "#808000"; // DarkYellow
-        case 4: return "#000080"; // DarkBlue
-        case 5: return "#800080"; // DarkMagenta
-        case 6: return "#008080"; // DarkCyan
-        case 7: return "#c0c0c0"; // Grey
-        case 8: return "#808080"; // DarkGrey
-        case 9: return "#ff0000"; // Red
-        case 10: return "#00ff00"; // Green
-        case 11: return "#ffff00"; // Yellow
-        case 12: return "#0000ff"; // Blue
-        case 13: return "#ff00ff"; // Magenta
-        case 14: return "#00ffff"; // Cyan
-        case 15: return "#ffffff"; // White
+        case 0: return "#000000";  //BLACK
+        case 1: return "#800000";  //DARK RED
+        case 2: return "#008000";  //DARK GREEN
+        case 3: return "#808000";  //DARK YELLOW
+        case 4: return "#000080";  //DARK BLUE
+        case 5: return "#800080";  //DARK MAGENTA
+        case 6: return "#008080";  //DARK CYAN
+        case 7: return "#c0c0c0";  //GREY
+        case 8: return "#808080";  //DARK GREY
+        case 9: return "#ff0000";  //RED
+        case 10: return "#00ff00"; //GREEN
+        case 11: return "#ffff00"; //YELLOW
+        case 12: return "#0000ff"; //BLUE
+        case 13: return "#ff00ff"; //MAGENTA
+        case 14: return "#00ffff"; //CYAN
+        case 15: return "#ffffff"; //WHITE
         default: return undefined;
     }
+}
+
+//THE FINGERPRINT IS 64 HEX CHARS - GROUPED IN EIGHTS AND BROKEN INTO ROWS SO IT CAN ACTUALLY BE
+//COMPARED AGAINST WHAT THE OPERATOR PUBLISHED
+function fingerprint(hash: string): string[]
+{
+    const groups = hash.match(/.{1,8}/g) ?? [];
+    const rows: string[] = [];
+
+    for (let i = 0; i < groups.length; i += 4)
+    {
+        rows.push(groups.slice(i, i + 4).join(" "));
+    }
+
+    return rows;
 }
 
 function App()
@@ -79,218 +195,315 @@ function App()
     const [chatInput, setChatInput] = useState("");
     const [connecting, setConnecting] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
+    const [hint, setHint] = useState("");
+    const [registering, setRegistering] = useState(false);
     const [serverName, setServerName] = useState("");
+    const [role, setRole] = useState("user");
     const [messagesByChannel, setMessagesByChannel] = useState<Record<string, ChatMessage[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
-
-    useEffect(() =>
-    {
-        if (popupMessage)
-        {
-            const timer = setTimeout(() =>
-            {
-                setPopupMessage("");
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [popupMessage]);
-    const [slashCommands, setSlashCommands] = useState<CommandInfo[]>([]);
-    const [modal, setModal] = useState<{type: string, data: any} | null>(null);
-    const [tofuPrompt, setTofuPrompt] = useState<{hash: string, ip: string} | null>(null);
-    const [users, setUsers] = useState<any[]>([]);
+    const [commands, setCommands] = useState<CommandInfo[]>([]);
+    const [modal, setModal] = useState<Modal | null>(null);
+    const [tofu, setTofu] = useState<TofuPrompt | null>(null);
+    const [tofuTyped, setTofuTyped] = useState("");
+    const [users, setUsers] = useState<OnlineUser[]>([]);
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
-    const [currentChannel, setCurrentChannel] = useState("");
+    const [currentChannel, setCurrentChannel] = useState(LOBBY);
     const [showCreateChannel, setShowCreateChannel] = useState(false);
     const [newChannelName, setNewChannelName] = useState("");
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const currentChannelRef = useRef(currentChannel);
     const loginInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() =>
-    {
-        if (!connecting && uiState !== "connected" && loginInputRef.current)
-        {
-            setTimeout(() =>
-            {
-                loginInputRef.current?.focus();
-            }, 10);
-        }
-    }, [uiState, connecting]);
+    //THE EVENT LISTENER IS REGISTERED ONCE, SO IT READS THE CHANNEL THROUGH A REF - A CAPTURED ONE
+    //WOULD BE WHATEVER IT WAS WHEN THE SESSION STARTED
+    const currentChannelRef = useRef(currentChannel);
 
     useEffect(() =>
     {
         currentChannelRef.current = currentChannel;
     }, [currentChannel]);
 
-    const scrollToBottom = () =>
+    useEffect(() =>
+    {
+        if (!popupMessage) return;
+
+        const timer = setTimeout(() => setPopupMessage(""), 3500);
+        return () => clearTimeout(timer);
+    }, [popupMessage]);
+
+    useEffect(() =>
+    {
+        if (connecting || uiState === "connected") return;
+
+        //THE FIELD IS REPLACED BETWEEN THE IDENTITY STEPS, SO THE FOCUS HAS TO FOLLOW IT
+        const timer = setTimeout(() => loginInputRef.current?.focus(), 10);
+        return () => clearTimeout(timer);
+    }, [uiState, connecting]);
+
+    useEffect(() =>
     {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messagesByChannel, currentChannel]);
+
+    //PUSH ONE LINE INTO WHICHEVER CHANNEL IS OPEN WHEN IT ARRIVES
+    const pushMessage = (message: ChatMessage) =>
+    {
+        const channel = currentChannelRef.current;
+
+        setMessagesByChannel((previous) => ({ ...previous, [channel]: [...(previous[channel] ?? []), message] }));
+    };
+
+    //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO THE ROSTER IS THE WHOLE TRUTH ABOUT
+    //WHICH ONES THERE ARE - AND HISTORY OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
+    const syncChannels = (roster: OnlineUser[]) =>
+    {
+        const channels = new Set(roster.map((user) => user.channel ?? LOBBY));
+        channels.add(LOBBY);
+
+        setActiveChannels(Array.from(channels));
+
+        setMessagesByChannel((previous) =>
+        {
+            const next = { ...previous };
+            let changed = false;
+
+            for (const channel in next)
+            {
+                if (channel !== currentChannelRef.current && !channels.has(channel))
+                {
+                    delete next[channel];
+                    changed = true;
+                }
+            }
+
+            return changed ? next : previous;
+        });
+    };
+
+    const refreshCommands = () =>
+    {
+        invoke<CommandInfo[]>("get_commands").then(setCommands).catch(console.error);
+    };
+
+    //EVERYTHING THE SESSION BUILT UP GOES AWAY WITH IT
+    const resetSession = (reason: string) =>
+    {
+        setUiState("server_select");
+        setConnecting(false);
+        setErrorMsg(reason);
+        setHint("");
+        setInputValue("");
+        setMessagesByChannel({});
+        setUsers([]);
+        setActiveChannels([]);
+        setCurrentChannel(LOBBY);
+        setCommands([]);
+        setModal(null);
+        setTofu(null);
+        setTofuTyped("");
+        setServerName("");
+        setRole("user");
     };
 
     useEffect(() =>
     {
-        scrollToBottom();
-    }, [messagesByChannel, currentChannel]);
-
-    useEffect(() =>
-    {
-        const unlisten = listen<string>("why2-event", (event) =>
+        const unlisten = listen<BridgeEvent>("why2-event", ({ payload }) =>
         {
-            const payload = event.payload;
-            setConnecting(false);
-
-            if (payload.startsWith("RequestUsername:"))
+            switch (payload.event)
             {
-                const disabledRegistration = payload.split(":")[1] === "true";
-                setUiState("username_prompt");
-                setInputValue("");
-                if (disabledRegistration)
+                case "connected":
                 {
-                    setErrorMsg((prev) => prev ? prev : "Registration is disabled on this server. Login only.");
+                    setServerName(payload.data.server);
+                    break;
                 }
-            } else if (payload === "Register" || payload === "Login")
-            {
-                setUiState("password_prompt");
-                setInputValue("");
-            } else if (payload.startsWith("Connected:"))
-            {
-                setServerName(payload.split(":")[1] || "Unknown");
-            } else if (payload === "UsernameRejected")
-            {
-                setUiState("username_prompt");
-                setErrorMsg("Username rejected by server.");
-            } else if (payload.startsWith("PasswordRejected:"))
-            {
-                setUiState("password_prompt");
-                setErrorMsg(`Password rejected! Min length: ${payload.split(":")[1]}`);
-            } else if (payload === "Authenticated")
-            {
-                setUiState("connected");
-                invoke<CommandInfo[]>("get_commands").then(setSlashCommands).catch(console.error);
-            } else if (payload === "Quit")
-            {
-                setUiState("server_select");
-                setErrorMsg((prev) => prev.startsWith("SECURITY WARNING") ? prev : "Disconnected from server.");
-                setInputValue("");
-                setMessagesByChannel({});
-                setUsers([]);
-                setCurrentChannel("");
-            } else if (payload === "TofuMismatch")
-            {
-                setUiState("server_select");
-                setErrorMsg("SECURITY WARNING: Identity key mismatch! Connection aborted.");
-                setConnecting(false);
-            } else if (payload.startsWith("TofuUnknown:"))
-            {
-                const parts = payload.split(":");
-                const hash = parts[1];
-                const ip = parts.slice(2).join(":");
-                setTofuPrompt({ hash, ip });
-                setConnecting(false);
-            } else if (payload.startsWith("Popup:"))
-            {
-                const text = payload.substring("Popup:".length);
-                setPopupMessage(text);
-                setTimeout(() =>
+
+                case "request_username":
                 {
-                    setPopupMessage(prev => prev === text ? "" : prev);
-                }, 3500);
-            } else if (payload.startsWith("Modal:"))
-            {
-                const parts = payload.split(":");
-                const type = parts[1];
-                const jsonStr = parts.slice(2).join(":");
-                try
-                {
-                    const data = JSON.parse(jsonStr);
-                    setModal({ type, data });
-                } catch (e)
-                {
-                    console.error("Failed to parse modal JSON");
+                    const { registration, min, max } = payload.data;
+
+                    setUiState("username_prompt");
+                    setConnecting(false);
+                    setInputValue("");
+                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled on this server.");
+                    break;
                 }
-            } else if (payload.startsWith("UserList:"))
-            {
-                try
+
+                case "request_password":
                 {
-                    const data = JSON.parse(payload.substring("UserList:".length));
-                    setUsers(data);
+                    setUiState("password_prompt");
+                    setConnecting(false);
+                    setInputValue("");
+                    setRegistering(payload.data.register);
+                    setHint("");
+                    break;
+                }
 
-                    const activeChans = new Set(data.map((u: any) => u.channel || ""));
-                    activeChans.add(""); // lobby
-                    setActiveChannels(Array.from(activeChans));
+                //A REJECTION ALWAYS ARRIVES JUST BEFORE THE RE-PROMPT, WHICH LEAVES THE ERROR ON SCREEN
+                case "username_rejected":
+                {
+                    setErrorMsg("Username rejected!");
+                    setConnecting(false);
+                    break;
+                }
 
-                    setMessagesByChannel(prev =>
+                case "password_rejected":
+                {
+                    setErrorMsg(`Password rejected! Enter at least ${payload.data.min} characters.`);
+                    setConnecting(false);
+                    break;
+                }
+
+                case "authenticated":
+                {
+                    setUiState("connected");
+                    setConnecting(false);
+                    setErrorMsg("");
+                    setRole(payload.data.role);
+                    refreshCommands();
+                    break;
+                }
+
+                //THE SERVER NAMES THE USER WHEN IT IS SOMEBODY ELSE, SO THE ONE WITHOUT A NAME IS OURS -
+                //AND THAT ONE DECIDES WHICH COMMANDS THE PALETTE IS ALLOWED TO OFFER
+                case "role":
+                {
+                    const { role, username } = payload.data;
+
+                    if (username === null)
                     {
-                        const next = { ...prev };
-                        let changed = false;
-                        for (const ch in next)
-                        {
-                            if (!activeChans.has(ch))
-                            {
-                                delete next[ch];
-                                changed = true;
-                            }
-                        }
-                        return changed ? next : prev;
-                    });
-                } catch (e)
-                {
-                    console.error("Failed to parse UserList JSON");
-                }
-            } else if (payload.startsWith("ChannelCreated:"))
-            {
-                const channelName = payload.substring("ChannelCreated:".length);
-                setActiveChannels(prev =>
-                {
-                    if (prev.includes(channelName)) return prev;
-                    return [...prev, channelName];
-                });
-            } else if (payload.startsWith("ChannelDestroyed:"))
-            {
-                const channelName = payload.substring("ChannelDestroyed:".length);
-                setActiveChannels(prev => prev.filter(c => c !== channelName));
-                setMessagesByChannel(prev =>
-                {
-                    const next = { ...prev };
-                    if (next[channelName])
-                    {
-                        delete next[channelName];
-                        return next;
+                        setRole(role);
+                        refreshCommands();
                     }
-                    return prev;
-                });
-            } else if (payload.startsWith("ChannelChanged:"))
-            {
-                setCurrentChannel(payload.substring("ChannelChanged:".length));
-            } else if (payload.startsWith("Message:"))
-            {
-                try
+
+                    setPopupMessage(username === null ? `You are now ${role}.` : `${username} is now ${role}.`);
+                    break;
+                }
+
+                case "message":
                 {
-                    const jsonStr = payload.substring("Message:".length);
-                    const msg = JSON.parse(jsonStr) as ChatMessage;
-                    const ch = currentChannelRef.current;
-                    setMessagesByChannel((prev) => ({
-                        ...prev,
-                        [ch]: [...(prev[ch] || []), msg]
-                    }));
-                } catch (e)
+                    pushMessage(payload.data.message);
+                    break;
+                }
+
+                case "history":
                 {
-                    console.error("Failed to parse message", e);
+                    const { messages } = payload.data;
+                    const channel = currentChannelRef.current;
+
+                    setMessagesByChannel((previous) => ({ ...previous, [channel]: [...messages, ...(previous[channel] ?? [])] }));
+                    break;
+                }
+
+                case "popup":
+                {
+                    setPopupMessage(payload.data.text);
+                    break;
+                }
+
+                case "tofu_prompt":
+                {
+                    setTofu(payload.data);
+                    setTofuTyped("");
+                    setConnecting(false);
+                    break;
+                }
+
+                case "users":
+                {
+                    const { users, requested } = payload.data;
+
+                    setUsers(users);
+                    syncChannels(users);
+
+                    if (requested) setModal({ type: "users", users });
+                    break;
+                }
+
+                case "user_left":
+                {
+                    setUsers((previous) =>
+                    {
+                        const next = previous.filter((user) => user.id !== payload.data.id);
+                        syncChannels(next);
+
+                        return next;
+                    });
+                    break;
+                }
+
+                case "files":
+                {
+                    setModal({ type: "files", users: payload.data.users });
+                    break;
+                }
+
+                case "bans":
+                {
+                    setModal({ type: "bans", users: payload.data.users, ips: payload.data.ips });
+                    break;
+                }
+
+                case "server_settings":
+                {
+                    const { settings, saved } = payload.data;
+
+                    if (saved) setPopupMessage("Server settings saved.");
+                    else setModal({ type: "settings", settings });
+                    break;
+                }
+
+                case "channel_changed":
+                {
+                    setCurrentChannel(payload.data.channel ?? LOBBY);
+                    break;
+                }
+
+                case "channel_created":
+                {
+                    const { name } = payload.data;
+                    setActiveChannels((previous) => (previous.includes(name) ? previous : [...previous, name]));
+                    break;
+                }
+
+                case "channel_destroyed":
+                {
+                    const { name } = payload.data;
+
+                    setActiveChannels((previous) => previous.filter((channel) => channel !== name));
+
+                    setMessagesByChannel((previous) =>
+                    {
+                        if (!(name in previous) || name === currentChannelRef.current) return previous;
+
+                        const next = { ...previous };
+                        delete next[name];
+
+                        return next;
+                    });
+                    break;
+                }
+
+                //THE SOCKET IS GONE, BUT THE APP IS NOT: THE CONNECT BOX COMES BACK SO ANOTHER SERVER
+                //(OR THE SAME ONE AGAIN) IS ONE ENTER AWAY
+                case "disconnected":
+                {
+                    resetSession(payload.data.reason ?? "Disconnected from the server.");
+                    break;
                 }
             }
         });
 
-        return () =>
-        {
-            unlisten.then((fn) => fn());
-        };
+        return () => { unlisten.then((stop) => stop()); };
     }, []);
 
-
-
-    const handleSubmit = async (e: React.FormEvent) =>
+    const send = (input: string) =>
     {
-        e.preventDefault();
+        invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    const handleSubmit = async (event: React.FormEvent) =>
+    {
+        event.preventDefault();
         if (!inputValue) return;
 
         setErrorMsg("");
@@ -298,34 +511,88 @@ function App()
 
         try
         {
-            if (uiState === "server_select")
-            {
-                await invoke("connect_to_server", { ip: inputValue });
-            } else
-            {
-                await invoke("send_input", { input: inputValue });
-            }
-        } catch (err: any)
+            if (uiState === "server_select") await invoke("connect_to_server", { address: inputValue });
+            else await invoke("send_input", { input: inputValue });
+        }
+        catch (error: unknown)
         {
-            setErrorMsg(err.toString());
+            setErrorMsg(String(error));
             setConnecting(false);
         }
     };
 
-    const handleChatSubmit = async (e: React.FormEvent) =>
+    const handleChatSubmit = (event: React.FormEvent) =>
     {
-        e.preventDefault();
+        event.preventDefault();
         if (!chatInput.trim()) return;
 
-        try
-        {
-            await invoke("send_input", { input: chatInput });
-            setChatInput("");
-        } catch (err: any)
-        {
-            console.error(err);
-        }
+        send(chatInput);
+        setChatInput("");
     };
+
+    //THE PROMPT IS ANSWERED IN-BAND: THE LISTENING TASK IS PARKED ON IT, AND ON A YES IT PINS THE KEY
+    //AND DIALS AGAIN ITSELF - NOTHING HERE HAS TO RECONNECT
+    const answerTofu = (accept: boolean) =>
+    {
+        setTofu(null);
+        setTofuTyped("");
+
+        invoke("answer_tofu", { accept }).catch((error: unknown) => setErrorMsg(String(error)));
+
+        if (accept)
+        {
+            setConnecting(true);
+            setErrorMsg("");
+        }
+        else setErrorMsg("Connection aborted.");
+    };
+
+    const uploadFile = async () =>
+    {
+        const selected = await open({ multiple: false });
+        if (typeof selected !== "string") return;
+
+        invoke("upload_file_from_path", { path: selected }).catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //A COMMAND THAT IS NOTHING BUT A DOORWAY TO ITS ACTIONS IS OFFERED AS ITS ACTIONS
+    const palette = useMemo<PaletteEntry[]>(() => commands.flatMap((command) =>
+    {
+        if (command.subcommands.length === 0) return [command];
+
+        return command.subcommands.map((sub) => ({
+            name: `${command.name} ${sub.name}`,
+            description: sub.description,
+            args: sub.args,
+        }));
+    }), [commands]);
+
+    const typed = chatInput.startsWith("/") ? chatInput.slice(1).toLowerCase() : null;
+
+    const suggestions = useMemo(() =>
+    {
+        if (typed === null) return [];
+
+        //THE ENTRY STAYS UP WHILE ITS PARAMETERS ARE BEING TYPED, SO THE SIGNATURE IS STILL READABLE
+        return palette.filter((entry) => entry.name.startsWith(typed) || typed.startsWith(`${entry.name} `));
+    }, [palette, typed]);
+
+    const channels = useMemo(() =>
+    {
+        const set = new Set(activeChannels);
+        set.add(currentChannel);
+        set.add(LOBBY);
+
+        return Array.from(set).sort((a, b) =>
+        {
+            if (a === LOBBY) return -1;
+            if (b === LOBBY) return 1;
+
+            return a.localeCompare(b);
+        });
+    }, [activeChannels, currentChannel]);
+
+    const messages = messagesByChannel[currentChannel] ?? [];
 
     const renderIcon = () =>
     {
@@ -344,7 +611,7 @@ function App()
         {
             case "server_select": return "Connect to Server";
             case "username_prompt": return "Enter Username";
-            case "password_prompt": return "Enter Password";
+            case "password_prompt": return registering ? "Register" : "Log In";
             default: return "";
         }
     };
@@ -353,46 +620,100 @@ function App()
     {
         switch (uiState)
         {
-            case "server_select": return "Enter the IP address of the WHY2 server";
+            case "server_select": return "Enter the address of the WHY2 server";
             case "username_prompt": return "Choose a username to join the server";
-            case "password_prompt": return "Authenticate to secure your session";
+            case "password_prompt": return registering ? "Pick a password for your new account" : "Authenticate to secure your session";
             default: return "";
         }
     };
 
-    const inputType = uiState === "password_prompt" ? "password" : "text";
+    //THE IDENTITY PROMPT IS A MODAL OVERLAY ON BOTH SCREENS - WHILE IT IS UP THE SESSION IS PARKED ON
+    //ITS ANSWER, SO NOTHING TYPED ANYWHERE ELSE CAN REACH AN UNTRUSTED SERVER
+    const tofuOverlay = tofu && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
+            <div className="w-full max-w-md rounded-md border border-border bg-card p-6 shadow-2xl">
+                <div className="mb-4 flex items-center gap-3">
+                    <ShieldAlert size={20} className="text-destructive" />
+                    <h2 className="text-lg font-bold text-destructive">
+                        {tofu.mismatch ? "Server identity changed" : "Unknown server identity"}
+                    </h2>
+                </div>
 
-    const parsedCommand = chatInput.startsWith("/") ? chatInput.substring(1).split(" ")[0].toLowerCase() : "";
-    const filteredCommands = chatInput.startsWith("/")
-        ? slashCommands.filter(c => c.name.startsWith(parsedCommand))
-        : [];
+                <p className="mb-4 text-sm text-muted-foreground">
+                    {tofu.mismatch
+                        ? `The key pinned for ${tofu.host} does not match the one it just offered. This is what a
+                           machine-in-the-middle looks like - unless the operator has told you they replaced it.`
+                        : `${tofu.host} has not been seen before. Compare the fingerprint against the one its
+                           operator published before trusting it.`}
+                </p>
 
-    const channelSet = new Set(activeChannels);
-    channelSet.add(currentChannel);
-    channelSet.add("");
+                <div className="mb-4 rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground/80">
+                    {fingerprint(tofu.hash).map((row) => <div key={row}>{row}</div>)}
+                </div>
 
-    const channels = Array.from(channelSet).sort((a, b) =>
-    {
-        if (a === "") return -1;
-        if (b === "") return 1;
-        return a.localeCompare(b);
-    });
+                {tofu.pinned && (
+                    <>
+                        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Pinned</p>
+                        <div className="mb-4 rounded-md border border-border bg-background p-3 font-mono text-xs text-muted-foreground">
+                            {fingerprint(tofu.pinned).map((row) => <div key={row}>{row}</div>)}
+                        </div>
+                    </>
+                )}
+
+                {/* REPLACING A PINNED KEY HAS TO BE TYPED OUT - THE FIRST CONTACT IS THE ONLY ONE ANSWERED BY A BUTTON */}
+                {tofu.mismatch && (
+                    <div className="mb-6">
+                        <label htmlFor="tofu-challenge" className="text-sm text-muted-foreground">
+                            Type <span className="font-mono font-bold text-foreground">{CHALLENGE}</span> to replace the pinned key.
+                        </label>
+                        <input
+                            id="tofu-challenge"
+                            type="text"
+                            value={tofuTyped}
+                            onChange={(event) => setTofuTyped(event.currentTarget.value.toLowerCase())}
+                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            autoFocus
+                        />
+                    </div>
+                )}
+
+                <div className="flex space-x-3">
+                    <button
+                        onClick={() => answerTofu(false)}
+                        className="flex-1 rounded-md bg-primary py-2.5 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
+                    >
+                        Reject
+                    </button>
+                    <button
+                        onClick={() => answerTofu(true)}
+                        disabled={tofu.mismatch && tofuTyped !== CHALLENGE}
+                        className="flex-1 rounded-md bg-destructive/10 py-2.5 font-medium text-destructive shadow-sm transition-colors hover:bg-destructive hover:text-destructive-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-destructive/10 disabled:hover:text-destructive"
+                    >
+                        Trust
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 
     if (uiState === "connected")
     {
         return (
             <main className="dark flex h-screen w-screen flex-col bg-background text-foreground noise-overlay">
-                <header className="flex items-center justify-between border-b border-border bg-card/50 px-6 py-3 backdrop-blur-md z-10">
+                <header className="z-10 flex items-center justify-between border-b border-border bg-card/50 px-6 py-3 backdrop-blur-md">
                     <div></div>
                     <div className="flex items-center gap-4">
                         <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-0.5">Connected to</span>
+                            <span className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Connected to</span>
                             <h1 className="text-sm font-medium text-foreground/90">{serverName}</h1>
                         </div>
-                        <div className="h-8 w-px bg-border mx-1"></div>
+                        <div className="mx-1 h-8 w-px bg-border"></div>
+                        <span className="rounded-sm bg-primary/10 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+                            {role}
+                        </span>
                         <button
-                            onClick={() => invoke("send_input", { input: "/exit" }).catch((e: any) => setPopupMessage(e.toString()))}
-                            className="p-2 rounded-md bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors flex items-center justify-center"
+                            onClick={() => send("/exit")}
+                            className="flex items-center justify-center rounded-md bg-destructive/10 p-2 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
                             title="Disconnect"
                         >
                             <LogOut size={16} />
@@ -400,370 +721,378 @@ function App()
                     </div>
                 </header>
 
+                {tofuOverlay}
+
                 {popupMessage && (
-                    <div className="absolute top-16 right-6 bg-card border border-border text-muted-foreground px-6 py-2 rounded-md shadow-lg backdrop-blur-md animate-fade-in z-50 text-sm whitespace-nowrap">
+                    <div className="absolute right-6 top-16 z-50 whitespace-nowrap rounded-md border border-border bg-card px-6 py-2 text-sm text-muted-foreground shadow-lg backdrop-blur-md animate-fade-in">
                         {popupMessage}
                     </div>
                 )}
 
                 {modal && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm animate-fade-in px-4">
-                         <div className="bg-card border border-border rounded-md shadow-2xl p-6 min-w-[300px] max-w-md w-full">
-                                <h2 className="text-lg font-bold mb-4">{modal.type === "List" ? "Users Online" : "Available Files"}</h2>
-                                <div className="max-h-64 overflow-y-auto space-y-2 mb-6 custom-scrollbar pr-2">
-                                     {modal.type === "List" ? (
-                                            modal.data.length > 0 ? modal.data.map((u: any, i: number) => (
-                                                 <div key={i} className="flex justify-between items-center text-sm py-1 border-b border-border/50 last:border-0">
-                                                        <span className="font-semibold">{u.username}</span>
-                                                        <span className="text-muted-foreground text-xs">ID: {u.id}</span>
-                                                 </div>
-                                            )) : <div className="text-muted-foreground text-sm">No users online.</div>
-                                     ) : (
-                                            modal.data.length > 0 ? modal.data.map((u: any, i: number) => (
-                                                 <div key={i} className="mb-4 last:mb-0">
-                                                        <div className="font-semibold text-sm mb-2">{u.username} (ID: {u.id})</div>
-                                                        <div className="space-y-2 pl-3 border-l-2 border-primary/20">
-                                                             {u.uploads.map((f: any, j: number) => (
-                                                                     <div key={j} className="flex justify-between text-xs items-center py-0.5">
-                                                                            <span className="text-foreground/90 font-medium">{f[0]}</span>
-                                                                            <div className="flex items-center gap-3">
-                                                                                <span className="text-muted-foreground">ID: {f[1]}</span>
-                                                                                <button
-                                                                                    className="text-primary hover:text-primary/80 transition-colors p-1 rounded-sm hover:bg-primary/10"
-                                                                                    onClick={() =>
-                                                                                    {
-                                                                                        invoke("send_input", { input: `/download ${u.id} ${f[1]}` })
-                                                                                            .catch((e: any) => setPopupMessage(e.toString()));
-                                                                                        setModal(null);
-                                                                                    }}
-                                                                                    title="Download File"
-                                                                                >
-                                                                                    <Download size={14} />
-                                                                                </button>
-                                                                            </div>
-                                                                     </div>
-                                                             ))}
-                                                        </div>
-                                                 </div>
-                                            )) : <div className="text-muted-foreground text-sm">No files available.</div>
-                                     )}
-                                </div>
-                                <button onClick={() => setModal(null)} className="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors shadow-sm focus:outline-none">Close</button>
-                         </div>
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
+                        <div className="w-full min-w-[300px] max-w-md rounded-md border border-border bg-card p-6 shadow-2xl">
+                            <h2 className="mb-4 text-lg font-bold">
+                                {modal.type === "users" && "Users Online"}
+                                {modal.type === "files" && "Available Files"}
+                                {modal.type === "bans" && "Bans"}
+                                {modal.type === "settings" && "Server Settings"}
+                            </h2>
+
+                            <div className="custom-scrollbar mb-6 max-h-64 space-y-2 overflow-y-auto pr-2">
+                                {modal.type === "users" && (modal.users.length > 0 ? modal.users.map((user) => (
+                                    <div key={user.id} className="flex items-center justify-between border-b border-border/50 py-1 text-sm last:border-0">
+                                        <span className="font-semibold">{user.username}</span>
+                                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                            {user.channel && <span className="text-primary">#{user.channel}</span>}
+                                            <span>ID: {user.id}</span>
+                                        </div>
+                                    </div>
+                                )) : <div className="text-sm text-muted-foreground">No users online.</div>)}
+
+                                {modal.type === "files" && (modal.users.length > 0 ? modal.users.map((user) => (
+                                    <div key={user.id} className="mb-4 last:mb-0">
+                                        <div className="mb-2 text-sm font-semibold">{user.username} (ID: {user.id})</div>
+                                        <div className="space-y-2 border-l-2 border-primary/20 pl-3">
+                                            {user.uploads.map((file) => (
+                                                <div key={file.id} className="flex items-center justify-between py-0.5 text-xs">
+                                                    <span className="font-medium text-foreground/90">{file.filename}</span>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-muted-foreground">ID: {file.id}</span>
+                                                        <button
+                                                            className="rounded-sm p-1 text-primary transition-colors hover:bg-primary/10 hover:text-primary/80"
+                                                            onClick={() =>
+                                                            {
+                                                                send(`/download ${user.id} ${file.id}`);
+                                                                setModal(null);
+                                                            }}
+                                                            title="Download File"
+                                                        >
+                                                            <Download size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )) : <div className="text-sm text-muted-foreground">No files available.</div>)}
+
+                                {/* THE IDS RENUMBER WHENEVER ONE IS LIFTED, SO EACH SECTION COUNTS FROM ITS OWN ZERO */}
+                                {modal.type === "bans" && (modal.users.length + modal.ips.length > 0
+                                    ? ([["users", modal.users], ["addresses", modal.ips]] as const).map(([name, bans]) => bans.length > 0 && (
+                                        <div key={name} className="mb-4 last:mb-0">
+                                            <div className="mb-2 text-sm font-semibold capitalize">{name}</div>
+                                            <div className="space-y-1 border-l-2 border-primary/20 pl-3">
+                                                {bans.map((ban) => (
+                                                    <div key={ban.id} className="flex items-center justify-between py-0.5 text-xs">
+                                                        <span className="font-medium text-foreground/90">{ban.subject}</span>
+                                                        <span className="text-muted-foreground">ID: {ban.id}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                    : <div className="text-sm text-muted-foreground">No bans.</div>)}
+
+                                {modal.type === "settings" && (
+                                    <>
+                                        <p className="mb-3 text-xs text-muted-foreground">
+                                            Read-only here - edit them with the terminal client.
+                                        </p>
+                                        {modal.settings.map((setting) => (
+                                            <div key={`${setting.section}.${setting.key}`} className="border-b border-border/50 py-1 last:border-0">
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span className="font-mono font-medium">{setting.key}</span>
+                                                    <span className="font-mono text-xs text-muted-foreground">{setting.value}</span>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">{setting.description}</div>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => setModal(null)}
+                                className="w-full rounded-md bg-primary py-2.5 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 )}
 
                 {showCreateChannel && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm animate-fade-in px-4">
-                         <div className="bg-card border border-border rounded-md shadow-2xl p-6 min-w-[300px] max-w-sm w-full">
-                                <h2 className="text-lg font-bold mb-4">Create Channel</h2>
-                                <input
-                                    type="text"
-                                    value={newChannelName}
-                                    onChange={(e) => setNewChannelName(e.target.value)}
-                                    onKeyDown={(e) =>
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm animate-fade-in">
+                        <div className="w-full min-w-[300px] max-w-sm rounded-md border border-border bg-card p-6 shadow-2xl">
+                            <h2 className="mb-4 text-lg font-bold">Create Channel</h2>
+                            <input
+                                type="text"
+                                value={newChannelName}
+                                onChange={(event) => setNewChannelName(event.currentTarget.value)}
+                                onKeyDown={(event) =>
+                                {
+                                    if (event.key === "Enter" && newChannelName.trim())
                                     {
-                                        if (e.key === "Enter" && newChannelName.trim())
-                                        {
-                                            invoke("send_input", { input: `/channel ${newChannelName.trim()}` }).catch((e: any) => setPopupMessage(e.toString()));
-                                            setShowCreateChannel(false);
-                                            setNewChannelName("");
-                                        }
+                                        send(`/channel ${newChannelName.trim()}`);
+                                        setShowCreateChannel(false);
+                                        setNewChannelName("");
+                                    }
+                                }}
+                                className="mb-6 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                placeholder="Channel name..."
+                                autoFocus
+                            />
+                            <div className="flex space-x-3">
+                                <button
+                                    onClick={() =>
+                                    {
+                                        if (newChannelName.trim()) send(`/channel ${newChannelName.trim()}`);
+
+                                        setShowCreateChannel(false);
+                                        setNewChannelName("");
                                     }}
-                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary mb-6"
-                                    placeholder="Channel name..."
-                                    autoFocus
-                                />
-                                <div className="flex space-x-3">
-                                    <button
-                                         onClick={() =>
-                                         {
-                                             if (newChannelName.trim())
-                                             {
-                                                 invoke("send_input", { input: `/channel ${newChannelName.trim()}` }).catch((e: any) => setPopupMessage(e.toString()));
-                                             }
-                                             setShowCreateChannel(false);
-                                             setNewChannelName("");
-                                         }}
-                                         className="flex-1 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors shadow-sm focus:outline-none"
-                                    >
-                                         Create
-                                    </button>
-                                    <button
-                                         onClick={() => { setShowCreateChannel(false); setNewChannelName(""); }}
-                                         className="flex-1 py-2 bg-secondary text-secondary-foreground rounded-md font-medium hover:bg-secondary/90 transition-colors shadow-sm focus:outline-none"
-                                    >
-                                         Cancel
-                                    </button>
-                                </div>
-                         </div>
+                                    className="flex-1 rounded-md bg-primary py-2 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none"
+                                >
+                                    Create
+                                </button>
+                                <button
+                                    onClick={() => { setShowCreateChannel(false); setNewChannelName(""); }}
+                                    className="flex-1 rounded-md bg-secondary py-2 font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/90 focus:outline-none"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
                 <div className="flex flex-1 overflow-hidden">
-                    <div className="flex-1 flex flex-col min-w-0 relative">
-                        <div className="flex-1 overflow-y-auto p-6 z-10 custom-scrollbar">
-                    {(messagesByChannel[currentChannel] || []).map((msg, idx) =>
-                    {
-                        const isSystem = !msg.username;
-                        const uColor = getAnsiColor(msg.username_color) || "var(--primary)";
-                        const mColor = getAnsiColor(msg.message_color) || "inherit";
+                    <div className="relative flex min-w-0 flex-1 flex-col">
+                        <div className="custom-scrollbar z-10 flex-1 overflow-y-auto p-6">
+                            {messages.map((message, index) =>
+                            {
+                                const spoken = message.kind === "user" || message.kind === "private";
 
-                        const prevMsg = idx > 0 ? messagesByChannel[currentChannel][idx - 1] : null;
-                        const isConsecutive = !isSystem && prevMsg && !(!prevMsg.username) && prevMsg.username === msg.username;
+                                const usernameColor = getAnsiColor(message.username_color) ?? "var(--primary)";
+                                const messageColor = getAnsiColor(message.message_color)
+                                    ?? (message.kind === "error" ? "var(--destructive)" : "inherit");
 
-                        return (
-                            <div key={idx} className={`flex w-full ${isSystem ? "items-center justify-center px-2 my-2" : `items-start space-x-4 hover:bg-white/5 rounded-md transition-colors px-2 ${isConsecutive ? "py-0 mt-0 mb-0" : "pt-2 pb-0 mt-4 mb-0"}`}`}>
-                                {isSystem ? (
-                                    <>
-                                        <div className="h-[1px] bg-border/60 flex-1"></div>
-                                        <span className="text-sm text-muted-foreground italic px-4 whitespace-nowrap" style={{ color: mColor }}>
-                                            {msg.text}
-                                        </span>
-                                        <div className="h-[1px] bg-border/60 flex-1"></div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className={`shrink-0 ${isConsecutive ? "w-10" : "flex h-10 w-10 items-center justify-center"}`}>
-                                            {!isConsecutive && (
+                                //CONSECUTIVE LINES BY THE SAME PERSON HANG UNDER THE FIRST ONE'S NAME
+                                const previous = index > 0 ? messages[index - 1] : null;
+                                const consecutive = spoken && previous?.kind === message.kind && previous.username === message.username;
+
+                                if (!spoken)
+                                {
+                                    return (
+                                        <div key={index} className="my-2 flex w-full items-center justify-center px-2">
+                                            <div className="h-px flex-1 bg-border/60"></div>
+                                            <span
+                                                className={`whitespace-pre-wrap px-4 text-sm italic ${message.kind === "system" ? "text-muted-foreground" : "font-medium"}`}
+                                                style={{ color: messageColor }}
+                                            >
+                                                {message.text}
+                                            </span>
+                                            <div className="h-px flex-1 bg-border/60"></div>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div
+                                        key={index}
+                                        className={`flex w-full items-start space-x-4 rounded-md px-2 transition-colors hover:bg-white/5 ${consecutive ? "my-0 py-0" : "mb-0 mt-4 pb-0 pt-2"}`}
+                                    >
+                                        <div className={`shrink-0 ${consecutive ? "w-10" : "flex h-10 w-10 items-center justify-center"}`}>
+                                            {!consecutive && (
                                                 <div
-                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold text-background uppercase shadow-sm"
-                                                    style={{ backgroundColor: uColor }}
+                                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold uppercase text-background shadow-sm"
+                                                    style={{ backgroundColor: usernameColor }}
                                                 >
-                                                    {msg.username.charAt(0)}
+                                                    {message.username.charAt(0)}
                                                 </div>
                                             )}
                                         </div>
-                                        <div className={`flex flex-col flex-1 min-w-0 ${isConsecutive ? "pt-0" : "pt-0.5"}`}>
-                                            {!isConsecutive && (
-                                                <span className="text-sm font-semibold mb-0.5" style={{ color: uColor }}>
-                                                    {msg.username}
+                                        <div className={`flex min-w-0 flex-1 flex-col ${consecutive ? "pt-0" : "pt-0.5"}`}>
+                                            {!consecutive && (
+                                                <span className="mb-0.5 text-sm font-semibold" style={{ color: usernameColor }}>
+                                                    {message.username}
                                                 </span>
                                             )}
-                                            <span className="text-sm leading-snug whitespace-pre-wrap break-words" style={{ color: mColor }}>
-                                                {msg.text}
+                                            <span className="whitespace-pre-wrap break-words text-sm leading-snug" style={{ color: messageColor }}>
+                                                {message.text}
                                             </span>
                                         </div>
-                                    </>
-                                )}
-                            </div>
-                        );
-                    })}
-                    <div ref={messagesEndRef} className="h-4" />
-                </div>
-
-                <div className="border-t border-border bg-background/80 p-4 backdrop-blur-md z-10 relative">
-                    {chatInput.startsWith("/") && (
-                        <div className="absolute bottom-full left-0 right-0 w-full max-w-6xl mx-auto pb-4 z-50">
-                            <div className="bg-card border border-border rounded-md shadow-2xl backdrop-blur-md overflow-hidden max-h-64 overflow-y-auto custom-scrollbar animate-fade-in-up">
-                                {filteredCommands.length > 0 ? (
-                                    <ul className="py-2">
-                                        {filteredCommands.map((cmd) => (
-                                            <li
-                                                key={cmd.name}
-                                                className="px-6 py-2 hover:bg-white/5 cursor-pointer transition-colors"
-                                                onClick={() =>
-                                                {
-                                                    setChatInput("/" + cmd.name + " ");
-                                                    document.getElementById("chat-input")?.focus();
-                                                }}
-                                            >
-                                                <div className="flex items-baseline space-x-2">
-                                                    <span className="font-bold text-primary">/{cmd.name}</span>
-                                                    {cmd.args.map((arg, i) => (
-                                                        <span key={i} className={`text-xs font-semibold ${arg.required ? 'text-foreground/80' : 'text-muted-foreground'}`}>
-                                                            {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                                <div className="text-xs text-muted-foreground mt-0.5">{cmd.description}</div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <div className="px-6 py-4 text-sm text-muted-foreground">No matching commands found.</div>
-                                )}
-                            </div>
+                                    </div>
+                                );
+                            })}
+                            <div ref={messagesEndRef} className="h-4" />
                         </div>
-                    )}
 
-                    <form onSubmit={handleChatSubmit} className="flex w-full max-w-6xl mx-auto relative items-center">
-                        <div className="absolute left-2 flex items-center gap-1 z-10">
-                            <button
-                                type="button"
-                                onClick={async () =>
-                                {
-                                    const selected = await open({ multiple: false });
-                                    if (selected)
-                                    {
-                                        const path = typeof selected === 'string' ? selected : (selected as any).path || (Array.isArray(selected) ? selected[0] : null);
-                                        if (path)
-                                        {
-                                            const fileName = path.split(/[\\/]/).pop() || path;
-                                            setPopupMessage(`Uploading ${fileName}...`);
-                                            invoke("upload_file_from_path", { path }).catch((e: any) => setPopupMessage(e.toString()));
-                                        }
-                                    }
-                                }}
-                                className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                                title="Upload File"
-                            >
-                                <Paperclip size={18} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() =>
-                                {
-                                    invoke("send_input", { input: "/files" }).catch((e: any) => setPopupMessage(e.toString()));
-                                }}
-                                className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                                title="View Files"
-                            >
-                                <Folder size={18} />
-                            </button>
-                        </div>
-                        <input
-                            id="chat-input"
-                            type="text"
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
-                            className="w-full rounded-md border border-input bg-card/50 pl-20 pr-12 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all shadow-sm"
-                            placeholder="Type your message..."
-                            autoFocus
-                        />
-                        <button
-                            type="submit"
-                            disabled={!chatInput.trim()}
-                            className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-primary hover:bg-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <Send size={18} />
-                        </button>
-                    </form>
-                </div>
-                </div>
+                        <div className="relative z-10 border-t border-border bg-background/80 p-4 backdrop-blur-md">
+                            {typed !== null && (
+                                <div className="absolute bottom-full left-0 right-0 z-50 mx-auto w-full max-w-6xl pb-4">
+                                    <div className="custom-scrollbar max-h-64 overflow-hidden overflow-y-auto rounded-md border border-border bg-card shadow-2xl backdrop-blur-md animate-fade-in-up">
+                                        {suggestions.length > 0 ? (
+                                            <ul className="py-2">
+                                                {suggestions.map((entry) => (
+                                                    <li
+                                                        key={entry.name}
+                                                        className="cursor-pointer px-6 py-2 transition-colors hover:bg-white/5"
+                                                        onClick={() =>
+                                                        {
+                                                            setChatInput(`/${entry.name} `);
+                                                            document.getElementById("chat-input")?.focus();
+                                                        }}
+                                                    >
+                                                        <div className="flex items-baseline space-x-2">
+                                                            <span className="font-bold text-primary">/{entry.name}</span>
+                                                            {entry.args.map((arg) => (
+                                                                <span
+                                                                    key={arg.name}
+                                                                    className={`text-xs font-semibold ${arg.required ? "text-foreground/80" : "text-muted-foreground"}`}
+                                                                    title={arg.description}
+                                                                >
+                                                                    {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                        <div className="mt-0.5 text-xs text-muted-foreground">{entry.description}</div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            <div className="px-6 py-4 text-sm text-muted-foreground">No matching commands found.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
-                <div className="w-64 border-l border-border bg-card/30 flex flex-col z-10">
-                    <div className="p-4 border-b border-border flex justify-between items-center">
-                        <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Channels</h2>
-                        <button
-                            onClick={() => setShowCreateChannel(true)}
-                            className="text-primary hover:text-primary/80 transition-colors p-1 rounded-sm hover:bg-primary/10"
-                            title="Create Channel"
-                        >
-                            <Plus size={16} />
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
-                        {channels.map(c =>
-                        {
-                            const isCurrent = c === currentChannel;
-                            const display = c === "" ? "chat lobby" : c;
-                            return (
-                                <React.Fragment key={display}>
+                            <form onSubmit={handleChatSubmit} className="relative mx-auto flex w-full max-w-6xl items-center">
+                                <div className="absolute left-2 z-10 flex items-center gap-1">
                                     <button
-                                        onClick={() => invoke("send_input", { input: c === "" ? "/channel" : `/channel ${c}` }).catch((e: any) => setPopupMessage(e.toString()))}
-                                        className={`w-full text-left px-3 py-2 rounded-md flex items-center gap-2 text-sm transition-colors ${
-                                            isCurrent
-                                                ? "bg-primary/20 text-primary font-medium"
-                                                : "text-foreground/70 hover:bg-white/5 hover:text-foreground"
-                                        }`}
+                                        type="button"
+                                        onClick={uploadFile}
+                                        className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
+                                        title="Upload File"
                                     >
-                                        <Hash size={14} className={isCurrent ? "text-primary" : "text-muted-foreground"} />
-                                        <span className="truncate">{display}</span>
-                                        {isCurrent && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
+                                        <Paperclip size={18} />
                                     </button>
-                                    {c === "" && channels.length > 1 && (
-                                        <div className="my-2 border-b border-border/50 mx-2" />
-                                    )}
-                                </React.Fragment>
-                            );
-                        })}
+                                    <button
+                                        type="button"
+                                        onClick={() => send("/files")}
+                                        className="flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
+                                        title="View Files"
+                                    >
+                                        <Folder size={18} />
+                                    </button>
+                                </div>
+                                <input
+                                    id="chat-input"
+                                    type="text"
+                                    value={chatInput}
+                                    onChange={(event) => setChatInput(event.currentTarget.value)}
+                                    className="w-full rounded-md border border-input bg-card/50 py-3 pl-20 pr-12 text-sm text-foreground shadow-sm transition-all placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                    placeholder="Type your message..."
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!chatInput.trim()}
+                                    className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-primary transition-all hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <Send size={18} />
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div className="z-10 flex w-64 flex-col border-l border-border bg-card/30">
+                        <div className="flex items-center justify-between border-b border-border p-4">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Channels</h2>
+                            <button
+                                onClick={() => setShowCreateChannel(true)}
+                                className="rounded-sm p-1 text-primary transition-colors hover:bg-primary/10 hover:text-primary/80"
+                                title="Create Channel"
+                            >
+                                <Plus size={16} />
+                            </button>
+                        </div>
+                        <div className="custom-scrollbar flex-1 space-y-1 overflow-y-auto p-2">
+                            {channels.map((channel) =>
+                            {
+                                const current = channel === currentChannel;
+                                const display = channel === LOBBY ? "chat lobby" : channel;
+                                const here = users.filter((user) => (user.channel ?? LOBBY) === channel).length;
+
+                                return (
+                                    <React.Fragment key={display}>
+                                        <button
+                                            onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
+                                            className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                                current
+                                                    ? "bg-primary/20 font-medium text-primary"
+                                                    : "text-foreground/70 hover:bg-white/5 hover:text-foreground"
+                                            }`}
+                                        >
+                                            <Hash size={14} className={current ? "text-primary" : "text-muted-foreground"} />
+                                            <span className="truncate">{display}</span>
+                                            <span className="ml-auto flex items-center gap-2">
+                                                {here > 0 && <span className="text-xs text-muted-foreground">{here}</span>}
+                                                {current && <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
+                                            </span>
+                                        </button>
+                                        {channel === LOBBY && channels.length > 1 && <div className="mx-2 my-2 border-b border-border/50" />}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
-            </div>
             </main>
         );
     }
 
     return (
         <main className="dark flex h-screen w-screen items-center justify-center bg-background text-foreground noise-overlay">
-            {tofuPrompt && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm animate-fade-in px-4">
-                     <div className="bg-card border border-border rounded-md shadow-2xl p-6 min-w-[300px] max-w-md w-full">
-                            <h2 className="text-lg font-bold mb-4 text-destructive">Unknown Server Identity</h2>
-                            <p className="text-sm text-muted-foreground mb-4">
-                                The server's identity key is not stored in local configuration.
-                            </p>
-                            <div className="bg-background border border-border rounded-md p-3 mb-6 break-all font-mono text-xs text-foreground/80">
-                                {tofuPrompt.hash}
-                            </div>
-                            <p className="text-sm font-medium mb-6">Do you trust this server?</p>
-                            <div className="flex space-x-3">
-                                <button
-                                     onClick={async () =>
-                                     {
-                                            await invoke("accept_tofu", { ip: tofuPrompt.ip, hash: tofuPrompt.hash });
-                                            const ipToConnect = tofuPrompt.ip;
-                                            setTofuPrompt(null);
-                                            setConnecting(true);
-                                            setErrorMsg("");
-                                            invoke("connect_to_server", { ip: ipToConnect }).catch((err: any) => { setErrorMsg(err.toString()); setConnecting(false); });
-                                     }}
-                                     className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition-colors shadow-sm focus:outline-none"
-                                >
-                                     Yes, Connect
-                                </button>
-                                <button
-                                     onClick={() => { setTofuPrompt(null); setErrorMsg("Connection aborted."); }}
-                                     className="flex-1 py-2.5 bg-secondary text-secondary-foreground rounded-md font-medium hover:bg-secondary/90 transition-colors shadow-sm focus:outline-none"
-                                >
-                                     No, Abort
-                                </button>
-                            </div>
-                     </div>
-                </div>
-            )}
-            <div className="animate-fade-in-up relative z-10 w-full max-w-md rounded-md border border-border bg-card/50 p-8 shadow-2xl backdrop-blur-sm">
+            {tofuOverlay}
+
+            <div className="relative z-10 w-full max-w-md rounded-md border border-border bg-card/50 p-8 shadow-2xl backdrop-blur-sm animate-fade-in-up">
                 <div className="mb-8 flex flex-col items-center justify-center text-center">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-md bg-primary/10 text-primary transition-all duration-300">
                         {renderIcon()}
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                        {renderTitle()}
-                    </h1>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        {renderDescription()}
-                    </p>
+                    <h1 className="text-3xl font-bold tracking-tight text-foreground">{renderTitle()}</h1>
+                    <p className="mt-2 text-sm text-muted-foreground">{renderDescription()}</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
-                        <label htmlFor="inputField" className="text-sm font-medium text-foreground capitalize">
-                            {uiState === "server_select" ? "Server IP" : uiState.split("_")[0]}
+                        <label htmlFor="inputField" className="text-sm font-medium capitalize text-foreground">
+                            {uiState === "server_select" ? "Server address" : uiState.split("_")[0]}
                         </label>
                         <input
                             id="inputField"
                             ref={loginInputRef}
-                            type={inputType}
+                            type={uiState === "password_prompt" ? "password" : "text"}
                             value={inputValue}
-                            onChange={(e) => setInputValue(e.currentTarget.value)}
+                            onChange={(event) => setInputValue(event.currentTarget.value)}
                             placeholder={uiState === "server_select" ? "e.g., 192.168.1.100" : ""}
-                            className="w-full rounded-md border border-input bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors shadow-sm"
+                            className="w-full rounded-md border border-input bg-background px-4 py-3 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             autoFocus
                             disabled={connecting}
                         />
-                        {errorMsg && <p className="text-sm text-destructive mt-1">{errorMsg}</p>}
+                        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+                        {errorMsg && <p className="mt-1 text-sm text-destructive">{errorMsg}</p>}
                     </div>
 
                     <button
                         type="submit"
                         disabled={!inputValue || connecting}
-                        className="group flex w-full items-center justify-center rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 shadow-md"
+                        className="group flex w-full items-center justify-center rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-md transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {connecting ? "Processing..." : "Continue"}
-                        {!connecting && (
-                            <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                        )}
+                        {!connecting && <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />}
                     </button>
                 </form>
             </div>

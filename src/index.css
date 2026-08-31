@@ -16,8 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@import "tailwindcss";
+/* THE FONT COMES FIRST - @import ONLY COUNTS BEFORE ANY RULE, AND THE TAILWIND IMPORT EXPANDS INTO RULES */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+@import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
