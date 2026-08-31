@@ -310,12 +310,18 @@ a picture nobody sees is worth nothing a second later.
   start code — an IDR slice, or the parameter sets in front of one), and the **codec string's level only has
   to be at least the stream's**, so the highest supported of `avc1.42E034`/`42E028`/`42E01E` wins. The
   stream is Annex-B, which is why the config carries no `description`.
-- **It cannot** — which is the common case on WebKitGTK, where WebCodecs exists but its H.264 decoder often
-  does not — `screen_frames` decodes with `openh264` (the crate's own decoder) and sends JPEGs the canvas
-  draws through `createImageBitmap`. That runs on a **thread and not a task**: decode plus re-encode is tens
-  of milliseconds of unbroken CPU. Every frame is decoded, because H.264 is predicted and skipping one
-  breaks the frames after it, but only the newest of whatever piled up is re-encoded — the older ones would
-  be wrong by the time they were drawn.
+- **It cannot** — the common case on WebKitGTK, where WebCodecs exists but the GStreamer H.264 decoder
+  behind it often is not installed (`avdec_h264` from gst-libav, or `openh264dec`; without one,
+  `isConfigSupported` says no to every spelling) — `screen_frames` decodes with `openh264` (the crate's own
+  decoder) and sends JPEGs the canvas draws through `createImageBitmap`. That runs on a **thread and not a
+  task**: decode plus re-encode is tens of milliseconds of unbroken CPU. Every frame is decoded, because
+  H.264 is predicted and skipping one breaks the frames after it, but only the newest of whatever piled up
+  is re-encoded — the older ones would be wrong by the time they were drawn. This is the path that has to be
+  kept cheap, and the two things that keep it cheap are `JPEG_WIDTH` and `JPEG_QUALITY`: `write_rgb` takes
+  every *step*-th pixel while it converts, so a 4K share is converted, encoded and shipped at a third of its
+  width — every pixel past the pane's own is paid for three times over. It is the same drain-the-backlog,
+  draw-only-the-newest shape as the TUI's `display.rs`; what the TUI has and this cannot is the GPU, where
+  the YUV planes go up as they are and a shader does the conversion.
 
 Either way the picture lands in a `<canvas>` above the message pane, so the chat keeps running underneath it.
 

@@ -104,7 +104,12 @@ const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
 //PHOTOGRAPH: TEXT HAS TO SURVIVE IT, AND THE BYTES ONLY TRAVEL AS FAR AS THE CANVAS IN THE SAME PROCESS
-const JPEG_QUALITY: u8 = 80;
+const JPEG_QUALITY: u8 = 72;
+
+//AND HOW WIDE IT IS DRAWN AT. THE PANE IS A FRACTION OF THE SCREEN BEING SHARED, AND EVERY PIXEL PAST THIS
+//IS PAID FOR THREE TIMES OVER - THE CONVERSION, THE ENCODE, AND THE TRIP ACROSS THE BRIDGE. TAKING A 4K
+//SHARE DOWN BY THREE IS THE WHOLE DIFFERENCE BETWEEN A PICTURE AND A SLIDESHOW
+const JPEG_WIDTH: usize = 1280;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
@@ -1561,6 +1566,48 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
     Ok(())
 }
 
+//I420 TO RGB, TAKING EVERY step-TH PIXEL ON THE WAY. openh264 HAS A SIMD CONVERTER OF ITS OWN, BUT IT ONLY
+//CONVERTS EVERY PIXEL - AND THE ONES THIS DROPS ARE THE ONES THE PANE WOULD SCALE AWAY ANYHOW. THE MATH IS
+//THE USUAL BT.601 LIMITED-RANGE ONE, WHICH IS WHAT THE CAPTURE ENCODED WITH
+fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>) -> (usize, usize)
+{
+    let (width, height) = yuv.dimensions();
+    let (y_stride, u_stride, v_stride) = yuv.strides();
+
+    let (out_width, out_height) = (width / step, height / step);
+
+    rgb.clear();
+    rgb.reserve(out_width * out_height * 3);
+
+    let (luma, blue, red) = (yuv.y(), yuv.u(), yuv.v());
+
+    for row in 0..out_height
+    {
+        let line = row * step;
+        let chroma = (line / 2) * u_stride;
+        let chroma_v = (line / 2) * v_stride;
+
+        for column in 0..out_width
+        {
+            let pixel = column * step;
+
+            let y = luma[line * y_stride + pixel] as i32 - 16;
+            let u = blue[chroma + pixel / 2] as i32 - 128;
+            let v = red[chroma_v + pixel / 2] as i32 - 128;
+
+            let r = (298 * y + 409 * v + 128) >> 8;
+            let g = (298 * y - 100 * u - 208 * v + 128) >> 8;
+            let b = (298 * y + 516 * u + 128) >> 8;
+
+            rgb.push(r.clamp(0, 255) as u8);
+            rgb.push(g.clamp(0, 255) as u8);
+            rgb.push(b.clamp(0, 255) as u8);
+        }
+    }
+
+    (out_width, out_height)
+}
+
 //SOMEBODY ELSE'S SCREEN, ON ITS WAY TO THE PANE. THE FAST PATH HANDS THE H.264 STRAIGHT OVER AND THE
 //WEBVIEW DECODES IT; WHERE THE WEBVIEW CANNOT (WebCodecs IS NOT EVERYWHERE, AND WHERE IT IS THE H.264
 //DECODER BEHIND IT MAY NOT BE), THE FRAME IS DECODED HERE AND SENT ON AS A JPEG THE CANVAS CAN DRAW
@@ -1621,10 +1668,9 @@ fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver<Vec<u8>>)
 
             if index != newest { continue }
 
-            let (width, height) = yuv.dimensions();
-
-            rgb.resize(width * height * 3, 0);
-            yuv.write_rgb8(&mut rgb);
+            //A SHARE IS WHATEVER SIZE SOMEBODY ELSE'S MONITOR IS, AND THE PANE IS NOT THAT SIZE
+            let step = yuv.dimensions().0.div_ceil(JPEG_WIDTH).max(1);
+            let (width, height) = write_rgb(&yuv, step, &mut rgb);
 
             let mut jpeg = Vec::with_capacity(rgb.len() / 8);
 

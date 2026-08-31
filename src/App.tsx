@@ -386,7 +386,7 @@ function branches(rows: BlockRow[]): string[]
 //HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS
 //WHO IS SHARING IS ONLY EVER ANSWERED AND NEVER ANNOUNCED, SO IT IS ASKED AGAIN NOW AND THEN - OFTEN
 //ENOUGH THAT THE WATCH BUTTONS IN THE MEMBER LIST ARE HONEST, RARELY ENOUGH TO BE NOTHING ON THE WIRE
-const SCREENS_POLL = 30000;
+const SCREENS_POLL = 10000;
 
 const PALETTE_ROWS = 8;
 
@@ -996,8 +996,13 @@ function App()
     const filesRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    //WHETHER THE ANSWER ON ITS WAY WAS ASKED FOR BY US RATHER THAN BY SOMEBODY TYPING /screens
-    const pollingRef = useRef(false);
+    //HOW MANY OF THE ANSWERS ON THEIR WAY WERE ASKED FOR BY US RATHER THAN BY SOMEBODY TYPING /screens.
+    //A COUNT AND NOT A FLAG, SINCE THE CLOCK AND A SHARE STARTING CAN BOTH BE IN FLIGHT AT ONCE
+    const pollingRef = useRef(0);
+
+    //WHETHER THE SESSION HAS ALREADY HAD ITS FIRST ASK, SO THE ONE THE CONNECTION ITSELF WOULD FIRE IS NOT
+    //SENT ON TOP OF THE ROSTER
+    const screensReadyRef = useRef(false);
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1286,7 +1291,7 @@ function App()
                 {
                     setSharers(payload.data.users);
 
-                    if (pollingRef.current) pollingRef.current = false;
+                    if (pollingRef.current > 0) pollingRef.current -= 1;
                     else setScreensOpen(true);
 
                     break;
@@ -1558,6 +1563,15 @@ function App()
 
     useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
 
+    //ASKED FOR BY US AND NOT BY SOMEBODY TYPING IT, WHICH IS THE DIFFERENCE BETWEEN FILLING THE LIST IN
+    //AND THROWING A WINDOW OPEN IN SOMEBODY'S FACE
+    const askScreens = () =>
+    {
+        pollingRef.current += 1;
+
+        send("/screens");
+    };
+
     //ONE DOOR FOR BOTH HALVES OF THE SUBJECT: WHICH OF OUR SCREENS TO SHARE, AND WHOSE TO WATCH. THE
     //MONITORS ARE ASKED OF THE SAME VOCABULARY THE PALETTE USES, AND THE SHARERS OF THE SERVER, BECAUSE
     //IT ONLY EVER ANSWERS THAT QUESTION AND NEVER VOLUNTEERS IT
@@ -1569,7 +1583,7 @@ function App()
             .then((values) => setMonitors(values.map((value) => value.value)))
             .catch(() => setMonitors([]));
 
-        send("/screens");
+        askScreens();
     };
 
     //SOMEBODY ELSE'S SCREEN, DRAWN HERE RATHER THAN IN A WINDOW OF THE CRATE'S OWN. THE FRAMES ARRIVE ON A
@@ -1693,13 +1707,24 @@ function App()
     {
         if (!connected) return;
 
-        const ask = () => { pollingRef.current = true; send("/screens"); };
-
-        const first = setTimeout(ask, 2500);
-        const clock = setInterval(ask, SCREENS_POLL);
+        const first = setTimeout(askScreens, 2500);
+        const clock = setInterval(askScreens, SCREENS_POLL);
 
         return () => { clearTimeout(first); clearInterval(clock); };
     }, [connected]);
+
+    //A SHARE STARTING OR STOPPING - OURS OR THE ONE WE ARE WATCHING - CHANGES THE ANSWER, AND WAITING OUT
+    //THE CLOCK FOR IT WOULD LEAVE A BUTTON STANDING THAT NO LONGER GOES ANYWHERE
+    useEffect(() =>
+    {
+        if (!connected) { screensReadyRef.current = false; return; }
+
+        //THE FIRST PASS IS THE CONNECTION ITSELF, WHICH THE CLOCK'S OWN FIRST ASK ALREADY COVERS - AND THE
+        //SERVER COUNTS PACKETS, SO ASKING TWICE IN THE SAME BREATH AS THE ROSTER EARNS A WARNING
+        if (!screensReadyRef.current) { screensReadyRef.current = true; return; }
+
+        askScreens();
+    }, [connected, screen.sharing, watching]);
 
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
@@ -2795,7 +2820,41 @@ function App()
                 </header>
 
                 <div className="scroller flex-1 px-2.5 pb-3">
-                    <SectionLabel>Yours</SectionLabel>
+                    <SectionLabel>Being shared</SectionLabel>
+
+                    {sharers.length === 0 && (
+                        <div className="px-2 py-2 text-sm text-faint">Nobody is sharing right now.</div>
+                    )}
+
+                    {sharers.map((user) =>
+                    {
+                        const own = user.username === username;
+                        const here = watching === user.username;
+
+                        return (
+                            <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
+                                <Avatar name={user.username} size={28} />
+
+                                <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
+
+                                {own
+                                    ? <span className="shrink-0 text-[11px] text-faint">you</span>
+                                    : (
+                                        <button
+                                            type="button"
+                                            onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
+                                            className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
+                                                ? "border border-border text-muted hover:border-error hover:text-error"
+                                                : "bg-accent text-black/85 hover:brightness-110"}`}
+                                        >
+                                            {here ? "Stop watching" : "Watch"}
+                                        </button>
+                                    )}
+                            </div>
+                        );
+                    })}
+
+                    <SectionLabel>Share one of yours</SectionLabel>
 
                     {monitors.length === 0 && (
                         <div className="px-2 py-2 text-sm text-faint">No monitor to share.</div>
@@ -2823,35 +2882,6 @@ function App()
                             </button>
                         );
                     })}
-
-                    <SectionLabel>Everybody else</SectionLabel>
-
-                    {sharers.filter((user) => user.username !== username).length === 0 && (
-                        <div className="px-2 py-2 text-sm text-faint">Nobody else is sharing right now.</div>
-                    )}
-
-                    {sharers.filter((user) => user.username !== username).map((user) =>
-                    {
-                        const here = watching === user.username;
-
-                        return (
-                            <div key={user.id} className="flex items-center gap-2.5 rounded-app px-1.5 py-1.5">
-                                <Avatar name={user.username} size={28} />
-
-                                <span className="min-w-0 flex-1 truncate text-sm">{user.username}</span>
-
-                                <button
-                                    type="button"
-                                    onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) setScreensOpen(false); }}
-                                    className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
-                                        ? "border border-border text-muted hover:border-error hover:text-error"
-                                        : "bg-accent text-black/85 hover:brightness-110"}`}
-                                >
-                                    {here ? "Stop watching" : "Watch"}
-                                </button>
-                            </div>
-                        );
-                    })}
                 </div>
 
                 <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
@@ -2859,7 +2889,7 @@ function App()
 
                     <button
                         type="button"
-                        onClick={() => send("/screens")}
+                        onClick={askScreens}
                         className="rounded-app border border-border px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-border-strong hover:text-text"
                     >
                         Refresh
