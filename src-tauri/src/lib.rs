@@ -45,7 +45,7 @@ use tokio::
 
 use sha2::{ Sha256, Digest };
 
-use serde::Serialize;
+use serde::{ Serialize, Deserialize };
 
 use tauri::
 {
@@ -121,6 +121,20 @@ const COLORS: [&str; 16] =
 ];
 
 const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
+
+//THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: LABEL, KEY, AND WHETHER THE
+//KEY IS PHRASED AS A NEGATIVE. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT MEANS - disable_colors HELD
+//IS "Message colors" TURNED OFF. THE AUDIO ROWS ABOVE THEM IN THE TUI BELONG TO client_voice, WHICH THIS
+//BUILD DOES NOT CARRY
+const CLIENT_SETTINGS: [(&str, &str, bool); 3] =
+[
+    ("Message colors",  "disable_colors", true),
+    ("Background logo", "disable_logo",   true),
+    ("Show client IDs", "show_id",        false),
+];
+
+//THE HEADING THEY SIT UNDER, WHICH IS THE ONE THE TUI GIVES THEM
+const CLIENT_SECTION: &str = "Interface";
 
 //STRUCTS
 struct AppState
@@ -210,6 +224,39 @@ struct CommandInfo
     subcommands: Vec<SubcommandInfo>, //EMPTY UNLESS THE COMMAND IS A DOORWAY TO ACTIONS
 }
 
+//ONE ROW OF client.toml THE BOX LETS THE USER TURN OVER. EVERY ONE OF THEM IS A TOGGLE HERE, AND EVERY
+//ONE IS WRITTEN THROUGH THE MOMENT IT IS FLIPPED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
+#[derive(Serialize, Clone)]
+struct ClientSetting
+{
+    label: String,
+    key: String,
+    section: String,
+    on: bool, //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
+}
+
+//ONE ROW OF server.toml, BOTH WAYS: THE SERVER SENDS ITS WHOLE CONFIG THIS WAY, AND A SAVE SENDS BACK
+//THE ONES THAT WERE EDITED. NOTHING HERE NAMES A KEY - A KEY ADDED TO server.toml NEEDS NO CHANGE HERE
+#[derive(Serialize, Deserialize, Clone)]
+struct SettingRow
+{
+    key: String,
+    value: SettingValueInfo,
+    section: String,     //THE '# Network' HEADING THE KEY SITS UNDER
+    description: String, //THE TRAILING COMMENT ON THE KEY'S OWN LINE
+    restart: bool,       //STORED LIKE ANY OTHER, BUT THE RUNNING SERVER KEEPS USING WHAT IT READ AT STARTUP
+}
+
+//THE THREE DATATYPES THE SERVER'S CONFIG UNDERSTANDS, TAGGED THE WAY EVERY OTHER ENUM HERE IS
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum SettingValueInfo
+{
+    Toggle(bool),
+    Number(i64),
+    Text(String),
+}
+
 //ONE ANSWER A PARAMETER ACCEPTS. A COLOR CARRIES ITS OWN CODE ALONG, SO THE ROW CAN BE PAINTED IN IT -
 //A NAME OUT OF A VOCABULARY NOBODY HAS SEEN IS STILL A GUESS
 #[derive(Serialize, Clone)]
@@ -259,6 +306,8 @@ enum UiEvent
     Users { users: Vec<OnlineUserInfo> },                         //THE ROSTER BEHIND THE SIDEBAR
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /files, /list, BANS
+    OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
+    ServerSettings { settings: Vec<SettingRow>, saved: bool },     //server.toml, EITHER ASKED FOR OR JUST STORED
     ChannelChanged { channel: Option<String> },                   //WE SWITCHED CHANNEL
     ChannelCreated { name: String },                              //SOMEBODY OPENED ONE
     ChannelDestroyed { name: String },                            //THE LAST ONE LEFT IT
@@ -792,34 +841,27 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
             block(app, format!("Bans ({total})"), rows);
         },
 
+        //server.toml CAME BACK - EITHER THE COPY THE BOX ASKED FOR, OR THE ONE THE SERVER JUST STORED.
+        //THE ANSWER TO A SAVE IS THE CONFIG AS IT ACTUALLY STANDS, SO A ROW IT REFUSED SNAPS BACK
         ClientEvent::ServerSettings(settings, saved) =>
         {
-            //THE ANSWER TO A SAVE IS THE CONFIG AS IT ACTUALLY STANDS, AND NOTHING HERE CAN SAVE ONE
-            if saved { return say(app, ChatMessage::ok("Server settings saved.")) }
+            if saved { say(app, ChatMessage::ok("Server settings saved.")) }
 
-            let rows = settings.into_iter().map(|ServerSetting { key, value, description, restart, .. }|
+            let settings = settings.into_iter().map(|ServerSetting { key, value, section, description, restart }| SettingRow
             {
-                BlockRow
+                key,
+                value: match value
                 {
-                    depth: 0,
-                    id: None,
-                    text: format!("{key} = {}", match value
-                    {
-                        SettingValue::Toggle(value) => value.to_string(),
-                        SettingValue::Number(value) => value.to_string(),
-                        SettingValue::Text(value) => value,
-                    }),
-                    note: Some(match restart
-                    {
-                        true => format!("{description} (restart)"),
-                        false => description,
-                    }),
-                    accent: false,
-                    download: None,
-                }
+                    SettingValue::Toggle(on) => SettingValueInfo::Toggle(on),
+                    SettingValue::Number(number) => SettingValueInfo::Number(number),
+                    SettingValue::Text(text) => SettingValueInfo::Text(text),
+                },
+                section,
+                description,
+                restart,
             }).collect();
 
-            block(app, String::from("Server settings"), rows);
+            emit(app, UiEvent::ServerSettings { settings, saved });
         },
 
         //SIDEBAR-ONLY - THE SERVER BROADCASTS THESE TO EVERYONE, WHICH IS ALREADY THE WHOLE TRUTH ABOUT
@@ -965,9 +1007,9 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
     let role = *state.role.lock().unwrap();
 
     command::COMMAND_LIST.iter()
-        //THE TWO THE TUI PRINTS INTO ITS OWN PANE HAVE NOWHERE TO GO HERE, AND THE SETTINGS OVERLAY
-        //IS A TERMINAL WIDGET - THE DESKTOP APP HAS ITS OWN WINDOW FOR ALL THREE
-        .filter(|info| !matches!(info.command, Command::Help | Command::Info | Command::Settings))
+        //THE TWO THE TUI PRINTS INTO ITS OWN PANE HAVE NOWHERE TO GO HERE - THE PALETTE IS THE HELP,
+        //AND IT SAYS WHAT EVERY COMMAND AND EVERY PARAMETER OF ONE IS FOR WHILE IT IS BEING TYPED
+        .filter(|info| !matches!(info.command, Command::Help | Command::Info))
         .filter(|info| info.available(role))
         .map(|info| CommandInfo
         {
@@ -984,6 +1026,95 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
             }).collect(),
         })
         .collect()
+}
+
+//OUR OWN CONFIG, AS THE SETTINGS BOX SHOWS IT. THE TUI READS EVERY VALUE OUT OF THE CONFIG ONCE WHEN THE
+//OVERLAY OPENS AND NEVER RE-READS IT WHILE DRAWING - SO DOES THIS
+#[tauri::command]
+fn get_client_settings() -> Vec<ClientSetting>
+{
+    CLIENT_SETTINGS.iter().map(|(label, key, invert)|
+    {
+        let stored = config::read_config::<bool>(key);
+
+        ClientSetting
+        {
+            label: label.to_string(),
+            key: key.to_string(),
+            section: CLIENT_SECTION.to_string(),
+            on: if *invert { !stored } else { stored },
+        }
+    }).collect()
+}
+
+//FLIP ONE OF THEM. IT IS WRITTEN THROUGH IMMEDIATELY - client.toml IS OURS, AND THE THREE KEYS ARE THE
+//ONES THE PANE DRAWS ITSELF FROM, SO THE CONFIG COMES BACK FOR THE WINDOW TO REDRAW ON THE SPOT
+#[tauri::command]
+fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, String>
+{
+    //ONLY THE ROWS THE BOX OFFERS - A KEY TYPED IN FROM ANYWHERE ELSE IS NOT ONE OF OURS TO WRITE
+    let Some((_, _, invert)) = CLIENT_SETTINGS.iter().find(|(_, candidate, _)| *candidate == key) else
+    {
+        return Err(String::from("Unknown setting!"));
+    };
+
+    config::client_write_bool(&key, if *invert { !on } else { on });
+
+    Ok(get_client_config())
+}
+
+//THE EDITED SERVER ROWS, IN ONE GO. THE BOX HOLDS THEM UNTIL THIS IS CALLED BECAUSE server.toml IS NOT
+//OURS TO WRITE - THE ANSWER IS THE CONFIG AS IT ACTUALLY STANDS, WHICH IS WHAT REDRAWS THE ROWS
+#[tauri::command]
+async fn save_server_settings(settings: Vec<SettingRow>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+{
+    if settings.is_empty() { return Ok(()) }
+
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected!")) };
+
+    //A KEY THE SERVER ONLY READS AT STARTUP IS STORED LIKE ANY OTHER - IT JUST WILL NOT DO ANYTHING YET
+    let restart = settings.iter().filter(|row| row.restart).map(|row| row.key.clone()).collect::<Vec<String>>();
+
+    let settings = settings.into_iter().map(|row| ServerSetting
+    {
+        key: row.key,
+        value: match row.value
+        {
+            SettingValueInfo::Toggle(on) => SettingValue::Toggle(on),
+            SettingValueInfo::Number(number) => SettingValue::Number(number),
+            SettingValueInfo::Text(text) => SettingValue::Text(text),
+        },
+
+        //THE SERVER IS THE ONE WHO KNOWS THESE - SENDING THEM BACK WOULD ONLY BE US QUOTING IT
+        section: String::new(),
+        description: String::new(),
+        restart: false,
+    }).collect();
+
+    send_packet(&state, &write_stream, PacketCode::ServerSettings { settings: Some(settings), save: true }).await;
+
+    //STORED IS NOT THE SAME AS IN USE FOR THESE - SAY SO ONCE, WHERE THE USER READS THINGS
+    if !restart.is_empty()
+    {
+        say(&app, ChatMessage::notice(format!("{} takes effect when the server is restarted.", restart.join(", "))));
+    }
+
+    Ok(())
+}
+
+//THE ONE BUTTON THAT ENDS THE SESSION FOR EVERYBODY ON THE SERVER. IT IS THE LAST THING THIS SOCKET
+//CARRIES: THE SERVER ANSWERS BY DISCONNECTING EVERYBODY AND GOING DOWN, WHICH LANDS US BACK IN THE
+//CONNECT BOX LIKE ANY OTHER DROP
+#[tauri::command]
+async fn restart_server(app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected!")) };
+
+    send_packet(&state, &write_stream, PacketCode::ServerRestart).await;
+
+    say(&app, ChatMessage::notice("Restarting the server..."));
+
+    Ok(())
 }
 
 //THE ANSWERS ONE PARAMETER ACCEPTS. THE COLOR NAMES ARE crossterm'S OWN AND ARE NOWHERE ON THE SCREEN, AND
@@ -1142,10 +1273,13 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
                     Command::UsernameColor => color_handler(&app, "username_color", parameters),
                     Command::MessageColor => color_handler(&app, "message_color", parameters),
 
+                    //OUR OWN CONFIG, IN A BOX OF ITS OWN - THE TUI'S OVERLAY, WITH THE AUDIO ROWS THIS
+                    //BUILD HAS NO FEATURE FOR LEFT OUT
+                    Command::Settings => emit(&app, UiEvent::OpenSettings),
+
                     Command::Invalid => popup(&app, "Invalid command!"),
 
-                    //Help, Info AND Settings ARE FILTERED OUT OF THE PALETTE, BUT NOTHING STOPS THEM
-                    //BEING TYPED OUT
+                    //Help AND Info ARE FILTERED OUT OF THE PALETTE, BUT NOTHING STOPS THEM BEING TYPED OUT
                     _ => popup(&app, format!("{command} is not available in the desktop app.")),
                 },
             }
@@ -1201,6 +1335,10 @@ pub fn run()
             get_commands,
             get_vocabulary,
             get_client_config,
+            get_client_settings,
+            set_client_setting,
+            save_server_settings,
+            restart_server,
             answer_tofu,
             upload_file_from_path,
         ])

@@ -139,6 +139,30 @@ show up. Colors carry their own code so the row can be painted in it. `/screen` 
 `ArgValues::Monitors` and lives behind `client_screen`, which this build does not enable — the monitors come
 from Tauri's own `available_monitors()` rather than the crate, so the helper works the day the feature is on.
 
+### Settings
+
+`/settings` and `/server settings` open the same box, which is `tui/settings.rs` in a window: section
+headings with a rule out to the edge, `● on`/`○ off`, `●` on an edited row and `↻` on one the server will not
+pick up until it restarts, and the selected key's own comment under a rule in the foot. It owns the keyboard
+while it is up — the focus moves into it, so nothing typed reaches the input line behind it — and the
+selection skips headings the way the TUI's does.
+
+The two halves are not symmetrical, and that is the whole shape of it. **`client.toml` is ours**: a row is
+written through the moment it is flipped (`set_client_setting`, which hands back the config so the pane
+redraws at once), and the `invert` flag lives in `CLIENT_SETTINGS` in `lib.rs` because the key is the truth
+and the label is what it means — `disable_colors` held is "Message colors" turned off. **`server.toml` is
+not**: rows are edited locally, marked, and sent in one go by `save_server_settings`, and what comes back is
+the config *as it actually stands*, so a row the server refused snaps back instead of sitting there looking
+applied. Nothing on this side names a server key — the rows, the headings and the hints are all whatever
+`server.toml` turned out to hold, so a key added there needs no client change at all.
+
+`restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
+by the next, and is dead while there are unsaved rows in the box. The audio rows the TUI opens with belong to
+`client_voice`, which this build does not carry.
+
+Side effects belong outside the state updaters: React runs them twice under `StrictMode`, and an updater that
+writes `client.toml` or puts a packet on the wire would do it twice.
+
 ### TOFU
 
 The identity check is answered **in-band**. The handshake parks on a `oneshot`, which arrives as

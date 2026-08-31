@@ -109,6 +109,59 @@ interface CommandInfo
     subcommands: SubcommandInfo[];
 }
 
+//ONE ROW OF client.toml THE SETTINGS BOX OFFERS. EVERY ONE OF THEM IS A TOGGLE, AND EVERY ONE IS WRITTEN
+//THROUGH THE MOMENT IT IS FLIPPED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
+interface ClientSetting
+{
+    label: string;
+    key: string;
+    section: string;
+    on: boolean;
+}
+
+//THE THREE DATATYPES server.toml UNDERSTANDS
+type SettingValueInfo =
+    | { kind: "toggle"; value: boolean }
+    | { kind: "number"; value: number }
+    | { kind: "text"; value: string };
+
+//ONE ROW OF server.toml, BOTH WAYS - WHAT THE SERVER SENT, AND WHAT A SAVE SENDS BACK
+interface SettingRow
+{
+    key: string;
+    value: SettingValueInfo;
+    section: string;
+    description: string;
+    restart: boolean;
+}
+
+//ONE ROW OF THE SETTINGS BOX, WHICHEVER CONFIG IT IS SHOWING
+interface SettingsItem
+{
+    label: string;
+    key: string;
+    value: SettingValueInfo;
+    hint: string;      //THE COMMENT THE SERVER SENT ALONG (EMPTY ON A CLIENT ROW)
+    changed: boolean;  //EDITED AND NOT SAVED YET - ONLY A SERVER ROW IS EVER LEFT UNSAVED
+    restart: boolean;  //SAVING IT STORES IT, BUT THE RUNNING SERVER KEEPS USING WHAT IT READ AT STARTUP
+}
+
+type SettingsRow =
+    | { row: "header"; label: string }
+    | { row: "item"; item: SettingsItem }
+    | { row: "action"; label: string }; //A BUTTON - THE SERVER ROWS ARE THE ONLY THING THAT NEEDS ONE
+
+//THE BOX ITSELF, IN EITHER OF ITS TWO MODES
+interface SettingsBox
+{
+    rows: SettingsRow[];
+    selected: number;
+    server: boolean;          //THE ROWS BELONG TO server.toml, WHICH IS NOT OURS TO WRITE
+    edit: string | null;      //WHAT IS BEING TYPED INTO THE SELECTED ROW
+    saving: boolean;          //A SAVE IS ON THE WIRE, WAITING FOR THE SERVER TO ANSWER WITH WHAT IT STORED
+    confirm: boolean;         //THE RESTART BUTTON IS ARMED BY ONE PRESS AND FIRED BY THE NEXT
+}
+
 //ONE ANSWER A PARAMETER ACCEPTS, AS THE BRIDGE HANDS IT OVER
 interface VocabularyValue
 {
@@ -171,6 +224,8 @@ type BridgeEvent =
     | { event: "users"; data: { users: OnlineUser[] } }
     | { event: "user_left"; data: { id: number } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
+    | { event: "open_settings"; data?: null }
+    | { event: "server_settings"; data: { settings: SettingRow[]; saved: boolean } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
     | { event: "channel_destroyed"; data: { name: string } }
@@ -372,6 +427,105 @@ function analyze(input: string, commands: CommandInfo[]): PaletteShape
     return hint(commandEntry(command), tail, input);
 }
 
+//THE TWO BUTTONS UNDER THE SERVER ROWS: THE ONE THEY ARE SENT BACK WITH, AND THE ONE THAT PUTS THE
+//STARTUP-ONLY ONES IN USE
+const SAVE_LABEL = "Save";
+const RESTART_LABEL = "Restart server";
+
+//OUR OWN CONFIG, GROUPED THE WAY THE BRIDGE GROUPED IT
+function clientRows(settings: ClientSetting[]): SettingsRow[]
+{
+    const rows: SettingsRow[] = [];
+    let section = "";
+
+    for (const setting of settings)
+    {
+        if (setting.section !== section)
+        {
+            section = setting.section;
+            if (section) rows.push({ row: "header", label: section });
+        }
+
+        rows.push({ row: "item", item: {
+            label: setting.label,
+            key: setting.key,
+            value: { kind: "toggle", value: setting.on },
+            hint: "",
+            changed: false,
+            restart: false,
+        } });
+    }
+
+    return rows;
+}
+
+//THE SERVER'S OWN CONFIG. NOTHING HERE NAMES A KEY - THE ROWS, THE HEADINGS AND THE HINTS ARE ALL WHATEVER
+//server.toml TURNED OUT TO HOLD, SO A KEY ADDED THERE NEEDS NO CLIENT CHANGE AT ALL
+function serverRows(settings: SettingRow[]): SettingsRow[]
+{
+    const rows: SettingsRow[] = [];
+    let section = "";
+
+    for (const setting of settings)
+    {
+        if (setting.section !== section)
+        {
+            section = setting.section;
+            if (section) rows.push({ row: "header", label: section });
+        }
+
+        rows.push({ row: "item", item: {
+            label: setting.key.replace(/_/g, " "),
+            key: setting.key,
+            value: setting.value,
+            hint: setting.description,
+            changed: false,
+            restart: setting.restart, //THE SERVER SAYS WHICH OF ITS OWN KEYS IT ONLY READS AT STARTUP
+        } });
+    }
+
+    rows.push({ row: "action", label: SAVE_LABEL }); //NOTHING LEAVES THIS BOX UNTIL THIS IS PRESSED
+    rows.push({ row: "action", label: RESTART_LABEL });
+
+    return rows;
+}
+
+//MOVE THE SELECTION BY delta ROWS, SKIPPING HEADINGS AND STOPPING AT BOTH ENDS
+function stepRow(rows: SettingsRow[], from: number, delta: number): number
+{
+    let index = from;
+
+    for (;;)
+    {
+        index += delta;
+
+        //RAN OUT OF ROWS - KEEP WHATEVER WAS SELECTED
+        if (index < 0 || index >= rows.length) return from;
+
+        if (rows[index].row !== "header") return index;
+    }
+}
+
+//LAND ON index, OR ON THE NEAREST ROW THAT IS NOT A HEADING - ONE AT THE VERY END IS WHY THE OTHER
+//DIRECTION IS TRIED AS WELL
+function landRow(rows: SettingsRow[], index: number, direction: number): number
+{
+    if (rows.length === 0) return 0;
+
+    const target = Math.min(Math.max(index, 0), rows.length - 1);
+    if (rows[target].row !== "header") return target;
+
+    const forward = stepRow(rows, target, direction);
+
+    return forward === target ? stepRow(rows, target, -direction) : forward;
+}
+
+//A ROW HAS BEEN EDITED AND NOT SENT BACK YET
+function unsavedRows(rows: SettingsRow[]): boolean
+{
+    return rows.some((row) => row.row === "item" && row.item.changed);
+}
+
 //A BORDERED BOX WITH ITS NAME SITTING IN THE TOP BORDER, AND ITS STATUS IN THE BOTTOM ONE.
 //THE THREE OF THEM SIT OUTSIDE THE BORDER BOX, SO overflow-hidden HERE ERASES THEM - THE SCROLL CONTAINER
 //INSIDE DOES THE CLIPPING INSTEAD. THEY ALSO SIT ABOVE IT: THEY ARE BORDER CELLS, AND A LINE SCROLLING
@@ -436,11 +590,14 @@ function App()
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
     const [selected, setSelected] = useState(0);
     const [dismissed, setDismissed] = useState(false);
+    const [settings, setSettings] = useState<SettingsBox | null>(null);
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
 
     const paneRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLDivElement>(null);
+    const settingsRef = useRef<HTMLDivElement>(null);
+    const settingsRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
@@ -545,6 +702,7 @@ function App()
         setCommands([]);
         setTofu(null);
         setTofuTyped("");
+        setSettings(null);
         setServerName("");
         setUsername("");
         setRole("user");
@@ -644,6 +802,38 @@ function App()
                 case "block":
                 {
                     push({ entry: "block", title: payload.data.title, rows: payload.data.rows });
+                    break;
+                }
+
+                case "open_settings":
+                {
+                    invoke<ClientSetting[]>("get_client_settings").then((list) =>
+                    {
+                        const rows = clientRows(list);
+
+                        setSettings({ rows, selected: landRow(rows, 0, 1), server: false, edit: null, saving: false, confirm: false });
+                    }).catch((error: unknown) => setPopupMessage(String(error)));
+
+                    break;
+                }
+
+                //EITHER THE COPY THE BOX ASKED FOR, OR THE ONE THE SERVER JUST STORED. THE ANSWER TO A SAVE
+                //IS THE CONFIG AS IT ACTUALLY STANDS, SO A ROW IT REFUSED SNAPS BACK INSTEAD OF SITTING
+                //THERE LOOKING APPLIED - AND THE SELECTION STAYS WHERE THE USER LEFT IT
+                case "server_settings":
+                {
+                    const rows = serverRows(payload.data.settings);
+
+                    if (payload.data.saved)
+                    {
+                        setSettings((previous) => (previous && previous.server
+                            ? { ...previous, rows, selected: landRow(rows, previous.selected, 1), edit: null, saving: false, confirm: false }
+                            : previous));
+
+                        break;
+                    }
+
+                    setSettings({ rows, selected: landRow(rows, 0, 1), server: true, edit: null, saving: false, confirm: false });
                     break;
                 }
 
@@ -855,6 +1045,15 @@ function App()
     //KEEP THE SELECTION IN VIEW, THE WAY THE TUI SCROLLS ITS OWN POPUP RATHER THAN PINNING THE ROW
     useEffect(() => { selectedRef.current?.scrollIntoView({ block: "nearest" }); }, [selected, palette]);
 
+    //THE BOX OWNS THE KEYBOARD WHILE IT IS UP, WHICH IN A WINDOW MEANS TAKING THE FOCUS OFF THE INPUT LINE.
+    //THE DEPENDENCY IS WHETHER IT IS OPEN AND NOT THE BOX ITSELF - EVERY ROW EDITED IS A NEW OBJECT, AND
+    //FOCUSING ON EACH OF THEM WOULD TAKE IT BACK OFF THE ROW BEING TYPED INTO
+    const settingsOpen = settings !== null;
+
+    useEffect(() => { if (settingsOpen) settingsRef.current?.focus(); }, [settingsOpen]);
+
+    useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
+
     const channels = useMemo(() =>
     {
         const set = new Set(activeChannels);
@@ -869,6 +1068,209 @@ function App()
             return a.localeCompare(b);
         });
     }, [activeChannels, currentChannel]);
+
+    //EVERY EDIT OF THE BOX GOES THROUGH HERE, BECAUSE EVERY ONE OF THEM IS "THE SAME BOX, ONE ROW LATER"
+    const editSettings = (change: (box: SettingsBox) => SettingsBox | null) =>
+        setSettings((previous) => (previous ? change(previous) : previous));
+
+    const closeSettings = () =>
+    {
+        setSettings(null);
+        chatInputRef.current?.focus();
+    };
+
+    //WRITE ONE ROW BACK INTO THE BOX
+    const withRow = (box: SettingsBox, index: number, change: (item: SettingsItem) => SettingsItem): SettingsBox =>
+    ({
+        ...box,
+        rows: box.rows.map((row, position) => (position === index && row.row === "item"
+            ? { row: "item", item: change(row.item) }
+            : row)),
+    });
+
+    //FLIP ONE TOGGLE. A CLIENT ROW IS WRITTEN THROUGH IMMEDIATELY - A SERVER ROW IS NOT OURS TO WRITE,
+    //SO IT IS HELD UNTIL Save AND SENT IN ONE GO. THE WRITE IS DONE HERE AND NOT INSIDE THE UPDATER:
+    //AN UPDATER MAY RUN TWICE, AND client.toml WOULD BE WRITTEN TWICE WITH IT
+    const setToggle = (index: number, on: boolean) =>
+    {
+        const box = settings;
+        if (!box) return;
+
+        const row = box.rows[index];
+        if (row.row !== "item" || row.item.value.kind !== "toggle") return;
+
+        //THE THREE INTERFACE KEYS ARE WHAT THE PANE DRAWS ITSELF FROM, SO THE WINDOW FOLLOWS AT ONCE
+        if (!box.server)
+        {
+            invoke<ClientConfig>("set_client_setting", { key: row.item.key, on })
+                .then(setConfig)
+                .catch((error: unknown) => setPopupMessage(String(error)));
+        }
+
+        editSettings((current) => withRow({ ...current, selected: index, confirm: false }, index,
+            (item) => ({ ...item, value: { kind: "toggle", value: on }, changed: item.changed || current.server })));
+    };
+
+    //LEFT/RIGHT: FLIP A TOGGLE, OR STEP A NUMBER. A FREE-FORM STRING HAS NO NEXT VALUE TO STEP TO
+    const adjustRow = (direction: number) =>
+    {
+        const box = settings;
+        if (!box) return;
+
+        const row = box.rows[box.selected];
+        if (row.row !== "item") return;
+
+        //A TOGGLE ONLY HAS TWO STATES, SO EITHER DIRECTION MEANS THE OTHER ONE
+        if (row.item.value.kind === "toggle")
+        {
+            if ((direction > 0) !== row.item.value.value) setToggle(box.selected, direction > 0);
+            return;
+        }
+
+        if (row.item.value.kind !== "number") return;
+
+        const next = row.item.value.value + direction;
+
+        editSettings((current) => withRow(current, current.selected,
+            (item) => ({ ...item, value: { kind: "number", value: next }, changed: true })));
+    };
+
+    //HAND THE EDITED ROWS TO THE BRIDGE, WHICH IS WHERE THE SOCKET IS. THEY STAY MARKED UNTIL THE SERVER
+    //SAYS WHAT IT STORED - ITS ANSWER REBUILDS THEM
+    const saveSettings = () =>
+    {
+        const box = settings;
+        if (!box || !box.server || box.saving) return;
+
+        const changed = box.rows.flatMap((row) => (row.row === "item" && row.item.changed
+            ? [{ key: row.item.key, value: row.item.value, section: "", description: "", restart: row.item.restart }]
+            : []));
+
+        if (changed.length === 0) return;
+
+        invoke("save_server_settings", { settings: changed }).catch((error: unknown) =>
+        {
+            setPopupMessage(String(error));
+
+            //NOTHING WENT OUT, SO NOTHING IS COMING BACK - THE ROWS STAY EDITABLE INSTEAD OF WAITING FOREVER
+            editSettings((current) => ({ ...current, saving: false }));
+        });
+
+        editSettings((current) => ({ ...current, saving: true, confirm: false }));
+    };
+
+    //THE ONE BUTTON THAT ENDS THE SESSION FOR EVERYBODY ON THE SERVER, SO IT IS ASKED TWICE - AND NEVER
+    //WHILE THERE ARE EDITED ROWS IN THE BOX, WHICH THE RESTART WOULD THROW AWAY UNREAD
+    const restartServer = () =>
+    {
+        const box = settings;
+        if (!box || !box.server || box.saving || unsavedRows(box.rows)) return;
+
+        //THE FIRST PRESS ONLY ARMS IT - THE BUTTON SAYS SO UNTIL SOMETHING CLEARS IT
+        if (!box.confirm)
+        {
+            editSettings((current) => ({ ...current, confirm: true }));
+            return;
+        }
+
+        invoke("restart_server").catch((error: unknown) => setPopupMessage(String(error)));
+
+        //THE SERVER GOES DOWN WITH THIS, SO THERE IS NOTHING LEFT FOR THE BOX TO SHOW OR TO SAVE
+        closeSettings();
+    };
+
+    //ENTER/SPACE, OR A CLICK: FLIP A TOGGLE, START TYPING INTO A VALUE, OR PRESS THE BUTTON
+    const activateRow = (index: number) =>
+    {
+        const box = settings;
+        if (!box) return;
+
+        const row = box.rows[index];
+
+        if (row.row === "action")
+        {
+            editSettings((current) => ({ ...current, selected: index }));
+
+            if (row.label === RESTART_LABEL) restartServer();
+            else saveSettings();
+
+            return;
+        }
+
+        if (row.row !== "item") return;
+
+        if (row.item.value.kind === "toggle")
+        {
+            setToggle(index, !row.item.value.value);
+            return;
+        }
+
+        //A NUMBER OR A STRING IS TYPED INTO THE ROW ITSELF
+        editSettings((current) => ({ ...current, selected: index, confirm: false, edit: String(row.item.value.value) }));
+    };
+
+    //KEEP WHAT WAS TYPED, IF THE ROW CAN HOLD IT - AN UNPARSEABLE NUMBER IS NOT A CHANGE
+    const commitEdit = () => editSettings((box) =>
+    {
+        if (box.edit === null) return box;
+
+        const row = box.rows[box.selected];
+        if (row.row !== "item") return { ...box, edit: null };
+
+        const typed = box.edit;
+
+        if (row.item.value.kind === "number")
+        {
+            const number = Number(typed.trim());
+
+            if (typed.trim() === "" || !Number.isInteger(number) || number === row.item.value.value) return { ...box, edit: null };
+
+            return { ...withRow(box, box.selected, (item) => ({ ...item, value: { kind: "number", value: number }, changed: true })), edit: null };
+        }
+
+        if (row.item.value.kind !== "text" || typed === row.item.value.value) return { ...box, edit: null };
+
+        return { ...withRow(box, box.selected, (item) => ({ ...item, value: { kind: "text", value: typed }, changed: true })), edit: null };
+    });
+
+    //ONE KEYPRESS WHILE THE BOX IS UP - IT OWNS THE KEYBOARD, THE WAY THE TUI'S OVERLAY DOES
+    const handleSettingsKey = (event: React.KeyboardEvent<HTMLDivElement>) =>
+    {
+        const box = settings;
+        if (!box || box.edit !== null) return;
+
+        //Ctrl+S SAVES FROM WHEREVER THE SELECTION IS - THE BUTTON IS AT THE BOTTOM OF A LONG LIST
+        if (box.server && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s")
+        {
+            event.preventDefault();
+            saveSettings();
+            return;
+        }
+
+        //AN ARMED RESTART SURVIVES ONLY THE KEY THAT CONFIRMS IT - ANYTHING ELSE PUTS THE BUTTON BACK
+        if (event.key !== "Enter" && event.key !== " ") editSettings((current) => ({ ...current, confirm: false }));
+
+        switch (event.key)
+        {
+            case "Escape": closeSettings(); break;
+
+            case "ArrowUp": editSettings((current) => ({ ...current, selected: stepRow(current.rows, current.selected, -1) })); break;
+            case "ArrowDown": editSettings((current) => ({ ...current, selected: stepRow(current.rows, current.selected, 1) })); break;
+
+            case "Home": editSettings((current) => ({ ...current, selected: landRow(current.rows, 0, 1) })); break;
+            case "End": editSettings((current) => ({ ...current, selected: landRow(current.rows, current.rows.length - 1, -1) })); break;
+
+            case "ArrowLeft": adjustRow(-1); break;
+            case "ArrowRight": adjustRow(1); break;
+
+            case "Enter":
+            case " ": activateRow(box.selected); break;
+
+            default: return;
+        }
+
+        event.preventDefault();
+    };
 
     //ESCAPE PUTS THE PALETTE AWAY, AND ANYTHING TYPED AFTERWARDS BRINGS IT BACK
     const writeInput = (value: string) =>
@@ -1108,6 +1510,163 @@ function App()
 
     const connected = uiState === "connected";
 
+    //THE SETTINGS BOX. IT OWNS THE KEYBOARD WHILE IT IS UP, THE WAY THE TUI'S OVERLAY DOES - THE FOCUS
+    //MOVES INTO IT, SO NOTHING TYPED HERE REACHES THE INPUT LINE BEHIND IT
+    const settingsBox = settings && (() =>
+    {
+        const box = settings;
+        const editing = box.edit !== null;
+        const unsaved = unsavedRows(box.rows);
+
+        //THE VALUE COLUMN STARTS RIGHT BEHIND THE LONGEST LABEL, NOT AT SOME GUESSED OFFSET
+        const labelWidth = Math.max(...box.rows.map((row) => (row.row === "item" ? row.item.label.length : 0)), 8);
+
+        const title = box.server
+            ? ` Server settings${box.saving ? " · saving…" : unsaved ? " · unsaved" : ""} `
+            : " Settings ";
+
+        const legend = editing
+            ? " type a value │ ⏎ keep │ esc cancel "
+            : box.server
+                ? " ↑↓ move │ ←→ change │ ⏎ edit │ ^S save │ esc close "
+                : " ↑↓ move │ ←→ change │ ⏎ select │ esc close ";
+
+        //THE SERVER'S COMMENT ON A KEY IS A WHOLE SENTENCE AND HAS NO BUSINESS IN A TITLE BAR. IT SITS
+        //UNDER A RULE IN THE FOOT OF THE BOX INSTEAD, WHERE IT READS AS AN EXPLANATION OF THE SELECTED ROW
+        const chosen = box.rows[box.selected];
+        const hint = chosen?.row === "item" ? chosen.item.hint : "";
+
+        const value = (item: SettingsItem) =>
+        {
+            if (item.value.kind === "toggle")
+            {
+                return item.value.value
+                    ? <span className="text-ok">● on</span>
+                    : <span className="text-muted-foreground">○ off</span>;
+            }
+
+            if (item.value.kind === "number") return <span>{item.value.value}</span>;
+
+            return item.value.value ? <span>{item.value.value}</span> : <span className="text-muted-foreground">(empty)</span>;
+        };
+
+        return (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 px-4">
+                <div
+                    ref={settingsRef}
+                    tabIndex={-1}
+                    onKeyDown={handleSettingsKey}
+                    className="w-full max-w-[62ch] outline-none"
+                >
+                    <Panel active title={title} left={legend} className="flex flex-col bg-background">
+                        <div className="custom-scrollbar overflow-auto py-2" style={{ maxHeight: "60vh" }}>
+                            {box.rows.map((row, index) =>
+                            {
+                                //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS
+                                if (row.row === "header")
+                                {
+                                    return (
+                                        <div key={`header-${row.label}`} className="flex items-center gap-2 px-3 leading-6">
+                                            <span className="font-bold text-title">{row.label}</span>
+                                            <span className="h-px flex-1 bg-border" />
+                                        </div>
+                                    );
+                                }
+
+                                const chosenRow = index === box.selected;
+
+                                //A BUTTON IS LIVE WHEN IT HAS SOMETHING TO DO: Save WITH EDITED ROWS IN THE
+                                //BOX, Restart WITH NONE
+                                if (row.row === "action")
+                                {
+                                    const restart = row.label === RESTART_LABEL;
+                                    const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
+                                    const armed = restart && box.confirm;
+
+                                    return (
+                                        <div
+                                            key={row.label}
+                                            ref={chosenRow ? settingsRowRef : undefined}
+                                            onClick={() => activateRow(index)}
+                                            className={`flex cursor-pointer items-baseline whitespace-pre px-2 leading-6 ${chosenRow ? "bg-selected" : ""}`}
+                                        >
+                                            <span className="text-accent">{chosenRow ? "▌" : " "}</span>
+                                            <span className={`flex-1 text-center ${armed ? "text-error" : chosenRow ? "text-accent" : live ? "" : "text-muted-foreground"}`}>
+                                                {armed ? `[ ${row.label} · press again ]` : `[ ${row.label} ]`}
+                                            </span>
+                                        </div>
+                                    );
+                                }
+
+                                const item = row.item;
+
+                                return (
+                                    <div
+                                        key={item.key}
+                                        ref={chosenRow ? settingsRowRef : undefined}
+                                        onClick={() => { if (!editing) activateRow(index); }}
+                                        className={`flex cursor-pointer items-baseline gap-2 whitespace-pre px-2 leading-6 ${chosenRow ? "bg-selected" : ""}`}
+                                    >
+                                        <span className="text-accent">{chosenRow ? "▌" : " "}</span>
+                                        <span
+                                            className={`shrink-0 overflow-hidden text-ellipsis ${chosenRow ? "text-accent" : ""}`}
+                                            style={{ width: `${labelWidth}ch` }}
+                                        >
+                                            {item.label}
+                                        </span>
+
+                                        {/* THE ROW BEING TYPED INTO SHOWS THE TEXT AS IT STANDS, CARET AND ALL */}
+                                        {chosenRow && editing
+                                            ? (
+                                                <input
+                                                    autoFocus
+                                                    value={box.edit ?? ""}
+                                                    onChange={(event) =>
+                                                    {
+                                                        const typed = event.currentTarget.value;
+
+                                                        //A NUMBER ROW ONLY TAKES A NUMBER - THE MINUS SIGN ONLY AS THE FIRST CHARACTER
+                                                        if (item.value.kind === "number" && !/^-?\d*$/.test(typed)) return;
+
+                                                        editSettings((current) => ({ ...current, edit: typed }));
+                                                    }}
+                                                    onKeyDown={(event) =>
+                                                    {
+                                                        event.stopPropagation();
+
+                                                        //ESC PUTS THE OLD VALUE BACK, ⏎ KEEPS WHAT WAS TYPED - AND EITHER WAY
+                                                        //THE KEYBOARD GOES BACK TO THE BOX
+                                                        if (event.key === "Enter") { event.preventDefault(); commitEdit(); }
+                                                        else if (event.key === "Escape") { event.preventDefault(); editSettings((current) => ({ ...current, edit: null })); }
+                                                        else return;
+
+                                                        settingsRef.current?.focus();
+                                                    }}
+                                                    onBlur={commitEdit}
+                                                    className="min-w-0 flex-1 bg-transparent text-accent caret-accent outline-none"
+                                                    spellCheck={false}
+                                                />
+                                            )
+                                            : <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{value(item)}</span>}
+
+                                        {/* AN EDITED ROW IS MARKED UNTIL THE SERVER HAS SAID WHAT IT STORED, AND ONE
+                                            IT WILL NOT PICK UP UNTIL IT IS RESTARTED CARRIES THAT SAVED OR NOT */}
+                                        {item.changed && <span className="text-notice">●</span>}
+                                        {item.restart && <span className="text-muted-foreground">↻</span>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {hint && (
+                            <div className="border-t border-border px-3 pb-2 pt-1 text-muted-foreground">{hint}</div>
+                        )}
+                    </Panel>
+                </div>
+            </div>
+        );
+    })();
+
     //THE CONNECT BOX ASKS FOR EVERYTHING UNTIL WE ARE IN, AND THE SERVER-KEY PROMPT COVERS EVEN THAT,
     //BECAUSE IT IS THE ONLY THING THE USER MAY ANSWER WHILE IT IS UP
     const loginBox = !connected && !tofu && (
@@ -1329,6 +1888,8 @@ function App()
                                 {" │ "}
                                 <button onClick={() => send("/files")} className="hover:text-accent">files</button>
                                 {" │ "}
+                                <button onClick={() => send("/settings")} className="hover:text-accent">settings</button>
+                                {" │ "}
                                 <span className="text-accent">{role}</span>
                                 {" │ "}
                                 <button onClick={() => send("/exit")} className="hover:text-error">exit</button>
@@ -1355,6 +1916,7 @@ function App()
                 </div>
             )}
 
+            {settingsBox}
             {loginBox}
             {tofuBox}
         </main>
