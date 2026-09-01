@@ -41,6 +41,26 @@ interface ChatMessage
     id: number | null;
     username_color: number | null;
     message_color: number | null;
+    direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
+}
+
+//WHO A PRIVATE MESSAGE IS WITH - THE OTHER PERSON WHICHEVER WAY IT WENT. THE ECHO OF ONE WE SENT NAMES
+//THE RECIPIENT AND CARRIES NO AUTHOR, SO outgoing IS WHICH SIDE OF THE CONVERSATION THE LINE IS ON
+interface DirectPeer
+{
+    id: number;
+    username: string;
+    outgoing: boolean;
+}
+
+//ONE CONVERSATION. A PM IS NOT A LINE OF WHATEVER CHANNEL WAS OPEN WHEN IT LANDED, SO IT KEEPS ITS OWN
+//SCROLLBACK THE WAY A CHANNEL DOES - AND ITS OWN COUNT OF WHAT ARRIVED WHILE IT WAS NOT BEING LOOKED AT
+interface DirectChat
+{
+    id: number;
+    username: string;
+    pane: PaneEntry[];
+    unread: number;
 }
 
 interface BlockRow
@@ -419,6 +439,7 @@ const ICONS: Record<string, string[]> =
     archive: ["M4 8h16v12H4z", "M3 4h18v4H3z", "M10 12h4"],
     code: ["M9 18l-6-6 6-6", "M15 6l6 6-6 6"],
     monitor: ["M3 5h18v11H3z", "M9 20h6", "M12 16v4"],
+    at: ["M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"],
 };
 
 //AN ACCESS UNIT IS A KEYFRAME WHEN IT CARRIES AN IDR SLICE, OR THE PARAMETER SETS THAT COME IN FRONT OF
@@ -959,6 +980,12 @@ function App()
     const [users, setUsers] = useState<OnlineUser[]>([]);
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
+
+    //THE CONVERSATIONS, KEYED BY THE OTHER PERSON'S ID, AND WHICH OF THEM THE MIDDLE COLUMN IS SHOWING.
+    //A CONVERSATION IS OPEN BECAUSE SOMEBODY OPENED IT OR BECAUSE SOMETHING ARRIVED IN IT - THE SERVER
+    //KNOWS NOTHING ABOUT ANY OF THIS, WHICH IS ALSO WHY IT LASTS EXACTLY AS LONG AS THE SESSION DOES
+    const [dms, setDms] = useState<Record<number, DirectChat>>({});
+    const [openDm, setOpenDm] = useState<number | null>(null);
     const [selected, setSelected] = useState(0);
     const [dismissed, setDismissed] = useState(false);
     const [settings, setSettings] = useState<SettingsBox | null>(null);
@@ -1013,6 +1040,9 @@ function App()
     //WOULD BE WHATEVER IT WAS WHEN THE SESSION STARTED
     const currentChannelRef = useRef(currentChannel);
 
+    //AND SO IS THE CONVERSATION IN FRONT: A LINE THAT LANDS IN THE ONE BEING READ IS NOT UNREAD
+    const openDmRef = useRef(openDm);
+
     //THE PANE FOLLOWS THE BOTTOM ONLY WHILE IT IS ALREADY THERE; SCROLLING UP PARKS IT AND COUNTS
     //WHAT ARRIVES, WHICH IS WHAT THE "↓ n new" IN THE BOTTOM BORDER IS
     const pinnedRef = useRef(true);
@@ -1021,6 +1051,11 @@ function App()
     {
         currentChannelRef.current = currentChannel;
     }, [currentChannel]);
+
+    useEffect(() =>
+    {
+        openDmRef.current = openDm;
+    }, [openDm]);
 
     useEffect(() =>
     {
@@ -1050,7 +1085,10 @@ function App()
     const canServerSettings = commands.some((command) => command.name === "server"
         && command.subcommands.some((sub) => sub.triggers.includes("settings")));
 
-    const pane = paneByChannel[currentChannel] ?? [];
+    //WHOEVER THE MIDDLE COLUMN IS TALKING TO, WHILE IT IS A PERSON AND NOT A CHANNEL
+    const dm = openDm === null ? null : dms[openDm] ?? null;
+
+    const pane = dm ? dm.pane : paneByChannel[currentChannel] ?? [];
 
     useEffect(() =>
     {
@@ -1058,7 +1096,7 @@ function App()
 
         const node = paneRef.current;
         if (node) node.scrollTop = node.scrollHeight;
-    }, [paneByChannel, currentChannel]);
+    }, [paneByChannel, currentChannel, dms, openDm]);
 
     //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO THE ROSTER IS THE WHOLE TRUTH ABOUT
     //WHICH ONES THERE ARE - AND THE SCROLLBACK OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
@@ -1093,7 +1131,65 @@ function App()
 
         setPaneByChannel((previous) => ({ ...previous, [channel]: [...(previous[channel] ?? []), ...entries] }));
 
-        if (!pinnedRef.current) setUnread((previous) => previous + entries.length);
+        //THE COUNT IN THE BOTTOM BORDER IS ABOUT THE PANE BEING LOOKED AT, AND A CONVERSATION IN FRONT
+        //MEANS THIS IS NOT IT
+        if (!pinnedRef.current && openDmRef.current === null) setUnread((previous) => previous + entries.length);
+    };
+
+    //A PRIVATE MESSAGE GOES TO THE CONVERSATION IT BELONGS TO, WHICH IS STARTED HERE IF THERE WAS NONE -
+    //SOMEBODY WRITING TO US IS EXACTLY AS MUCH A REASON FOR ONE TO EXIST AS US WRITING TO THEM
+    const pushDirect = (peer: DirectPeer, entry: PaneEntry) =>
+    {
+        const reading = openDmRef.current === peer.id;
+
+        setDms((previous) =>
+        {
+            const chat = previous[peer.id] ?? { id: peer.id, username: peer.username, pane: [], unread: 0 };
+
+            return { ...previous, [peer.id]: {
+                ...chat,
+                username: peer.username,
+                pane: [...chat.pane, entry],
+                unread: chat.unread + (reading ? 0 : 1),
+            } };
+        });
+
+        if (reading && !pinnedRef.current) setUnread((previous) => previous + 1);
+    };
+
+    //THE COLUMN TURNS TO ONE PERSON, OR BACK TO THE CHANNEL. EITHER WAY IT IS ANOTHER PANE WITH ANOTHER
+    //BOTTOM, SO WHAT WAS COUNTED AGAINST THE LAST ONE IS NOT WHAT IS UNREAD IN THIS ONE
+    const showDirect = (peer: { id: number; username: string } | null) =>
+    {
+        if (peer) setDms((previous) =>
+        {
+            const chat = previous[peer.id] ?? { id: peer.id, username: peer.username, pane: [], unread: 0 };
+
+            return { ...previous, [peer.id]: { ...chat, username: peer.username, unread: 0 } };
+        });
+
+        setOpenDm(peer ? peer.id : null);
+        setView("chat");
+
+        pinnedRef.current = true;
+        setUnread(0);
+
+        chatInputRef.current?.focus();
+    };
+
+    //CLOSING ONE IS CLOSING IT FOR GOOD: NOTHING BUT THIS WINDOW EVER HELD THE CONVERSATION, AND THE
+    //SERVER HAS NO HISTORY OF IT TO ASK FOR AGAIN
+    const closeDirect = (id: number) =>
+    {
+        setDms((previous) =>
+        {
+            const next = { ...previous };
+            delete next[id];
+
+            return next;
+        });
+
+        setOpenDm((previous) => (previous === id ? null : previous));
     };
 
     const refreshCommands = () =>
@@ -1117,6 +1213,8 @@ function App()
         setUsers([]);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
+        setDms({});
+        setOpenDm(null);
         setCommands([]);
         setTofu(null);
         setTofuTyped("");
@@ -1219,7 +1317,12 @@ function App()
 
                 case "message":
                 {
-                    push({ entry: "message", message: payload.data.message });
+                    const message = payload.data.message;
+
+                    //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
+                    if (message.direct) pushDirect(message.direct, { entry: "message", message });
+                    else push({ entry: "message", message });
+
                     break;
                 }
 
@@ -1377,6 +1480,9 @@ function App()
                 case "channel_changed":
                 {
                     setCurrentChannel(payload.data.channel ?? LOBBY);
+
+                    //WALKING INTO A CHANNEL IS WALKING OUT OF WHATEVER CONVERSATION WAS IN FRONT OF IT
+                    setOpenDm(null);
 
                     pinnedRef.current = true;
                     setUnread(0);
@@ -1865,6 +1971,13 @@ function App()
         });
     }, [activeChannels, currentChannel]);
 
+    //THE CONVERSATIONS, IN AN ORDER THAT DOES NOT MOVE UNDER THE POINTER - A LIST SORTED BY WHAT ARRIVED
+    //LAST WOULD PUT THE ROW BEING CLICKED SOMEWHERE ELSE THE MOMENT SOMEBODY TYPED
+    const directs = useMemo(
+        () => Object.values(dms).sort((a, b) => a.username.localeCompare(b.username)),
+        [dms],
+    );
+
     //EVERY EDIT OF THE BOX GOES THROUGH HERE, BECAUSE EVERY ONE OF THEM IS "THE SAME BOX, ONE ROW LATER"
     const editSettings = (change: (box: SettingsBox) => SettingsBox | null) =>
         setSettings((previous) => (previous ? change(previous) : previous));
@@ -2284,7 +2397,10 @@ function App()
         event.preventDefault();
         if (!chatInput.trim()) return;
 
-        send(chatInput);
+        //IN A CONVERSATION A PLAIN LINE IS A PRIVATE MESSAGE, AND IT GOES DOWN THE SAME COMMAND PATH
+        //TYPING IT OUT WOULD - A LINE THAT ALREADY STARTS WITH / IS A COMMAND WHEREVER IT WAS TYPED,
+        //AND THE HISTORY KEEPS WHAT WAS TYPED RATHER THAN WHAT IT TURNED INTO
+        send(dm && !chatInput.startsWith("/") ? `/pm ${dm.id} ${chatInput}` : chatInput);
         pushHistory(historyRef.current, chatInput);
 
         setChatInput("");
@@ -2305,6 +2421,11 @@ function App()
 
 
     const channelLabel = currentChannel || "lobby";
+
+    //WHAT THE MIDDLE COLUMN IS: A CHANNEL, OR ONE PERSON. THE HEADING, THE TAB, THE WAY BACK OUT OF A
+    //SCREEN AND THE COMPOSER'S OWN PLACEHOLDER ARE ALL THE SAME QUESTION ASKED IN FOUR PLACES
+    const columnLabel = dm ? dm.username : channelLabel;
+    const columnIcon = dm ? "at" : "hash";
 
     //WHAT THE PALETTE IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
     const paletteTitle = palette.mode === "values"
@@ -2396,8 +2517,14 @@ function App()
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
     const renderChat = (message: ChatMessage, key: number, grouped: boolean) =>
     {
-        const own = message.username === username;
-        const whisper = message.kind === "private";
+        //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
+        const author = message.direct?.outgoing ? username : message.username;
+
+        const own = author === username;
+
+        //THE RULE DOWN THE SIDE IS WHAT SAYS A LINE IS PRIVATE. IN A CONVERSATION EVERY LINE IS, AND A
+        //BADGE ON EVERY ONE OF THEM SAYS NOTHING THE COLUMN'S OWN HEADING HAS NOT SAID ALREADY
+        const whisper = message.kind === "private" && !dm;
 
         return (
             <div
@@ -2405,7 +2532,7 @@ function App()
                 className={`flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
                 <div className="w-9 shrink-0">
-                    {!grouped && <Avatar name={message.username} color={color(message.username_color)} />}
+                    {!grouped && <Avatar name={author} color={color(message.username_color)} />}
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -2415,7 +2542,7 @@ function App()
                                 className={`text-[15px] font-semibold ${own ? "text-accent" : ""}`}
                                 style={{ color: own ? undefined : color(message.username_color) }}
                             >
-                                {message.username}
+                                {author}
                             </span>
                             {config.show_id && message.id !== null && <span className="text-[11px] text-faint">#{message.id}</span>}
                             {whisper && (
@@ -3212,7 +3339,15 @@ function App()
                                     <button
                                         key={channel || "lobby"}
                                         type="button"
-                                        onClick={() => send(channel === LOBBY ? "/channel" : `/channel ${channel}`)}
+                                        onClick={() =>
+                                        {
+                                            //A CHANNEL IS ALREADY UNDER WHATEVER CONVERSATION IS IN FRONT
+                                            //OF IT, SO THE ONE WE ARE STANDING IN IS A WAY BACK AND NOT A
+                                            //PACKET - THE SERVER HAS NOTHING TO BE TOLD ABOUT EITHER
+                                            if (channel !== currentChannel) send(channel === LOBBY ? "/channel" : `/channel ${channel}`);
+
+                                            showDirect(null);
+                                        }}
                                         className={`flex w-full items-center gap-1.5 rounded-app px-2 py-1.5 text-left transition-colors ${here ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
                                     >
                                         <Icon name="hash" className="h-4 w-4 shrink-0 text-faint" />
@@ -3220,6 +3355,59 @@ function App()
                                     </button>
                                 );
                             })}
+
+                            {/* THE CONVERSATIONS. THERE IS NO SUCH THING ON THE SERVER - IT ROUTES A PM AND
+                                KEEPS NOTHING - SO A ROW IS HERE BECAUSE SOMEBODY OPENED IT OR BECAUSE
+                                SOMETHING ARRIVED IN IT, AND CLOSING ONE IS CLOSING IT FOR GOOD */}
+                            {directs.length > 0 && (
+                                <>
+                                    <SectionLabel>Direct messages</SectionLabel>
+
+                                    {directs.map((chat) =>
+                                    {
+                                        const here = chat.id === openDm;
+                                        const online = users.some((user) => user.id === chat.id);
+
+                                        return (
+                                            <div
+                                                key={chat.id}
+                                                className={`group flex w-full items-center gap-2 rounded-app px-2 py-1 transition-colors ${here ? "bg-active" : "hover:bg-hover"}`}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => showDirect(chat)}
+                                                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                                >
+                                                    <div className="relative shrink-0">
+                                                        <Avatar name={chat.username} size={22} />
+                                                        <span className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-sidebar ${online ? "bg-online" : "bg-border-strong"}`} />
+                                                    </div>
+
+                                                    <span className={`min-w-0 flex-1 truncate text-sm ${here ? "text-text" : "text-muted"}`}>
+                                                        {chat.username}
+                                                    </span>
+                                                </button>
+
+                                                {chat.unread > 0 && (
+                                                    <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10px] font-bold text-black/85">
+                                                        {chat.unread}
+                                                    </span>
+                                                )}
+
+                                                <button
+                                                    type="button"
+                                                    title="Close the conversation"
+                                                    aria-label="Close the conversation"
+                                                    onClick={() => closeDirect(chat.id)}
+                                                    className="hidden h-4 w-4 shrink-0 items-center justify-center rounded text-faint transition-colors hover:text-text group-hover:flex"
+                                                >
+                                                    <Icon name="close" className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            )}
 
                             {/* THE CALL, WHILE THERE IS ONE AND SOMEBODY IS IN IT. CLICKING A ROW MUTES WHOEVER
                                 IS ON IT - OUR OWN ROW IS THE MICROPHONE, AND IS THE ONE /mute TAKES NO ID FOR */}
@@ -3311,7 +3499,7 @@ function App()
                                 HALF A CHAT ABOVE HALF A SCREEN IS TWO THINGS TOO SMALL TO READ */}
                             {watching ? (
                                 <div className="flex min-w-0 items-center gap-1 rounded-app bg-deep p-1">
-                                    {([["chat", "hash", channelLabel], ["screen", "monitor", watching]] as const).map(([which, icon, label]) => (
+                                    {([["chat", columnIcon, columnLabel], ["screen", "monitor", watching]] as const).map(([which, icon, label]) => (
                                         <button
                                             key={which}
                                             type="button"
@@ -3327,11 +3515,15 @@ function App()
                                 </div>
                             ) : (
                                 <>
-                                    <Icon name="hash" className="h-5 w-5 shrink-0 text-faint" />
-                                    <span className="truncate font-semibold">{channelLabel}</span>
+                                    <Icon name={columnIcon} className="h-5 w-5 shrink-0 text-faint" />
+                                    <span className="truncate font-semibold">{columnLabel}</span>
 
                                     <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
-                                    <span className="hidden min-w-0 truncate text-xs text-faint sm:block">{users.length} online</span>
+                                    <span className="hidden min-w-0 truncate text-xs text-faint sm:block">
+                                        {dm
+                                            ? users.some((user) => user.id === dm.id) ? "online" : "no longer on the server"
+                                            : `${users.length} online`}
+                                    </span>
                                 </>
                             )}
 
@@ -3382,8 +3574,8 @@ function App()
                                     onClick={() => setView("chat")}
                                     className="flex shrink-0 items-center gap-1.5 rounded-app px-2 py-1 text-sm text-muted transition-colors hover:bg-hover hover:text-text"
                                 >
-                                    <Icon name="hash" className="h-4 w-4" />
-                                    <span className="max-w-[14ch] truncate">{channelLabel}</span>
+                                    <Icon name={columnIcon} className="h-4 w-4" />
+                                    <span className="max-w-[14ch] truncate">{columnLabel}</span>
                                 </button>
 
                                 <span className="h-4 w-px shrink-0 bg-border" />
@@ -3421,11 +3613,13 @@ function App()
                                 {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
                                     IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
                                 <div className="px-4 pb-2 pt-8">
-                                    <h1 className="text-2xl font-bold">Welcome to #{channelLabel}</h1>
+                                    <h1 className="text-2xl font-bold">{dm ? dm.username : `Welcome to #${channelLabel}`}</h1>
                                     <p className="mt-1 text-sm text-muted">
-                                        {currentChannel
-                                            ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
-                                            : `This is the beginning of ${serverName || "the server"}.`}
+                                        {dm
+                                            ? `This is the beginning of your conversation with ${dm.username}. Nobody else can read it, and nothing keeps it past this session.`
+                                            : currentChannel
+                                                ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
+                                                : `This is the beginning of ${serverName || "the server"}.`}
                                     </p>
                                 </div>
 
@@ -3483,7 +3677,7 @@ function App()
                                     value={chatInput}
                                     onChange={(event) => writeInput(event.currentTarget.value)}
                                     onKeyDown={handleChatKey}
-                                    placeholder={`Message #${channelLabel}`}
+                                    placeholder={dm ? `Message @${dm.username}` : `Message #${channelLabel}`}
                                     className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
                                     autoFocus
                                     spellCheck={false}
@@ -3512,11 +3706,20 @@ function App()
                                 {
                                     const own = user.username === username;
 
+                                    //CLICKING SOMEBODY OPENS THE CONVERSATION WITH THEM, WHICH IS WHERE
+                                    //EVERY OTHER CHAT PROGRAM PUTS IT. OUR OWN ROW IS NOT ONE OF THOSE -
+                                    //THE SERVER REFUSES A PM TO OURSELVES, AND SO DOES THIS
+                                    const Row = own ? "div" : "button";
+
                                     return (
-                                        <div
+                                        <Row
                                             key={user.id}
-                                            className="flex items-center gap-2 rounded-app px-2 py-1 hover:bg-hover"
-                                            title={user.channel ? `#${user.channel}` : "lobby"}
+                                            type={own ? undefined : "button"}
+                                            onClick={own ? undefined : () => showDirect(user)}
+                                            className={`flex w-full items-center gap-2 rounded-app px-2 py-1 text-left hover:bg-hover ${own ? "" : "cursor-pointer"}`}
+                                            title={own
+                                                ? user.channel ? `#${user.channel}` : "lobby"
+                                                : `Message ${user.username}`}
                                         >
                                             <div className="relative shrink-0">
                                                 <Avatar name={user.username} size={28} />
@@ -3529,7 +3732,7 @@ function App()
                                             </div>
 
                                             {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
-                                        </div>
+                                        </Row>
                                     );
                                 })}
                             </div>

@@ -68,7 +68,9 @@ case visible.
 
 Chat lines all arrive as one `message` event carrying a `ChatMessage` whose `kind` (`user`, `private`,
 `system`, `notice`, `ok`, `error`) is what the frontend styles on — joins, uploads and server notices are not a
-separate channel, they are messages nobody said. `/list` and the ban list arrive as a `block` event (a flat
+separate channel, they are messages nobody said. A `private` line is the one kind that is not for the pane it
+landed in: it carries `direct` — the **other** person's id and name, plus which way it went — and the window
+files it into that conversation instead (see **Direct messages**). `/list` and the ban list arrive as a `block` event (a flat
 `Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the TUI
 prints them — the frontend draws them as a card in the stream, keeping the `├─`/`╰─` glyphs it builds from
 the depths, since what they are is a tree.
@@ -104,7 +106,8 @@ chat program has settled on, because that is the one a user already knows how to
 Three columns, and a screen in front of them while there is no session:
 
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
-  *its* config; the channel list with a `+` that makes one; then the call: the voice roster while there is
+  *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
+  call: the voice roster while there is
   one, the `Voice connected` strip with the button that hangs up, the `Sharing your screen` strip beside it,
   and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
@@ -112,7 +115,7 @@ Three columns, and a screen in front of them while there is no session:
   voice and the member column), the messages, and the composer, whose `+` is the one upload button. The command palette
   floats on the composer.
 - **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
-  own button.
+  own button. A row is a button, and it opens the conversation with that person — see **Direct messages**.
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
@@ -404,6 +407,40 @@ somebody sits in it — and history for a channel nobody is in any more is dropp
 
 Unlike the TUI, which clears the pane on every switch, this app keeps per-channel history locally. The server
 only ever replays the lobby, once, at login (`history`).
+
+### Direct messages
+
+The TUI prints a PM into the scrollback as `[PM FROM] name (id): text`, which is the whole of what a terminal
+can do with one. A window can do what every other chat program does, so a private message is **not** a line of
+whatever channel happened to be open when it landed — it is a conversation, and it has a pane of its own.
+
+The server knows nothing about any of this: it routes a `PrivateMessage` and keeps no history, so a
+conversation exists because somebody opened it or because something arrived in it, and it lasts exactly as long
+as the session does. `dms` is keyed by the **other** person's id, `openDm` is which one the middle column is
+showing, and `openDmRef` is the ref version the listener reads — a line landing in the conversation being read
+is not unread.
+
+The routing hangs on one field. `ClientEvent::PrivateMessageRecv` names the sender and
+`PrivateMessageSent` (the server's echo of one we sent) names the recipient, so **the id and name are the peer
+either way** — that is what `DirectPeer { id, username, outgoing }` carries. The echo names nobody but the
+recipient, so an outgoing line arrives with an empty `username` and `renderChat` puts ours in: this side of the
+bridge is the one place that never learns our own name.
+
+Everything else is the shape the window already has:
+
+- Clicking somebody in the member column opens the conversation with them (our own row is not a button — the
+  server refuses a PM to ourselves). The open conversations are a section in the left sidebar under the
+  channels, with an unread count and an `×`; closing one is closing it **for good**, since nothing but this
+  window ever held it.
+- The composer sends through the command path like everything else: in a conversation a plain line becomes
+  `/pm <id> <line>`, and a line that already starts with `/` is a command wherever it was typed. The history
+  keeps what was typed, not what it turned into.
+- Walking into a channel walks out of the conversation — the sidebar's channel rows and the `channel_changed`
+  event both clear `openDm`, and a row for the channel we are already standing in is a way back rather than a
+  packet.
+- `columnLabel`/`columnIcon` are the same question asked in four places: the header, the screen tab, the way
+  back out of a screen, and the composer's placeholder. `whisper` (the accent rule and the `private` badge) is
+  drawn only **outside** a conversation, where a line being private is news.
 
 ### Roster refreshes
 

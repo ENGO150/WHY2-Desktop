@@ -198,6 +198,18 @@ struct ChatMessage
     id: Option<usize>,
     username_color: Option<u8>,
     message_color: Option<u8>,
+    direct: Option<DirectPeer>, //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
+}
+
+//WHO A PRIVATE MESSAGE IS *WITH*, WHICH IS THE OTHER PERSON WHICHEVER WAY IT WENT: THE SERVER NAMES THE
+//SENDER ON ONE THAT ARRIVED AND THE RECIPIENT ON THE ECHO OF ONE WE SENT. A PM IS NOT A LINE OF WHATEVER
+//CHANNEL HAPPENED TO BE OPEN WHEN IT LANDED - IT IS A CONVERSATION, AND THIS IS WHICH ONE
+#[derive(Serialize, Clone)]
+struct DirectPeer
+{
+    id: usize,
+    username: String,
+    outgoing: bool, //OURS TO THEM RATHER THAN THEIRS TO US - THE ECHO NAMES NOBODY BUT THE OTHER END
 }
 
 //ONE ROW OF A LIST BLOCK. THE TUI PRINTS /list AND THE BAN LIST INTO THE PANE AS TREES RATHER THAN INTO
@@ -465,6 +477,7 @@ impl ChatMessage
             id: None,
             username_color: None,
             message_color: None,
+            direct: None,
         }
     }
 
@@ -491,6 +504,12 @@ impl ChatMessage
     {
         self.username_color = colors.username_color;
         self.message_color = colors.message_color;
+        self
+    }
+
+    fn direct(mut self, peer: DirectPeer) -> Self
+    {
+        self.direct = Some(peer);
         self
     }
 
@@ -932,14 +951,22 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
             say(app, ChatMessage::new(MessageKind::User, username, text).with_id(id).colored(colors));
         },
 
+        //THE LINE CARRIES WHO IT IS WITH RATHER THAN SAYING SO IN ITS OWN TEXT: THE WINDOW FILES IT INTO
+        //THAT PERSON'S CONVERSATION, WHERE "TO" AND "FROM" ARE WHICH SIDE THE LINE IS ON
         ClientEvent::PrivateMessageRecv(from, id, text) =>
         {
-            say(app, ChatMessage::new(MessageKind::Private, format!("{from} (PM)"), text).with_id(id));
+            let peer = DirectPeer { id, username: from.clone(), outgoing: false };
+
+            say(app, ChatMessage::new(MessageKind::Private, from, text).with_id(id).direct(peer));
         },
 
+        //THE ECHO OF ONE WE SENT NAMES THE RECIPIENT, SO IT CARRIES NO AUTHOR AT ALL - THE AUTHOR IS US,
+        //AND THIS SIDE OF THE BRIDGE IS THE ONE PLACE THAT NEVER LEARNS OUR OWN NAME
         ClientEvent::PrivateMessageSent(to, id, text) =>
         {
-            say(app, ChatMessage::new(MessageKind::Private, format!("To {to} (PM)"), text).with_id(id));
+            let peer = DirectPeer { id, username: to, outgoing: true };
+
+            say(app, ChatMessage::new(MessageKind::Private, "", text).direct(peer));
         },
 
         //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN
