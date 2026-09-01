@@ -352,20 +352,22 @@ bilinear tap averages exactly. It is never scaled *up* here: a pane bigger than 
 compositor handles perfectly well. Resizing any canvas resets its context, so the smoothing hints are asked
 for again on every one of them.
 
-`/screens` is poll-only — the server answers it and never says that somebody started — so the app asks on a
-clock (`SCREENS_POLL`, and the first ask waits for the roster to be out of the way, since the server counts
-packets and not messages). That keeps the **member list** honest, which is where watching actually starts: a
-green monitor button appears beside anybody who is sharing and sends `/attach <id>`, or `/deattach` while it
-is their screen in the pane. The clock's ask does **not** go through `send_input`: `refresh_screens` is the
-`refresh_online` of this question, waiting out `ROSTER_GAP` since our own last packet, because a `Screens`
-on the heels of an `Attach` is exactly what the server calls spam. Nothing asks it *because* a share
-started, for the same reason. `pollingRef` separates the two kinds of answer — the one we asked for quietly
-fills the list in, and the one somebody typed opens the **Screens** window, one door for both
-directions: everybody who is sharing (whole rows, ours among them marked `you` and watchable like any other
-— seeing what everybody else is seeing is the one thing the person sharing cannot otherwise check) over our
-own monitors, the live one badged. The
-header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap, and
-`Refresh` re-asks.
+`/screens` is poll-only — the server answers it and never says that somebody started — and it is **asked
+only when somebody wants to know**. There is no clock: a list that has to be kept fresh is a packet every
+few seconds for an answer that is almost always the same one, so the question is asked when the **Screens**
+window opens and when its `Refresh` is pressed, and the list is a photograph of that moment the way `/files`
+is. The **member list** therefore carries no watch button — there would be nothing keeping it honest — and
+watching starts in the window instead, which is the one door for both directions: everybody who is sharing
+(whole rows, ours among them marked `you` and watchable like any other — seeing what everybody else is
+seeing is the one thing the person sharing cannot otherwise check) over our own monitors, the live one
+badged. The header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap.
+Its rows send `/attach <id>`, `/deattach` and `/screen <name>`.
+
+The ask does **not** go through `send_input`: `refresh_screens` is the `refresh_online` of this question,
+waiting out `ROSTER_GAP` since our own last packet, because a `Screens` on the heels of an `Attach` is
+exactly what the server calls spam. And every answer opens the window, since nothing asks quietly any
+more — a `screens` event is either the window's own ask or somebody typing `/screens`, and both of them
+belong in it.
 
 `reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, exactly what
 `tui/state.rs::reset_session` clears: the pick lasts as long as the share does. The session teardown also

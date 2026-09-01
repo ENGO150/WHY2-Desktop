@@ -384,10 +384,6 @@ function branches(rows: BlockRow[]): string[]
 }
 
 //HOW MANY ROWS OF THE PALETTE ARE ON SCREEN AT ONCE, AS IN palette::MAX_ROWS
-//WHO IS SHARING IS ONLY EVER ANSWERED AND NEVER ANNOUNCED, SO IT IS ASKED AGAIN NOW AND THEN - OFTEN
-//ENOUGH THAT THE WATCH BUTTONS IN THE MEMBER LIST ARE HONEST, RARELY ENOUGH TO BE NOTHING ON THE WIRE
-const SCREENS_POLL = 10000;
-
 const PALETTE_ROWS = 8;
 
 //THE LINE ART. ONE COMPONENT AND A TABLE OF PATHS, BECAUSE AN ICON SET IS NOT WORTH A DEPENDENCY AND A
@@ -1007,10 +1003,6 @@ function App()
     const filesRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    //HOW MANY OF THE ANSWERS ON THEIR WAY WERE ASKED FOR BY US RATHER THAN BY SOMEBODY TYPING /screens.
-    //A COUNT AND NOT A FLAG, SINCE THE CLOCK AND A SHARE STARTING CAN BOTH BE IN FLIGHT AT ONCE
-    const pollingRef = useRef(0);
-
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
@@ -1299,14 +1291,12 @@ function App()
                     break;
                 }
 
-                //TYPING /screens OPENS THE WINDOW THE ANSWER BELONGS IN, THE WAY /files OPENS ITS OWN -
-                //BUT THE ONE THE ROSTER ASKS FOR EVERY HALF MINUTE ONLY FILLS THE LIST IN
+                //THE ANSWER OPENS THE WINDOW IT BELONGS IN, THE WAY /files OPENS ITS OWN. NOBODY ASKS
+                //THIS QUESTION BUT THE WINDOW AND THE USER, SO THERE IS NO OTHER PLACE FOR IT TO LAND
                 case "screens":
                 {
                     setSharers(payload.data.users);
-
-                    if (pollingRef.current > 0) pollingRef.current -= 1;
-                    else setScreensOpen(true);
+                    setScreensOpen(true);
 
                     break;
                 }
@@ -1580,15 +1570,9 @@ function App()
 
     useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
 
-    //ASKED FOR BY US AND NOT BY SOMEBODY TYPING IT, WHICH IS THE DIFFERENCE BETWEEN FILLING THE LIST IN
-    //AND THROWING A WINDOW OPEN IN SOMEBODY'S FACE
-    const askScreens = () =>
-    {
-        pollingRef.current += 1;
-
-        //NOT send(): THE SERVER COUNTS PACKETS, AND THIS ONE HAS TO WAIT OUT WHATEVER THE USER JUST DID
-        invoke("refresh_screens").catch(() => { pollingRef.current -= 1; });
-    };
+    //WHO IS SHARING. NOT send(): THE SERVER COUNTS PACKETS, AND THIS ONE HAS TO WAIT OUT WHATEVER THE
+    //USER JUST DID - A /screens ON THE HEELS OF AN /attach IS WHAT THE SERVER CALLS SPAM
+    const askScreens = () => { invoke("refresh_screens").catch(() => {}); };
 
     //ONE DOOR FOR BOTH HALVES OF THE SUBJECT: WHICH OF OUR SCREENS TO SHARE, AND WHOSE TO WATCH. THE
     //MONITORS ARE ASKED OF THE SAME VOCABULARY THE PALETTE USES, AND THE SHARERS OF THE SERVER, BECAUSE
@@ -1838,18 +1822,6 @@ function App()
         setFilter("");
         chatInputRef.current?.focus();
     };
-
-    //ASK WHO IS SHARING, QUIETLY AND ON A CLOCK. THE FIRST ONE WAITS FOR THE ROSTER TO BE OUT OF THE WAY -
-    //THE SERVER COUNTS PACKETS AND NOT MESSAGES, AND TWO QUESTIONS IN THE SAME BREATH EARN A WARNING
-    useEffect(() =>
-    {
-        if (!connected) return;
-
-        const first = setTimeout(askScreens, 2500);
-        const clock = setInterval(askScreens, SCREENS_POLL);
-
-        return () => { clearTimeout(first); clearInterval(clock); };
-    }, [connected]);
 
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
@@ -3540,11 +3512,6 @@ function App()
                                 {
                                     const own = user.username === username;
 
-                                    //WHOEVER WAS SHARING WHEN THE LIST WAS LAST ASKED FOR. IT IS THE ONE
-                                    //THING THE SERVER NEVER ANNOUNCES, SO IT IS AS FRESH AS THE LAST ASK
-                                    const sharing = sharers.some((sharer) => sharer.id === user.id);
-                                    const here = watching === user.username;
-
                                     return (
                                         <div
                                             key={user.id}
@@ -3560,20 +3527,6 @@ function App()
                                                 <div className={`truncate text-sm ${own ? "text-accent" : "text-muted"}`}>{user.username}</div>
                                                 {user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
                                             </div>
-
-                                            {sharing && (
-                                                <button
-                                                    type="button"
-                                                    title={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
-                                                    aria-label={here ? `Stop watching ${user.username}` : `Watch ${user.username}'s screen`}
-                                                    onClick={() => send(here ? "/deattach" : `/attach ${user.id}`)}
-                                                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-app transition-colors ${here
-                                                        ? "text-online hover:bg-active"
-                                                        : "text-muted hover:bg-active hover:text-online"}`}
-                                                >
-                                                    <Icon name="monitor" className="h-4 w-4" />
-                                                </button>
-                                            )}
 
                                             {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
                                         </div>
