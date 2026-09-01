@@ -341,6 +341,17 @@ page would take the decoder's target with it and come back black. A badge in the
 which is the only way to tell from the outside — and on WebKitGTK the answer changes once `avdec_h264` is
 installed **and the app is restarted**, since the GStreamer registry is read when the process starts.
 
+`paint` draws the picture at **the size it is looked at**, and that is the whole of what keeps text readable.
+A canvas whose backing store is bigger than its own box is scaled down by the compositor in a single bilinear
+tap, which reads four pixels of every sixteen and drops the rest — a 1080p share in a pane a thousand pixels
+wide comes out looking pixelated, and that is the one thing the TUI never shows, since its window is the size
+of the share to begin with. So the canvas is sized to its own device-pixel box (a `ResizeObserver`, preferring
+`devicePixelContentBoxSize`) with the share's aspect kept, which leaves the element's `object-contain` nothing
+to do, and the way down is **halved** through a scratch canvas until the last step is inside 2:1 — the ratio a
+bilinear tap averages exactly. It is never scaled *up* here: a pane bigger than the share is the one case the
+compositor handles perfectly well. Resizing any canvas resets its context, so the smoothing hints are asked
+for again on every one of them.
+
 `/screens` is poll-only — the server answers it and never says that somebody started — so the app asks on a
 clock (`SCREENS_POLL`, and the first ask waits for the roster to be out of the way, since the server counts
 packets and not messages). That keeps the **member list** honest, which is where watching actually starts: a

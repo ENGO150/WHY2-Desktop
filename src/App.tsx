@@ -1622,24 +1622,97 @@ function App()
         let drawing = false;  //ONE PICTURE AT A TIME - THE NEXT FRAME IS NEWER THAN THE ONE BEING DECODED
         let stamp = 0;
 
+        //THE CANVAS'S OWN BOX, IN DEVICE PIXELS. A SHARE IS SOMEBODY'S WHOLE MONITOR AND THE PANE IS SMALLER
+        //THAN THAT, SO THIS IS WHAT THE PICTURE IS ACTUALLY BEING LOOKED AT - MEASURED AND NOT ASSUMED,
+        //SINCE A WINDOW IS RESIZED WHILE THE SHARE RUNS AND A HIDDEN PANE HAS NO BOX AT ALL
+        let box = { width: 0, height: 0 };
+
+        const measure = () =>
+        {
+            const ratio = window.devicePixelRatio || 1;
+
+            box = { width: canvas.clientWidth * ratio, height: canvas.clientHeight * ratio };
+        };
+
+        measure();
+
+        const observer = new ResizeObserver((entries) =>
+        {
+            //THE DEVICE BOX WHERE THE BROWSER REPORTS IT, SINCE THAT IS THE ONE WITHOUT A ROUNDING ERROR
+            const device = entries[0]?.devicePixelContentBoxSize?.[0];
+
+            if (device) box = { width: device.inlineSize, height: device.blockSize };
+            else measure();
+        });
+
+        observer.observe(canvas);
+
+        //RESIZING A CANVAS RESETS EVERYTHING ABOUT ITS CONTEXT, SO THE SCALING QUALITY IS ASKED FOR AGAIN
+        const resize = (surface: HTMLCanvasElement, target: CanvasRenderingContext2D, width: number, height: number) =>
+        {
+            if (surface.width === width && surface.height === height) return;
+
+            surface.width = width;
+            surface.height = height;
+
+            target.imageSmoothingEnabled = true;
+            target.imageSmoothingQuality = "high";
+        };
+
+        //THE STEPS OF THE WAY DOWN. TWO, BECAUSE EACH HALVING READS THE ONE BEFORE IT
+        const scratch = [0, 1].map(() =>
+        {
+            const surface = document.createElement("canvas");
+
+            return { surface, context: surface.getContext("2d") };
+        });
+
         const paint = (frame: CanvasImageSource, width: number, height: number) =>
         {
-            //THE CANVAS IS THE SIZE OF WHAT IS BEING SENT; THE PAGE SCALES IT TO THE PANE. RESIZING A CANVAS
-            //RESETS EVERYTHING ABOUT ITS CONTEXT, SO THE SCALING QUALITY IS ASKED FOR AGAIN EVERY TIME
-            if (canvas.width !== width || canvas.height !== height)
-            {
-                canvas.width = width;
-                canvas.height = height;
+            //THE CANVAS IS THE SIZE THE PICTURE IS LOOKED AT, NOT THE SIZE IT WAS SENT: A BACKING STORE
+            //BIGGER THAN ITS BOX IS SCALED DOWN BY THE COMPOSITOR IN ONE BILINEAR TAP, AND FOUR TAPS OF A
+            //1080p SCREEN DRAWN AT 1000 WIDE IS EXACTLY THE ALIASING THAT TURNS TEXT INTO PIXELS. THE ASPECT
+            //IS KEPT, SO THE object-contain ON THE ELEMENT HAS NOTHING LEFT TO DO. IT IS NEVER SCALED *UP*
+            //HERE - A PANE BIGGER THAN THE SHARE IS THE ONE CASE THE COMPOSITOR HANDLES PERFECTLY WELL
+            const fit = Math.min((box.width || width) / width, (box.height || height) / height, 1);
 
-                context.imageSmoothingEnabled = true;
-                context.imageSmoothingQuality = "high";
+            const drawnWidth = Math.max(1, Math.round(width * fit));
+            const drawnHeight = Math.max(1, Math.round(height * fit));
+
+            resize(canvas, context, drawnWidth, drawnHeight);
+
+            //AND THE WAY DOWN IS HALVED RATHER THAN TAKEN AT ONCE. A BILINEAR TAP AVERAGES A 2x2 BLOCK
+            //EXACTLY, WHICH IS THE BOX FILTER THE TUI GETS OUT OF ITS SAMPLER FOR NOTHING; ASKED FOR MORE
+            //THAN THAT IT READS FOUR PIXELS OUT OF SIXTEEN AND DROPS THE REST
+            let source = frame;
+            let sourceWidth = width;
+            let sourceHeight = height;
+            let step = 0;
+
+            while (sourceWidth >= drawnWidth * 2 && sourceHeight >= drawnHeight * 2)
+            {
+                const { surface, context: half } = scratch[step % scratch.length];
+
+                if (!half) break;
+
+                const halfWidth = Math.max(drawnWidth, Math.round(sourceWidth / 2));
+                const halfHeight = Math.max(drawnHeight, Math.round(sourceHeight / 2));
+
+                resize(surface, half, halfWidth, halfHeight);
+                half.drawImage(source, 0, 0, sourceWidth, sourceHeight, 0, 0, halfWidth, halfHeight);
+
+                source = surface;
+                sourceWidth = halfWidth;
+                sourceHeight = halfHeight;
+
+                step += 1;
             }
 
             //THE SOURCE RECTANGLE IS NAMED AND NOT ASSUMED. H.264 ENCODES IN WHOLE MACROBLOCKS, SO A 900-ROW
             //SCREEN TRAVELS AS 912 ROWS WITH THE LAST TWELVE PADDED OUT, AND A DECODER THAT HANDS OVER THE
             //CODED FRAME RATHER THAN THE VISIBLE ONE PUTS THAT PADDING ALONG THE BOTTOM EDGE. NAMING THE
             //RECTANGLE CROPS IT WHERE THAT HAPPENS AND CHANGES NOTHING WHERE IT DOES NOT
-            context.drawImage(frame, 0, 0, width, height, 0, 0, width, height);
+            context.drawImage(source, 0, 0, sourceWidth, sourceHeight, 0, 0, drawnWidth, drawnHeight);
         };
 
         const channel = new Channel<ArrayBuffer>();
@@ -1719,6 +1792,8 @@ function App()
         return () =>
         {
             live = false;
+
+            observer.disconnect();
 
             setDecoding("");
             invoke("drop_frames").catch(() => {});
