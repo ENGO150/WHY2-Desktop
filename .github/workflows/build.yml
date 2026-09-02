@@ -1,0 +1,195 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+name: Build WHY2 Desktop
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux (x86_64)
+          - os: macos-latest
+            name: macOS (aarch64)
+          - os: macos-13
+            name: macOS (x86_64)
+          - os: windows-latest
+            name: Windows (x86_64)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # THE WEBVIEW IS webkit2gtk HERE; EVERYTHING AFTER librsvg IS why2-chat'S OWN - THE CALL WANTS ALSA,
+      # OPUS AND PIPEWIRE, AND THE SCREEN SHARE WANTS EGL, GBM AND AN ASSEMBLER FOR openh264
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf file \
+            libayatana-appindicator3-dev libxdo-dev libssl-dev \
+            pkg-config libasound2-dev libopus-dev libpipewire-0.3-dev libegl-dev \
+            clang libclang-dev libgbm-dev nasm
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew update && brew install opus pkg-config nasm
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: choco install nasm
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # THIS RUNS beforeBuildCommand (tsc + vite build) ON THE WAY IN, SO THE TYPECHECK IS PART OF IT
+      - name: Build app
+        run: npm run tauri build
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: why2-desktop-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+
+  build-android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+
+    # THE SIGNING STEP IS GATED ON WHETHER THE KEYSTORE IS CONFIGURED, AND THE `secrets` CONTEXT IS NOT ONE
+    # OF THE ONES A STEP'S `if` CAN SEE - SO THE SECRETS ARE LIFTED INTO env HERE, WHICH IT CAN
+    env:
+      ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # THE ANDROID BUILD IS client_base ONLY - NO cpal, NO xcap, NO openh264 - SO NONE OF THE DESKTOP'S
+      # SYSTEM LIBRARIES ARE WANTED HERE. WHAT IT NEEDS IS A JDK THE ANDROID GRADLE PLUGIN ACCEPTS (25 IS
+      # TOO NEW FOR IT), THE NDK, AND THE FOUR ANDROID STD TARGETS
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018'
+
+      - name: Point at the NDK
+        run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # gen/android IS GENERATED AND NOT COMMITTED, SO IT IS MADE HERE. THE TARGETS ARE ALREADY IN PLACE
+      # ABOVE, WHICH IS WHAT --skip-targets-install IS SAYING - IT IS ALSO THE ONE FLAG THAT KEEPS rustup
+      # OUT OF THE PICTURE ENTIRELY
+      - name: Generate the Android project
+        run: npm run android:init -- --skip-targets-install
+
+      - name: Build APK
+        run: npm run android:build -- --apk
+
+      # THE GENERATED GRADLE PROJECT CARRIES NO signingConfigs, SO A RELEASE APK COMES OUT UNSIGNED AND
+      # NOTHING WILL INSTALL IT. IT IS SIGNED HERE RATHER THAN BY PATCHING build.gradle.kts, WHICH IS A
+      # GENERATED FILE THIS JOB HAS JUST WRITTEN. SET ANDROID_KEYSTORE (base64 OF THE .jks),
+      # ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS AND ANDROID_KEY_PASSWORD IN THE REPOSITORY SECRETS
+      # TO TURN THIS ON; WITHOUT THEM THE UNSIGNED APK IS STILL BUILT AND UPLOADED
+      - name: Sign APK
+        if: ${{ env.ANDROID_KEYSTORE != '' }}
+        run: |
+          echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+
+          for apk in $(find src-tauri/gen/android/app/build/outputs/apk -name '*-unsigned.apk'); do
+            "$TOOLS/zipalign" -f -p 4 "$apk" "${apk%-unsigned.apk}-aligned.apk"
+
+            "$TOOLS/apksigner" sign \
+              --ks "$RUNNER_TEMP/keystore.jks" \
+              --ks-pass "env:KEYSTORE_PASSWORD" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --key-pass "env:KEY_PASSWORD" \
+              --out "${apk%-unsigned.apk}.apk" \
+              "${apk%-unsigned.apk}-aligned.apk"
+
+            rm -f "$apk" "${apk%-unsigned.apk}-aligned.apk"
+          done
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: why2-desktop-android
+          if-no-files-found: error
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
