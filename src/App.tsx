@@ -1631,8 +1631,12 @@ function App()
 
     //THE TWO SHAPES OF EVERY WINDOW THAT COVERS THE CONVERSATION. ON A DESKTOP IT IS A CARD FLOATING IN
     //A DARKENED ROOM; ON A PHONE THERE IS NO ROOM TO FLOAT IN, SO IT IS THE SCREEN
+    //THE NARROW ONE PAYS THE INSETS AGAIN, EVEN THOUGH <main> ALREADY DID: AN absolute inset-0 CHILD IS
+    //LAID OUT AGAINST ITS ANCESTOR'S *PADDING BOX*, SO IT COVERS THE NOTCH THAT PADDING WAS KEEPING CLEAR
+    //- AND A HEADER UNDER THE STATUS BAR IS AN X THAT PULLS DOWN THE NOTIFICATIONS INSTEAD OF CLOSING.
+    //THE WRAP PAYS AND NOT THE CARD, SO THE OVERLAY STILL REACHES THE GLASS BEHIND THE BAR
     const dialogWrap = narrow
-        ? "absolute inset-0 z-40 flex bg-overlay"
+        ? "safe-top safe-bottom absolute inset-0 z-40 flex bg-overlay"
         : "absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4";
 
     const dialogCard = (wide: string) => narrow
