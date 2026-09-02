@@ -45,8 +45,10 @@ use tokio::
 
 use sha2::{ Sha256, Digest };
 
+#[cfg(media)]
 use openh264::{ decoder::Decoder, formats::YUVSource };
 
+#[cfg(media)]
 use jpeg_encoder::{ Encoder as JpegEncoder, ColorType, SamplingFactor };
 
 use serde::{ Serialize, Deserialize };
@@ -78,9 +80,7 @@ use why2_chat::
     network::
     {
         self,
-        voice::client::{ self as voice, options as voice_options },
-        screen::client::{ self as screen, capture as screen_capture, options as screen_options },
-        client::{ self, ClientEvent, VoiceUser },
+        client::{ self, ClientEvent },
         codes::
         {
             PacketCode,
@@ -95,6 +95,16 @@ use why2_chat::
     },
 };
 
+//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
+//THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
+#[cfg(media)]
+use why2_chat::network::
+{
+    client::VoiceUser,
+    voice::client::{ self as voice, options as voice_options },
+    screen::client::{ self as screen, capture as screen_capture, options as screen_options },
+};
+
 //CONSTS
 const EVENT: &str = "why2-event"; //THE ONE EVENT THE WEBVIEW LISTENS ON
 
@@ -104,12 +114,14 @@ const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
 //PHOTOGRAPH: TEXT HAS TO SURVIVE IT, AND THE BYTES ONLY TRAVEL AS FAR AS THE CANVAS IN THE SAME PROCESS
+#[cfg(media)]
 const JPEG_QUALITY: u8 = 88;
 
 //AND HOW WIDE IT IS DRAWN AT. THE PANE IS A FRACTION OF THE SCREEN BEING SHARED, AND EVERY PIXEL PAST THIS
 //IS PAID FOR THREE TIMES OVER - THE CONVERSION, THE ENCODE, AND THE TRIP ACROSS THE BRIDGE. TAKING A 4K
 //SHARE DOWN BY HALF IS THE WHOLE DIFFERENCE BETWEEN A PICTURE AND A SLIDESHOW. ANYTHING UP TO A 1080p
 //SCREEN IS SENT AS IT IS, BECAUSE THE PANE IS THE WHOLE WINDOW NOW AND HALVING THAT IS VISIBLE
+#[cfg(media)]
 const JPEG_WIDTH: usize = 1920;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
@@ -143,22 +155,41 @@ const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
 //THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: THE HEADING THEY SIT UNDER,
 //THE LABEL, THE KEY, AND WHAT KIND OF ANSWER THE KEY TAKES. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT
 //MEANS - disable_colors HELD IS "Message colors" TURNED OFF, WHICH IS WHY A TOGGLE CARRIES invert
-const CLIENT_SETTINGS: [(&str, &str, &str, ClientKind); 8] =
-[
+//THE AUDIO HALF OF IT IS THE VOICE CLIENT'S OWN, AND IS NOT THERE TO BE OFFERED IN A BUILD WITHOUT ONE -
+//A ROW POINTING AT A DEVICE NOTHING WILL EVER OPEN IS A SWITCH WIRED TO NOTHING
+#[cfg(media)]
+const AUDIO_SETTINGS: &[SettingsKey] =
+&[
     ("Audio", "Input device",      "input_device",      ClientKind::Device { input: true }),
     ("Audio", "Output device",     "output_device",     ClientKind::Device { input: false }),
     ("Audio", "Input volume",      "input_volume",      ClientKind::Volume),
     ("Audio", "Output volume",     "output_volume",     ClientKind::Volume),
     ("Audio", "Noise suppression", "noise_suppression", ClientKind::Toggle { invert: false }),
     ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
+];
 
+#[cfg(not(media))]
+const AUDIO_SETTINGS: &[SettingsKey] = &[];
+
+const INTERFACE_SETTINGS: &[SettingsKey] =
+&[
     ("Interface", "Message colors",  "disable_colors", ClientKind::Toggle { invert: true }),
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
+//EVERY ROW THE BOX OFFERS, IN THE ORDER tui/settings.rs OPENS THEM
+fn client_keys() -> impl Iterator<Item = &'static SettingsKey>
+{
+    AUDIO_SETTINGS.iter().chain(INTERFACE_SETTINGS)
+}
+
 //CELLS OF VOLUME BAR AND THE STEP EITHER ARROW MOVES IT BY, BOTH AS tui/settings.rs HAS THEM. THE BAR IS
 //DRAWN IN THE WINDOW, SO ONLY THE STEP IS OURS - THE CEILING IS THE VOICE CLIENT'S OWN
+#[cfg(media)]
 const VOLUME_STEP: u32 = 5;
+
+//ONE ROW OF THE TABLE ABOVE: THE HEADING IT SITS UNDER, THE LABEL, THE KEY, AND WHAT THE KEY TAKES
+type SettingsKey = (&'static str, &'static str, &'static str, ClientKind);
 
 //STRUCTS
 struct AppState
@@ -395,8 +426,8 @@ struct VocabularyValue
 enum ClientKind
 {
     Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
-    Volume,
-    Device { input: bool },
+    #[cfg(media)] Volume,
+    #[cfg(media)] Device { input: bool },
 }
 
 //AND WHAT IT HOLDS RIGHT NOW. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE BAR IN THE
@@ -406,8 +437,8 @@ enum ClientKind
 enum ClientValue
 {
     Toggle(bool), //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
-    Volume { percent: u32, max: u32, step: u32 },
-    Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
+    #[cfg(media)] Volume { percent: u32, max: u32, step: u32 },
+    #[cfg(media)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -545,6 +576,7 @@ fn block(app: &AppHandle, title: String, rows: Vec<BlockRow>) //PUSH ONE TREE IN
 //THE CALL AS IT STANDS. EVERYTHING THAT TOUCHES ANY PART OF IT ENDS HERE - THE ROSTER ARRIVING, THE
 //SERVER LETTING US IN OR PUTTING US OUT, A MUTE TOGGLED, A VOLUME SLID - BECAUSE THE PANEL AND THE
 //MICROPHONE READING ARE ONE PICTURE AND HALF OF IT IS ALWAYS WRONG
+#[cfg(media)]
 fn emit_voice(app: &AppHandle)
 {
     let state = app.state::<AppState>();
@@ -562,6 +594,7 @@ fn emit_voice(app: &AppHandle)
 
 //OUR SHARE AS IT STANDS. BOTH HALVES OF IT LIVE IN THE CRATE'S GLOBALS AND MOVE WITHOUT US - THE SERVER
 //TOGGLES THE SHARE, THE COMMAND SWAPS THE MONITOR - SO THEY ARE READ HERE RATHER THAN KEPT
+#[cfg(media)]
 fn emit_screen(app: &AppHandle)
 {
     let sharing = screen_options::get_use_screen();
@@ -578,8 +611,23 @@ fn emit_screen(app: &AppHandle)
     });
 }
 
+//THERE IS NO CALL AND NO SHARE IN THIS BUILD, AND THE ANSWER TO BOTH QUESTIONS IS THE SAME EVERY TIME -
+//WHICH IS WHAT THE WINDOW DRAWS ITS (ABSENT) HEADSET AND MONITOR BUTTONS FROM
+#[cfg(not(media))]
+fn emit_voice(app: &AppHandle)
+{
+    emit(app, UiEvent::Voice { voice: VoiceState { enabled: false, mic: false, users: Vec::new() } });
+}
+
+#[cfg(not(media))]
+fn emit_screen(app: &AppHandle)
+{
+    emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
+}
+
 //ONE USER OF THE CALL, WITH THE MUTE READ OFF THE CRATE'S GLOBALS THE WAY tui/draw.rs READS IT: OUR OWN
 //ROW ASKS ABOUT THE MICROPHONE, EVERYBODY ELSE'S ABOUT THEIR ID
+#[cfg(media)]
 fn voice_user(user: VoiceUser) -> VoiceUserInfo
 {
     VoiceUserInfo
@@ -610,14 +658,25 @@ fn reset_session()
     client::ACTIVE_UPLOADS.lock().unwrap().clear();
 
     //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
+    #[cfg(media)]
     voice_options::set_use_voice(false);
 
     //THE SHARE THE SAME WAY, AND THE MONITOR WITH IT - THE PICK LASTS EXACTLY AS LONG AS THE SHARE DOES,
     //SO THE NEXT SESSION'S FIRST BARE /screen STARTS ON THE DEFAULT MONITOR (tui/state.rs DOES THE SAME)
-    screen_options::set_use_screen(false);
-    screen_options::set_attach_screen(false);
-    screen_options::set_monitor(None);
+    #[cfg(media)]
+    {
+        screen_options::set_use_screen(false);
+        screen_options::set_attach_screen(false);
+        screen_options::set_monitor(None);
+    }
 }
+
+//WHAT THE CAPTURE IS POINTED AT, WHERE THERE IS A CAPTURE TO POINT - THE NAME NEVER LEAVES THIS MACHINE
+#[cfg(media)]
+fn current_monitor() -> Option<String> { screen_capture::current_monitor() }
+
+#[cfg(not(media))]
+fn current_monitor() -> Option<String> { None }
 
 fn to_color(color: &str) -> Result<(u8, String), ()> //PARSE A COLOR NAME/NUMBER INTO THE CODE THE WIRE CARRIES
 {
@@ -1156,9 +1215,15 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
 
         //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
         //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING
+        //A BUILD WITHOUT THE CALL NEVER RECEIVES ONE OF THESE, BUT THE EVENT IT ARRIVES AS IS THE SAME
+        //ENUM EITHER WAY - SO THE ARM STANDS AND ONLY THE ROSTER IT BUILDS IS THE VOICE CLIENT'S
         ClientEvent::VoiceActivity(users) =>
         {
-            *state.voice_users.lock().unwrap() = users.into_iter().map(voice_user).collect();
+            #[cfg(media)]
+            { *state.voice_users.lock().unwrap() = users.into_iter().map(voice_user).collect(); }
+
+            #[cfg(not(media))]
+            let _ = users;
 
             emit_voice(app);
         },
@@ -1204,7 +1269,7 @@ async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
         {
             match enabled
             {
-                true => say(app, ChatMessage::ok(match screen_capture::current_monitor()
+                true => say(app, ChatMessage::ok(match current_monitor()
                 {
                     Some(monitor) => format!("Sharing {monitor}."),
                     None => String::from("Started screen sharing."),
@@ -1368,14 +1433,14 @@ fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE COMMANDS O
 //IS NOT OURS TO WRITE, WHATEVER client.toml HAPPENS TO HOLD UNDER IT
 fn client_kind(key: &str) -> Option<ClientKind>
 {
-    CLIENT_SETTINGS.iter().find(|(_, _, candidate, _)| *candidate == key).map(|(_, _, _, kind)| *kind)
+    client_keys().find(|(_, _, candidate, _)| *candidate == key).map(|(_, _, _, kind)| *kind)
 }
 
 //OUR OWN CONFIG, AS THE SETTINGS BOX SHOWS IT. THE TUI READS EVERY VALUE OUT OF THE CONFIG ONCE WHEN THE
 //OVERLAY OPENS AND NEVER RE-READS IT WHILE DRAWING - SO DOES THIS
 fn client_settings() -> Vec<ClientSetting>
 {
-    CLIENT_SETTINGS.iter().map(|(section, label, key, kind)| ClientSetting
+    client_keys().map(|(section, label, key, kind)| ClientSetting
     {
         label: label.to_string(),
         key: key.to_string(),
@@ -1389,6 +1454,7 @@ fn client_settings() -> Vec<ClientSetting>
                 ClientValue::Toggle(if *invert { !stored } else { stored })
             },
 
+            #[cfg(media)]
             ClientKind::Volume => ClientValue::Volume
             {
                 percent: voice_options::clamp_volume(config::read_config::<u32>(key)),
@@ -1396,6 +1462,7 @@ fn client_settings() -> Vec<ClientSetting>
                 step: VOLUME_STEP,
             },
 
+            #[cfg(media)]
             ClientKind::Device { input } => ClientValue::Device
             {
                 id: config::read_config::<String>(key),
@@ -1416,6 +1483,10 @@ fn get_client_settings() -> Vec<ClientSetting>
 #[tauri::command]
 async fn get_audio_devices() -> AudioDevices
 {
+    #[cfg(not(media))]
+    return AudioDevices::default();
+
+    #[cfg(media)]
     task::spawn_blocking(||
     {
         let entry = |device: voice::AudioDevice| AudioDeviceInfo { id: device.id, label: device.label };
@@ -1439,6 +1510,7 @@ fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, String>
     config::client_write_bool(&key, if invert { !on } else { on });
 
     //THE TWO AUDIO TOGGLES ARE READ BY THE CAPTURE CALLBACK OUT OF ITS OWN GLOBALS, NOT OFF THE DISK
+    #[cfg(media)]
     match key.as_str()
     {
         "noise_suppression" => voice_options::set_noise_suppression(on),
@@ -1454,6 +1526,12 @@ fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, String>
 #[tauri::command]
 fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Result<u32, String>
 {
+    //THERE IS NO VOLUME TO SLIDE IN A BUILD WITH NO STREAMS TO SLIDE IT ON, AND NO ROW THAT ASKS
+    #[cfg(not(media))]
+    { let _ = (key, percent, app); return Err(String::from("Voice is not available on this platform.")) }
+
+    #[cfg(media)]
+    {
     let Some(ClientKind::Volume) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
 
     let percent = voice_options::clamp_volume(percent);
@@ -1472,6 +1550,7 @@ fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Result<u32, S
     emit_voice(&app);
 
     Ok(percent)
+    }
 }
 
 //POINT ONE OF THE TWO DEVICE KEYS SOMEWHERE ELSE. AN EMPTY ID IS "WHATEVER THE SYSTEM PICKS", WHICH IS
@@ -1479,12 +1558,18 @@ fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Result<u32, S
 #[tauri::command]
 fn set_client_device(key: String, id: String) -> Result<(), String>
 {
-    let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+    #[cfg(not(media))]
+    { let _ = (key, id); return Err(String::from("Voice is not available on this platform.")) }
 
-    config::client_write(&key, &id);
-    voice_options::mark_devices_changed();
+    #[cfg(media)]
+    {
+        let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
 
-    Ok(())
+        config::client_write(&key, &id);
+        voice_options::mark_devices_changed();
+
+        Ok(())
+    }
 }
 
 //THE EDITED SERVER ROWS, IN ONE GO. THE BOX HOLDS THEM UNTIL THIS IS CALLED BECAUSE server.toml IS NOT
@@ -1558,6 +1643,7 @@ fn get_vocabulary(values: String) -> Vec<VocabularyValue>
 
         //THE CRATE'S OWN LIST AND NOT TAURI'S: THESE ARE THE NAMES /screen RESOLVES AGAINST, AND A WINDOW
         //MANAGER'S IDEA OF WHAT A MONITOR IS CALLED IS NOT ALWAYS THE CAPTURE BACKEND'S
+        #[cfg(media)]
         "monitors" => screen_capture::monitor_names().into_iter()
             .map(|name| VocabularyValue { value: name, color: None })
             .collect(),
@@ -1635,6 +1721,7 @@ async fn connect_to_server(address: String, app: AppHandle, state: State<'_, App
 //IS THE ALIASING THE TUI NEVER SHOWS, BECAUSE IT HANDS THE PLANES TO THE GPU AND LETS A LINEAR SAMPLER
 //SCALE THEM - AND FOR A WHOLE-NUMBER FACTOR, AVERAGING THE BLOCK IS THAT, DONE ON THE CPU. THE MATH IS THE
 //USUAL BT.601 LIMITED-RANGE ONE, WHICH IS WHAT THE CAPTURE ENCODED WITH
+#[cfg(media)]
 fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>) -> (usize, usize)
 {
     let (width, height) = yuv.dimensions();
@@ -1707,6 +1794,7 @@ fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>
 //SOMEBODY ELSE'S SCREEN, ON ITS WAY TO THE PANE. THE FAST PATH HANDS THE H.264 STRAIGHT OVER AND THE
 //WEBVIEW DECODES IT; WHERE THE WEBVIEW CANNOT (WebCodecs IS NOT EVERYWHERE, AND WHERE IT IS THE H.264
 //DECODER BEHIND IT MAY NOT BE), THE FRAME IS DECODED HERE AND SENT ON AS A JPEG THE CANVAS CAN DRAW
+#[cfg(media)]
 fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver<Vec<u8>>)
 {
     let mut decoder: Option<Decoder> = None;
@@ -1879,6 +1967,7 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
                     //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
                     //MESSAGES) OF ANYBODY IN IT, AND THE SERVER IS NEVER TOLD WHO WE ARE NOT LISTENING TO
                     //NO PARAMETER IS OUR OWN MICROPHONE, WHICH IS ALSO THE ONLY ROW OF THE PANEL WITH NO ID
+                    #[cfg(media)]
                     Command::Mute => match parameters.as_deref().map(|id| id.trim().parse::<usize>())
                     {
                         Some(Err(_)) => popup(&app, "Usage: /mute [ID]"),
@@ -1918,6 +2007,7 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
 
                     //NOTHING WENT TO THE SERVER BECAUSE NOTHING HAD TO: THE SHARE IS ALREADY UP AND ONLY
                     //THE MONITOR UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
+                    #[cfg(media)]
                     Command::Screen =>
                     {
                         say(&app, ChatMessage::ok(match screen_capture::current_monitor()
@@ -1964,11 +2054,6 @@ async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run()
 {
-    config::init_config();
-
-    //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
-    if config::read_config("socks5_enabled") { options::enable_socks5(); }
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1992,15 +2077,38 @@ pub fn run()
         //THE FRAMES OF A WATCHED SHARE ARE PULLED OUT OF THE CRATE ONCE, FOR THE LIFE OF THE PROCESS: THE
         //SINK IS WHAT KEEPS IT FROM OPENING A WINDOW OF ITS OWN, AND IT MUST BE SET BEFORE ANY ATTACH.
         //A THREAD AND NOT A TASK, BECAUSE DECODING ONE IS TENS OF MILLISECONDS OF UNBROKEN CPU
-        .setup(|app|
+        .setup(|_app|
         {
-            let (frames_tx, frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            //THE CRATE EXPANDS {HOME} INTO EVERY PATH IT KEEPS ITS CONFIG AND ITS TOFU STATE IN, AND AN
+            //ANDROID PROCESS HAS NO HOME DIRECTORY AT ALL - dirs::home_dir() IS None THERE, WHICH THE
+            //CRATE EXPECTS ITS WAY OUT OF. THE ANSWER THE PLATFORM DOES HAVE IS THE APP'S OWN DATA DIR,
+            //SO POINT HOME AT IT AND LEAVE THE EXPANSION ALONE. IT IS SET BEFORE init_config BECAUSE
+            //THAT IS THE FIRST THING TO READ IT, WHICH IS ALSO WHY THE CONFIG IS OPENED IN HERE RATHER
+            //THAN AHEAD OF THE BUILDER: NOTHING KNOWS THE PATH UNTIL THERE IS AN App TO ASK
+            #[cfg(target_os = "android")]
+            {
+                let home = _app.path().app_data_dir().expect("Could not determine app data directory");
 
-            *screen::SCREEN_FRAME_SINK.write().unwrap() = Some(frames_tx);
+                std::fs::create_dir_all(&home).expect("Could not create app data directory");
 
-            let handle = app.handle().clone();
+                std::env::set_var("HOME", &home);
+            }
 
-            std::thread::spawn(move || screen_frames(&handle, frames_rx));
+            config::init_config();
+
+            //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
+            if config::read_config("socks5_enabled") { options::enable_socks5(); }
+
+            #[cfg(media)]
+            {
+                let (frames_tx, frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+                *screen::SCREEN_FRAME_SINK.write().unwrap() = Some(frames_tx);
+
+                let handle = _app.handle().clone();
+
+                std::thread::spawn(move || screen_frames(&handle, frames_rx));
+            }
 
             Ok(())
         })

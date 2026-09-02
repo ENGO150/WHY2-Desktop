@@ -20,7 +20,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <!-- THE WINDOW IS ALSO A PHONE NOW. viewport-fit=cover PUTS THE PAGE UNDER THE NOTCH AND THE
+             GESTURE BAR (index.css PAYS THE INSETS BACK), interactive-widget=resizes-content MAKES THE
+             SOFT KEYBOARD SHRINK THE PAGE INSTEAD OF SLIDING IT UP - WHICH IS THE WHOLE DIFFERENCE
+             BETWEEN A COMPOSER ABOVE THE KEYS AND ONE PUSHED OFF THE TOP OF THE SCREEN -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+        <meta name="color-scheme" content="dark" />
+        <meta name="theme-color" content="#050405" />
         <title>WHY2</title>
     </head>
 

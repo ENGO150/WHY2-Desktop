@@ -18,5 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main()
 {
+    //THE CALL AND THE SCREEN SHARE ARE DESKTOP-ONLY, AND NOT BECAUSE NOBODY WANTED THEM ON A PHONE: THE
+    //CRATE CAPTURES A SCREEN THROUGH xcap/libwayshot AND OPENS AUDIO THROUGH cpal'S PULSEAUDIO BACKEND,
+    //NEITHER OF WHICH EXISTS ON ANDROID. THE FEATURES why2-chat IS PULLED IN WITH ARE SPLIT THE SAME WAY
+    //IN Cargo.toml, SO THIS CFG AND THAT TARGET CONDITION ARE ONE ANSWER SPELLED TWICE - KEEP THEM EQUAL
+    println!("cargo::rustc-check-cfg=cfg(media)");
+
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("android")
+    {
+        println!("cargo::rustc-cfg=media");
+    }
+
     tauri_build::build()
 }
