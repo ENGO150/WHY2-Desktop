@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use std::
 {
     ffi::c_void,
-    sync::OnceLock,
+    sync::{ Once, OnceLock },
     time::Duration,
 };
 
@@ -30,7 +30,7 @@ use jni::
 {
     JavaVM,
     jni_sig,
-    objects::JClass,
+    objects::{ JClass, JValue },
     refs::Global,
     strings::JNIString,
     sys::{ jint, JNI_VERSION_1_6 },
@@ -41,28 +41,46 @@ use tauri::AppHandle;
 use crate::types::ChatMessage;
 use crate::emit::say;
 
-//THE CLASS THE KOTLIN HALF LIVES IN, WHICH IS THE IDENTIFIER FROM tauri.conf.json - build.rs READS IT
-//THERE SO THE TWO CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME NOTHING RATHER THAN A BUILD ERROR
+//THE CLASS THE KOTLIN HALF LIVES IN, AS A BINARY NAME (DOTS), WHICH IS THE IDENTIFIER FROM
+//tauri.conf.json - build.rs READS IT THERE SO THE TWO CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
+//NOTHING RATHER THAN A BUILD ERROR
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
+static PREPARED: Once = Once::new();
 
 //HOW LONG THE CALL WAITS ON THE PERMISSION DIALOG BEFORE GIVING UP ON IT. THE ANSWER IS A TAP AWAY, AND
 //A USER WHO WALKED OFF INSTEAD IS ONE WHO DID NOT WANT A CALL
 const PROMPT_WAIT: Duration = Duration::from_secs(60);
 const PROMPT_POLL: Duration = Duration::from_millis(200);
 
-//THE RUNTIME CALLS THIS THE MOMENT Rust.kt'S System.loadLibrary RUNS, WHICH IS THE ONE PLACE THE JavaVM
-//IS HANDED TO US - AND IT RUNS ON THE THREAD THAT LOADED THE LIBRARY, WHOSE CLASS LOADER IS THE APP'S.
-//A TOKIO WORKER LATER ON HAS ONLY THE SYSTEM LOADER AND WOULD NOT FIND OUR OWN ACTIVITY, SO IT IS
-//LOOKED UP HERE AND KEPT
+//THE RUNTIME CALLS THIS THE MOMENT Rust.kt'S System.loadLibrary RUNS, AND IT IS THE ONE PLACE THE JavaVM
+//IS HANDED TO US - SO THE POINTER IS TAKEN AND **NOTHING ELSE HAPPENS HERE**, WHICH IS THE WHOLE POINT:
+//THIS RUNS INSIDE THE CLASS INITIALIZER OF wry'S OWN Rust OBJECT, SO A CLASS LOADED FROM HERE IS LOADED
+//IN THE MIDDLE OF THE ACTIVITY CLASSES INITIALIZING THEMSELVES - WHICH JAVA PERMITS ON THE SAME THREAD
+//AND THEN HANDS BACK A HALF-BUILT CLASS. EVERYTHING THAT TOUCHES JAVA WAITS FOR prepare()
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_void) -> jint
 {
-    let vm = unsafe { JavaVM::from_raw(vm) };
+    let _ = VM.set(unsafe { JavaVM::from_raw(vm) });
 
-    let _ = vm.attach_current_thread(|env| -> jni::errors::Result<()>
+    JNI_VERSION_1_6
+}
+
+//WHAT JNI_OnLoad IS NOT ALLOWED TO DO, DONE ONCE THE APP IS STANDING: run()'s setup CALLS THIS, WHICH IS
+//AFTER THE ACTIVITY EXISTS AND OUTSIDE ANYBODY'S CLASS INITIALIZER. IT IS ALSO CALLED IN FRONT OF EVERY
+//QUESTION BELOW, SINCE A CALL THAT ARRIVES FIRST SHOULD NOT DEPEND ON WHERE ELSE IT WAS ASKED FROM
+pub(crate) fn prepare()
+{
+    PREPARED.call_once(|| { ready(); });
+}
+
+fn ready() -> Option<()>
+{
+    let vm = VM.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<()>
     {
         //cpal ASKS ndk_context FOR THE CONTEXT WHENEVER IT ENUMERATES DEVICES, AND PANICS WHERE NOBODY
         //SET ONE - TAURI DOES NOT, SINCE ITS ANDROID SIDE IS KOTLIN AND HAS NO USE FOR IT. THE
@@ -74,7 +92,18 @@ pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_v
 
         let application = env.new_global_ref(&application)?;
 
-        let activity = env.find_class(JNIString::new(ACTIVITY))?;
+        //AND THE ACTIVITY THROUGH THE APP'S OWN CLASS LOADER RATHER THAN THROUGH FindClass: A TOKIO
+        //WORKER IS ATTACHED WITH THE SYSTEM LOADER, WHICH KNOWS NOTHING THIS APP WROTE
+        let loader = env.call_method(&application, JNIString::new("getClassLoader"),
+            jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
+
+        let name = env.new_string(ACTIVITY)?;
+
+        let activity = env.call_method(&loader, JNIString::new("loadClass"),
+            jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"), &[JValue::Object(&name)])?.l()?;
+
+        let activity = unsafe { JClass::from_raw(env, activity.into_raw()) };
+
         let _ = ACTIVITY_CLASS.set(env.new_global_ref(&activity)?);
 
         //THE CONTEXT OUTLIVES EVERYTHING THAT READS IT, SO THE REFERENCE IS NEVER GIVEN BACK
@@ -83,17 +112,15 @@ pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_v
         std::mem::forget(application);
 
         Ok(())
-    });
-
-    let _ = VM.set(vm);
-
-    JNI_VERSION_1_6
+    }).ok()
 }
 
 //ONE STATIC CALL INTO THE ACTIVITY. EVERYTHING IT ANSWERS IS ABOUT THE MICROPHONE, AND EVERY FAILURE -
 //NO VM, NO CLASS, NO ACTIVITY ON SCREEN - MEANS THE SAME THING HERE: WE DO NOT HAVE THE PERMISSION
 fn ask(method: &str) -> Option<bool>
 {
+    prepare();
+
     let vm = VM.get()?;
     let class = ACTIVITY_CLASS.get()?;
 

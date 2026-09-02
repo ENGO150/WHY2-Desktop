@@ -41,10 +41,11 @@ fn main()
     tauri_build::build()
 }
 
-//WHAT android.rs LOOKS THE ACTIVITY UP BY. THE CLASS IS THE IDENTIFIER WITH ITS DOTS AS SLASHES AND ITS
-//DASHES AS UNDERSCORES, WHICH IS THE PACKAGE TAURI GENERATES THE KOTLIN INTO - AND A NAME THAT IS WRONG
-//IS NOT A BUILD ERROR BUT A CALL THAT SILENTLY NEVER ASKS FOR THE MICROPHONE, SO IT IS READ FROM THE
-//CONFIG RATHER THAN WRITTEN DOWN TWICE
+//WHAT android.rs LOOKS THE ACTIVITY UP BY: THE IDENTIFIER WITH ITS DASHES AS UNDERSCORES, WHICH IS THE
+//PACKAGE TAURI GENERATES THE KOTLIN INTO. IT IS A BINARY NAME AND KEEPS ITS DOTS, SINCE THE LOOKUP GOES
+//THROUGH ClassLoader.loadClass AND NOT FindClass - AND A NAME THAT IS WRONG IS NOT A BUILD ERROR BUT A
+//CALL THAT SILENTLY NEVER ASKS FOR THE MICROPHONE, SO IT IS READ FROM THE CONFIG RATHER THAN WRITTEN
+//DOWN TWICE
 fn activity_class()
 {
     const CONFIG: &str = "tauri.conf.json";
@@ -59,7 +60,7 @@ fn activity_class()
         .and_then(|(_, rest)| rest.split('"').nth(1))
         .expect("tauri.conf.json has no identifier");
 
-    let package = identifier.replace('-', "_").replace('.', "/");
+    let package = identifier.replace('-', "_");
 
-    println!("cargo::rustc-env=ANDROID_ACTIVITY_CLASS={package}/MainActivity");
+    println!("cargo::rustc-env=ANDROID_ACTIVITY_CLASS={package}.MainActivity");
 }

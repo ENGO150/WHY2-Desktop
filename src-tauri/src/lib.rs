@@ -136,6 +136,10 @@ pub fn run()
                 std::fs::create_dir_all(&home).expect("Could not create app data directory");
 
                 std::env::set_var("HOME", &home);
+
+                //AND THE JAVA SIDE OF THE CALL, WHICH IS EVERYTHING JNI_OnLoad IS NOT ALLOWED TO DO
+                //WHILE THE ACTIVITY'S OWN CLASSES ARE STILL INITIALIZING - HERE THEY ARE STANDING
+                android::prepare();
             }
 
             config::init_config();
