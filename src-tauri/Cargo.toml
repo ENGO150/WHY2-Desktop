@@ -43,7 +43,7 @@ sha2 = "0.11"
 
 # THE DESKTOP BUILD IS THE WHOLE PROGRAM: THE CHAT, THE CALL AND THE SCREEN SHARE BOTH WAYS
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 # A WATCHED SHARE IS DECODED HERE WHEN THE WEBVIEW CANNOT DO IT ITSELF - openh264 IS THE CRATE'S OWN
 # DECODER, AND THE JPEG IS WHAT THE PICTURE TRAVELS TO THE CANVAS AS
@@ -56,7 +56,7 @@ jpeg-encoder = { version = "0.7", features = ["simd"] }
 # CROSS-COMPILES TO AN NDK TARGET AS IT STANDS, AND A PHONE SHARES ITS SCREEN THROUGH MediaProjection
 # ANYWAY - SO THE FEATURES ARE OFF HERE, AND build.rs TURNS THE `media` CFG OFF WITH THEM
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base"] }
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
