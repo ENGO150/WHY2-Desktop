@@ -20,7 +20,148 @@ import { useEffect, useRef, useState } from "react";
 
 import type { StoredServer } from "./types";
 import { avatarColor } from "./theme";
-import { Icon } from "./icons";
+import { Icon, IconButton } from "./icons";
+
+//WHAT A SERVER IS TYPED IN AS. THE PASSWORD IS PART OF IT BECAUSE THE WHOLE POINT OF THE LIST IS THAT
+//NONE OF THIS IS ASKED TWICE - AND IT IS ALLOWED TO BE EMPTY, WHICH IS THE ROW SAYING "ASK ME"
+export interface ServerForm
+{
+    address: string;
+    username: string;
+    password: string;
+}
+
+const FIELD = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
+const CAPTION = "text-[11px] font-semibold uppercase tracking-wider text-muted";
+
+//THE THREE THINGS A SERVER IS. THEY ARE ASKED IN TWO PLACES - THE CONNECT SCREEN WHILE THERE IS NO
+//SESSION, AND A DIALOG OVER THE CHAT WHILE THERE IS - SO THEY ARE WRITTEN ONCE
+export function AddServerFields(
+{
+    form, setForm, connecting, inputRef, autoFocus,
+}: {
+    form: ServerForm;
+    setForm: (form: ServerForm) => void;
+    connecting: boolean;
+    inputRef?: React.RefObject<HTMLInputElement | null>;
+    autoFocus: boolean;
+})
+{
+    return (
+        <>
+            <label htmlFor="login-input" className={CAPTION}>Server address</label>
+
+            <input
+                id="login-input"
+                ref={inputRef}
+                type="text"
+                value={form.address}
+                onChange={(event) => setForm({ ...form, address: event.currentTarget.value })}
+                placeholder="127.0.0.1:8080"
+                className={FIELD}
+                disabled={connecting}
+                autoFocus={autoFocus}
+                spellCheck={false}
+            />
+
+            <label htmlFor="login-username" className={`${CAPTION} mt-4 block`}>Username</label>
+
+            <input
+                id="login-username"
+                type="text"
+                value={form.username}
+                onChange={(event) => setForm({ ...form, username: event.currentTarget.value })}
+                className={FIELD}
+                disabled={connecting}
+                spellCheck={false}
+            />
+
+            <label htmlFor="login-password" className={`${CAPTION} mt-4 block`}>Password</label>
+
+            <input
+                id="login-password"
+                type="password"
+                value={form.password}
+                onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
+                className={FIELD}
+                disabled={connecting}
+            />
+
+            {/* THE HONEST FOOTNOTE. THERE IS NO KEY TO ENCRYPT THIS WITH THAT THE PROGRAM WOULD NOT HAVE
+                TO KEEP BESIDE IT, SO IT SAYS WHAT IT DOES */}
+            <div className="mt-2 flex items-start gap-1.5 text-[11px] text-faint">
+                <Icon name="lock" className="mt-px h-3.5 w-3.5 shrink-0" />
+                <span>Kept in a file only you can read. Leave the password empty to be asked at every connect.</span>
+            </div>
+        </>
+    );
+}
+
+//AND THE SAME FORM AS A WINDOW, FOR THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT. A SERVER ADDED FROM
+//IN HERE IS A SWITCH LIKE ANY OTHER: THE ONE WE ARE IN IS LEFT FIRST, AND THE CONNECT SCREEN TAKES OVER
+//WITH WHAT WAS TYPED STILL IN IT
+export function AddServerDialog(
+{
+    form, setForm, connecting, errorMsg, cardRef, dialogWrap, dialogCard, narrow, onSubmit, close,
+}: {
+    form: ServerForm;
+    setForm: (form: ServerForm) => void;
+    connecting: boolean;
+    errorMsg: string;
+    cardRef: React.RefObject<HTMLDivElement | null>;
+    dialogWrap: string;
+    dialogCard: (wide: string) => string;
+    narrow: boolean;
+    onSubmit: (event: React.FormEvent) => void;
+    close: () => void;
+})
+{
+    return (
+        <div
+            onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
+            className={dialogWrap}
+        >
+            <div
+                ref={cardRef}
+                tabIndex={-1}
+                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
+                className={`rise ${dialogCard("flex max-h-[84vh] w-full max-w-[420px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
+            >
+                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
+                    <Icon name="plus" className="h-4 w-4 shrink-0 text-muted" />
+                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Add a server</h2>
+
+                    <IconButton icon="close" label="Close" onClick={close} />
+                </header>
+
+                <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-5 py-4">
+                    {/* THE SOFT KEYBOARD IS HALF THE SCREEN, SO ON A PHONE IT OPENS WHEN THE FIELD IS
+                        TAPPED RATHER THAN BECAUSE A WINDOW CAME UP */}
+                    <AddServerFields form={form} setForm={setForm} connecting={connecting} autoFocus={!narrow} />
+
+                    <div className="mt-2 min-h-[1.25rem] text-xs">
+                        {connecting
+                            ? <span className="text-accent">Connecting…</span>
+                            : errorMsg
+                                ? <span className="text-error">{errorMsg}</span>
+                                : null}
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={connecting || !form.address}
+                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        Add and connect
+                    </button>
+
+                    {/* IT LEAVES THE SERVER WE ARE IN, WHICH IS WORTH SAYING BEFORE IT HAPPENS */}
+                    <div className="mt-2 text-center text-[11px] text-faint">This leaves the server you are on.</div>
+                </form>
+            </div>
+        </div>
+    );
+}
 
 //WHAT A SERVER IS CALLED WHEN THERE IS SOMETHING TO CALL IT BY: WHAT IT CALLED ITSELF LAST TIME, AND THE
 //ADDRESS UNTIL IT HAS. A SERVER THAT HAS NEVER BEEN REACHED IS STILL A TILE, BECAUSE IT WAS TYPED IN

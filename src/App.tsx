@@ -62,8 +62,8 @@ import { TofuDialog, CHALLENGE } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
-import type { ServerForm } from "./login";
-import { ServerRail } from "./servers";
+import type { ServerForm } from "./servers";
+import { ServerRail, AddServerDialog } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import { MemberColumn } from "./members";
@@ -163,6 +163,7 @@ function App()
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
+    const addRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const settingsRowRef = useRef<HTMLDivElement>(null);
@@ -220,12 +221,14 @@ function App()
 
     useEffect(() =>
     {
-        if (connecting || uiState === "connected") return;
+        //A SOFT KEYBOARD IS HALF THE SCREEN, AND ON THE CONNECT SCREEN THE OTHER HALF IS THE LIST OF
+        //SERVERS TO PICK FROM - SO ON A PHONE IT OPENS WHEN THE FIELD IS TAPPED, LIKE THE COMPOSER
+        if (connecting || narrow || uiState === "connected") return;
 
         //THE FIELD IS REPLACED BETWEEN THE IDENTITY STEPS, SO THE FOCUS HAS TO FOLLOW IT
         const timer = setTimeout(() => loginInputRef.current?.focus(), 10);
         return () => clearTimeout(timer);
-    }, [uiState, connecting]);
+    }, [uiState, connecting, narrow]);
 
     const connected = uiState === "connected";
 
@@ -855,6 +858,24 @@ function App()
         invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
+    //GOING TO A SERVER IS THE SAME THING WHEREVER IT WAS ASKED FOR - A TILE, A ROW OF THE LIST, OR A
+    //SERVER JUST TYPED IN. WHILE ONE IS UP IT IS A SWITCH AND NOT A SECOND SESSION: THAT ONE IS LEFT
+    //PROPERLY FIRST, AND THE DISCONNECT THAT COMES BACK DIALS THIS ONE
+    const goTo = (server: StoredServer) =>
+    {
+        setDrawer(null);
+
+        if (connected)
+        {
+            switchRef.current = server;
+            send("/exit");
+
+            return;
+        }
+
+        dial(server);
+    };
+
     //WHICH OF THE THREE THINGS THE CONNECT SCREEN IS ASKING: THE SERVER'S OWN QUESTION WHILE ONE IS
     //PENDING, OTHERWISE THE FORM THAT ADDS A SERVER (WHICH AN EMPTY LIST HAS NOTHING BUT), OTHERWISE
     //THE LIST ITSELF, WAITING TO BE PICKED FROM
@@ -882,7 +903,7 @@ function App()
             const existing = servers.find((server) => server.address === typed
                 && (!wanted || server.username === wanted));
 
-            dial(existing
+            goTo(existing
                 ? {
                     ...existing,
                     username: wanted || existing.username,
@@ -933,23 +954,24 @@ function App()
         if (server.id === dialing?.id && (connected || connecting)) return;
 
         setAdding(false);
-
-        if (connected)
-        {
-            switchRef.current = server;
-            send("/exit");
-
-            return;
-        }
-
-        dial(server);
+        goTo(server);
     };
 
+    //THE + IS A WINDOW OVER THE CHAT WHILE THERE IS ONE AND THE CONNECT SCREEN ITSELF WHILE THERE IS NOT,
+    //WHICH IS THE SAME FORM EITHER WAY. ON A PHONE IT WAS PRESSED INSIDE THE DRAWER, WHICH HAS DONE ITS JOB
     const openAdd = () =>
     {
         setForm({ address: "", username: "", password: "" });
         setErrorMsg("");
         setAdding(true);
+        setDrawer(null);
+    };
+
+    const closeAdd = () =>
+    {
+        setAdding(false);
+
+        if (!narrow) chatInputRef.current?.focus();
     };
 
     //FORGETTING IS FOR GOOD, AND FORGETTING THE ONE WE ARE STANDING IN IS ALSO LEAVING IT - THERE WOULD
@@ -1401,7 +1423,8 @@ function App()
     //THE PHONE ALREADY HAS ONE NAVIGATION CONTROL, AND EVERYBODY EXPECTS IT TO CLOSE WHATEVER IS IN FRONT
     //RATHER THAN THE PROGRAM. EACH THING THAT COVERS THE CONVERSATION PARKS ONE ENTRY IN THE HISTORY, AND
     //THE BACK GESTURE SPENDS IT - WITH NOTHING IN FRONT, BACK STILL MEANS WHAT IT ALWAYS DID
-    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || theater;
+    const addOpen = connected && adding;
+    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || addOpen || theater;
 
     useEffect(() =>
     {
@@ -1413,6 +1436,7 @@ function App()
         {
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
             if (theater) setView("chat");
+            else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
@@ -2030,6 +2054,23 @@ function App()
 
     //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
+    //THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT. WITHOUT THIS THE BUTTON WOULD SET A FLAG NOTHING
+    //DRAWS: THE CONNECT SCREEN, WHICH IS THE FORM'S OTHER HOME, IS ONLY UP WHILE THERE IS NO SESSION
+    const addBox = addOpen && (
+        <AddServerDialog
+            form={form}
+            setForm={setForm}
+            connecting={connecting}
+            errorMsg={errorMsg}
+            cardRef={addRef}
+            dialogWrap={dialogWrap}
+            dialogCard={dialogCard}
+            narrow={narrow}
+            onSubmit={handleSubmit}
+            close={closeAdd}
+        />
+    );
+
     //THE FAR-LEFT COLUMN, WHICH STANDS WHETHER OR NOT THERE IS A SESSION - IT IS THE WAY INTO ONE AND
     //THE WAY BETWEEN TWO. IT IS DRAWN INSIDE THE LEFT COLUMN WHILE THERE IS ONE, AND INSIDE THE CONNECT
     //SCREEN WHILE THERE IS NOT; ON A PHONE THAT MAKES IT PART OF THE SAME DRAWER RATHER THAN A SECOND ONE
@@ -2059,6 +2100,7 @@ function App()
             hint={hint}
             registering={registering}
             inputRef={loginInputRef}
+            narrow={narrow}
             onSubmit={handleSubmit}
             onPick={pickServer}
             onAdd={openAdd}
@@ -2382,6 +2424,7 @@ function App()
             {settingsBox}
             {filesBox}
             {screensBox}
+            {addBox}
             {loginScreen}
             {tofuBox}
         </main>

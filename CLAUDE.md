@@ -195,6 +195,13 @@ opens on its own — an empty list is the only reason to ask anything at all), b
 rail. Picking a server while another one is up is a **switch and not a second session**: the one in front is
 asked to leave with `/exit`, `switchRef` parks where we are going, and the `disconnected` event dials it.
 
+The connect screen is only up while there is **no** session, so the rail's `+` cannot be it while there is
+one: `AddServerDialog` is the same form as a window over the chat (`addBox`), and `AddServerFields` is the
+three fields written once for both. It closes the way every other menu here does — esc, the X, a press
+outside, the back gesture (it is in `covering`) — and submitting it is a switch like any other, so the
+session in front is left first. On a phone neither it nor the connect screen takes the focus on its own: a
+soft keyboard is half the screen, and on the connect screen the other half is the list being picked from.
+
 `LoginScreen` is one screen with three things to ask, and `mode` says which: the **prompt** (one field) while
 the server has an identity step pending that nothing was stored for, the **form** that adds a server (address,
 username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from,

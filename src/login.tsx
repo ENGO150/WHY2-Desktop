@@ -19,16 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import type { UIState, StoredServer } from "./types";
 import { Icon } from "./icons";
 import { avatarColor } from "./theme";
-import { serverLabel } from "./servers";
-
-//WHAT A SERVER IS TYPED IN AS. THE PASSWORD IS PART OF IT BECAUSE THE WHOLE POINT OF THE LIST IS THAT
-//NONE OF THIS IS ASKED TWICE - AND IT IS ALLOWED TO BE EMPTY, WHICH IS THE ROW SAYING "ASK ME"
-export interface ServerForm
-{
-    address: string;
-    username: string;
-    password: string;
-}
+import type { ServerForm } from "./servers";
+import { serverLabel, AddServerFields } from "./servers";
 
 //THE SCREEN THAT STANDS WHILE THERE IS NO SESSION. IT IS THREE SCREENS IN ONE PLACE, BECAUSE THEY ARE
 //THREE ANSWERS TO THE SAME QUESTION - WHICH SERVER, AND WHO ARE WE THERE:
@@ -38,7 +30,7 @@ export interface ServerForm
 export function LoginScreen(
 {
     uiState, mode, servers, target, form, setForm, value, setValue, connecting, errorMsg, hint,
-    registering, inputRef, onSubmit, onPick, onAdd, onCancel, rail,
+    registering, inputRef, narrow, onSubmit, onPick, onAdd, onCancel, rail,
 }: {
     uiState: UIState;
     mode: "add" | "prompt" | "idle";
@@ -53,6 +45,7 @@ export function LoginScreen(
     hint: string;
     registering: boolean;
     inputRef: React.RefObject<HTMLInputElement | null>;
+    narrow: boolean;
     onSubmit: (event: React.FormEvent) => void;
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
@@ -82,8 +75,12 @@ export function LoginScreen(
     const field = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
     const caption = "text-[11px] font-semibold uppercase tracking-wider text-muted";
 
+
+    //AN absolute inset-0 CHILD IS LAID OUT AGAINST ITS ANCESTOR'S *PADDING BOX*, SO IT COVERS THE NOTCH
+    //THAT <main>'S PADDING WAS KEEPING CLEAR - AND THE RAIL'S FIRST TILE WOULD SIT UNDER THE STATUS BAR.
+    //IT PAYS THE INSETS AGAIN, THE WAY THE DIALOGS DO
     return (
-        <div className="absolute inset-0 z-40 flex bg-deep">
+        <div className="safe-top safe-bottom absolute inset-0 z-40 flex bg-deep">
             {rail}
 
             <div className="flex min-w-0 flex-1 items-center justify-center px-4">
@@ -102,50 +99,7 @@ export function LoginScreen(
                     <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
                         {mode === "add" ? (
                             <>
-                                <label htmlFor="login-input" className={caption}>Server address</label>
-
-                                <input
-                                    id="login-input"
-                                    ref={inputRef}
-                                    type="text"
-                                    value={form.address}
-                                    onChange={(event) => setForm({ ...form, address: event.currentTarget.value })}
-                                    placeholder="127.0.0.1:8080"
-                                    className={field}
-                                    disabled={connecting}
-                                    autoFocus
-                                    spellCheck={false}
-                                />
-
-                                <label htmlFor="login-username" className={`${caption} mt-4 block`}>Username</label>
-
-                                <input
-                                    id="login-username"
-                                    type="text"
-                                    value={form.username}
-                                    onChange={(event) => setForm({ ...form, username: event.currentTarget.value })}
-                                    className={field}
-                                    disabled={connecting}
-                                    spellCheck={false}
-                                />
-
-                                <label htmlFor="login-password" className={`${caption} mt-4 block`}>Password</label>
-
-                                <input
-                                    id="login-password"
-                                    type="password"
-                                    value={form.password}
-                                    onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
-                                    className={field}
-                                    disabled={connecting}
-                                />
-
-                                {/* THE HONEST FOOTNOTE. THERE IS NO KEY TO ENCRYPT THIS WITH THAT THE
-                                    PROGRAM WOULD NOT HAVE TO KEEP BESIDE IT, SO IT SAYS WHAT IT DOES */}
-                                <div className="mt-2 flex items-start gap-1.5 text-[11px] text-faint">
-                                    <Icon name="lock" className="mt-px h-3.5 w-3.5 shrink-0" />
-                                    <span>Kept in a file only you can read. Leave the password empty to be asked at every connect.</span>
-                                </div>
+                                <AddServerFields form={form} setForm={setForm} connecting={connecting} inputRef={inputRef} autoFocus={!narrow} />
 
                                 {status}
                             </>
@@ -162,7 +116,7 @@ export function LoginScreen(
                                     placeholder={uiState === "server_select" ? "127.0.0.1:8080" : undefined}
                                     className={field}
                                     disabled={connecting}
-                                    autoFocus
+                                    autoFocus={!narrow}
                                     spellCheck={false}
                                 />
 
