@@ -209,6 +209,20 @@ something to ask. A server not in the list is added through `Add another server`
 and typing an address that is already a row dials *that* row rather than adding a second one beside it. Two
 rows for one address are two accounts, which is why the username counts when one is given.
 
+Forgetting a server is asked for the same way in both lists: a **right-click, or a hold on a phone**, opens
+one menu item and nothing else — it is the only destructive thing here, and a button sitting in the row would
+be brushed by accident. `useHoldMenu` and `ForgetMenu` in `servers.tsx` are that gesture and that menu,
+written once for the rail and the selection screen. The menu goes through a **portal**: both lists live in
+boxes that would swallow it, since a list that scrolls clips whatever leaves it (`.scroller` is
+`overflow-y: auto`, which makes the other axis clip too) and a drawer is translated, which is enough to make
+`position: fixed` mean "inside the drawer". It is placed against the element that was held and kept inside
+the window, and the click that ends a hold is swallowed (`held()`) so the press that opened the menu does not
+also pick the server under it.
+
+The selection screen has no form to carry the status line, so it carries **its own, as a box**: a bare
+sentence between a heading and a list reads as neither, and the one that lands there is usually an error the
+form has already been dismissed from. It is drawn only when it says something.
+
 The rail is **not** drawn on this screen: the selection screen already is the list, in whole names rather
 than one letter each. It keeps its `+` for the other side of that — while there is a session, the selection
 screen is not up, so the `+` is the way to the form from in there. `AddServerDialog` is that form as a window

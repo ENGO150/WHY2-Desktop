@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { StoredServer } from "./types";
 import { avatarColor } from "./theme";
@@ -163,6 +164,149 @@ export function AddServerDialog(
     );
 }
 
+//FORGETTING A SERVER IS THE ONE DESTRUCTIVE THING THE LIST CAN DO, SO IT IS NOT A BUTTON SITTING THERE
+//WAITING TO BE BRUSHED: IT IS A RIGHT-CLICK ON A DESKTOP AND A HOLD ON A PHONE, WHICH IS WHAT EVERY OTHER
+//PROGRAM ASKS FOR BEFORE THROWING SOMETHING AWAY. BOTH LISTS THAT HAVE IT - THE RAIL AND THE SELECTION
+//SCREEN - ASK THE SAME WAY, SO THE GESTURE IS WRITTEN ONCE
+const HOLD = 500;
+const MENU_WIDTH = 224;
+const MENU_HEIGHT = 96;
+
+export interface HeldMenu
+{
+    id: string;
+    x: number;
+    y: number;
+}
+
+export function useHoldMenu()
+{
+    const [menu, setMenu] = useState<HeldMenu | null>(null);
+    const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const firedRef = useRef(false);
+
+    //IT CLOSES THE WAY EVERY OTHER MENU HERE DOES - A PRESS THAT LANDED OUTSIDE IT, OR ESC - AND ALSO WHEN
+    //WHATEVER IT IS POINTING AT MOVES, SINCE IT IS PLACED ONCE AND DOES NOT FOLLOW
+    useEffect(() =>
+    {
+        if (menu === null) return;
+
+        const outside = (event: Event) =>
+        {
+            if (!(event.target as HTMLElement | null)?.closest?.("[data-hold-menu]")) setMenu(null);
+        };
+
+        const key = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
+        const moved = () => setMenu(null);
+
+        document.addEventListener("mousedown", outside);
+        document.addEventListener("touchstart", outside);
+        document.addEventListener("keydown", key);
+        window.addEventListener("resize", moved);
+        window.addEventListener("scroll", moved, true);
+
+        return () =>
+        {
+            document.removeEventListener("mousedown", outside);
+            document.removeEventListener("touchstart", outside);
+            document.removeEventListener("keydown", key);
+            window.removeEventListener("resize", moved);
+            window.removeEventListener("scroll", moved, true);
+        };
+    }, [menu]);
+
+    //BESIDE WHAT WAS HELD, AND INSIDE THE WINDOW: A ROW NEAR THE BOTTOM OR THE RIGHT EDGE WOULD OTHERWISE
+    //OPEN A MENU PAST IT
+    const openAt = (id: string, element: HTMLElement) =>
+    {
+        const box = element.getBoundingClientRect();
+
+        setMenu(
+        {
+            id,
+            x: Math.max(8, Math.min(box.right + 8, window.innerWidth - MENU_WIDTH - 8)),
+            y: Math.max(8, Math.min(box.top, window.innerHeight - MENU_HEIGHT - 8)),
+        });
+    };
+
+    const release = () =>
+    {
+        if (pressRef.current !== null) clearTimeout(pressRef.current);
+
+        pressRef.current = null;
+    };
+
+    const bind = (id: string) => (
+    {
+        onContextMenu: (event: React.MouseEvent) =>
+        {
+            event.preventDefault();
+            openAt(id, event.currentTarget as HTMLElement);
+        },
+
+        onTouchStart: (event: React.TouchEvent) =>
+        {
+            const element = event.currentTarget as HTMLElement;
+
+            firedRef.current = false;
+            release();
+
+            pressRef.current = setTimeout(() => { firedRef.current = true; openAt(id, element); }, HOLD);
+        },
+
+        onTouchEnd: release,
+        onTouchMove: release,
+    });
+
+    //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND THAT ONE WOULD PICK THE VERY SERVER BEING HELD
+    const held = () =>
+    {
+        const fired = firedRef.current;
+        firedRef.current = false;
+
+        return fired;
+    };
+
+    return { menu, close: () => setMenu(null), bind, held };
+}
+
+//THE MENU ITSELF, WHICH IS ONE ITEM. IT GOES THROUGH A PORTAL BECAUSE BOTH THINGS THAT OPEN IT LIVE IN
+//BOXES THAT WOULD SWALLOW IT: A LIST THAT SCROLLS CLIPS WHATEVER LEAVES IT, AND A DRAWER IS TRANSLATED,
+//WHICH IS ENOUGH TO MAKE position: fixed MEAN "INSIDE THE DRAWER"
+export function ForgetMenu(
+{
+    server, at, onForget, close,
+}: {
+    server: StoredServer;
+    at: HeldMenu;
+    onForget: (id: string) => void;
+    close: () => void;
+})
+{
+    return createPortal(
+        <div
+            data-hold-menu
+            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
+            className="fixed z-[60] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+        >
+            <div className="px-2 py-1.5">
+                <div className="truncate text-sm font-semibold">{serverLabel(server)}</div>
+                <div className="truncate font-mono text-[11px] text-faint">{server.address}</div>
+            </div>
+
+            <button
+                type="button"
+                onClick={() => { close(); onForget(server.id); }}
+                className="flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm text-error transition-colors hover:bg-hover"
+            >
+                <Icon name="close" className="h-4 w-4" />
+                Forget this server
+            </button>
+        </div>,
+        document.body,
+    );
+}
+
 //WHAT A SERVER IS CALLED WHEN THERE IS SOMETHING TO CALL IT BY: WHAT IT CALLED ITSELF LAST TIME, AND THE
 //ADDRESS UNTIL IT HAS. A SERVER THAT HAS NEVER BEEN REACHED IS STILL A TILE, BECAUSE IT WAS TYPED IN
 export function serverLabel(server: StoredServer): string
@@ -185,51 +329,10 @@ export function ServerRail(
     onForget: (id: string) => void;
 })
 {
-    //WHICH TILE'S MENU IS OPEN. IT IS A RIGHT-CLICK ON A DESKTOP AND A LONG PRESS ON A PHONE, BECAUSE
-    //FORGETTING A SERVER IS NOT SOMETHING A STRAY TAP SHOULD BE ABLE TO DO
-    const [menu, setMenu] = useState<string | null>(null);
-    const railRef = useRef<HTMLDivElement>(null);
-    const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    //IT CLOSES THE WAY EVERY OTHER MENU HERE DOES: A PRESS THAT LANDED OUTSIDE IT, OR ESC
-    useEffect(() =>
-    {
-        if (menu === null) return;
-
-        const outside = (event: MouseEvent) =>
-        {
-            if (!railRef.current?.contains(event.target as Node)) setMenu(null);
-        };
-
-        const key = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
-
-        document.addEventListener("mousedown", outside);
-        document.addEventListener("keydown", key);
-
-        return () =>
-        {
-            document.removeEventListener("mousedown", outside);
-            document.removeEventListener("keydown", key);
-        };
-    }, [menu]);
-
-    const hold = (id: string) =>
-    {
-        pressRef.current = setTimeout(() => setMenu(id), 500);
-    };
-
-    const release = () =>
-    {
-        if (pressRef.current !== null) clearTimeout(pressRef.current);
-
-        pressRef.current = null;
-    };
+    const { menu, close, bind, held } = useHoldMenu();
 
     return (
-        <nav
-            ref={railRef}
-            className="scroller scroller-quiet relative z-10 flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border bg-deep py-3"
-        >
+        <nav className="scroller scroller-quiet relative z-10 flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border bg-deep py-3">
             {servers.map((server) =>
             {
                 const label = serverLabel(server);
@@ -241,11 +344,8 @@ export function ServerRail(
                             type="button"
                             title={`${label}\n${server.address}${server.username ? ` — ${server.username}` : ""}`}
                             aria-label={label}
-                            onClick={() => { setMenu(null); onPick(server); }}
-                            onContextMenu={(event) => { event.preventDefault(); setMenu(server.id); }}
-                            onTouchStart={() => hold(server.id)}
-                            onTouchEnd={release}
-                            onTouchMove={release}
+                            onClick={() => { if (held()) return; close(); onPick(server); }}
+                            {...bind(server.id)}
                             className={`flex h-12 w-12 select-none items-center justify-center text-[17px] font-semibold text-white/90 transition-all ${current
                                 ? "rounded-2xl ring-2 ring-accent"
                                 : "rounded-full opacity-70 hover:rounded-2xl hover:opacity-100"}`}
@@ -261,23 +361,6 @@ export function ServerRail(
                             <span className={`absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r bg-text ${connecting ? "opacity-40" : ""}`} />
                         )}
 
-                        {menu === server.id && (
-                            <div className="absolute left-[52px] top-0 z-50 w-56 rounded-app border border-border bg-overlay p-1 shadow-2xl">
-                                <div className="px-2 py-1.5">
-                                    <div className="truncate text-sm font-semibold">{label}</div>
-                                    <div className="truncate font-mono text-[11px] text-faint">{server.address}</div>
-                                </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => { setMenu(null); onForget(server.id); }}
-                                    className="flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm text-error transition-colors hover:bg-hover"
-                                >
-                                    <Icon name="close" className="h-4 w-4" />
-                                    Forget this server
-                                </button>
-                            </div>
-                        )}
                     </div>
                 );
             })}
@@ -286,11 +369,20 @@ export function ServerRail(
                 type="button"
                 title="Add a server"
                 aria-label="Add a server"
-                onClick={() => { setMenu(null); onAdd(); }}
+                onClick={() => { close(); onAdd(); }}
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border-strong text-muted transition-all hover:rounded-2xl hover:border-accent hover:text-accent"
             >
                 <Icon name="plus" className="h-5 w-5" />
             </button>
+
+            {menu && servers.some((server) => server.id === menu.id) && (
+                <ForgetMenu
+                    server={servers.find((server) => server.id === menu.id)!}
+                    at={menu}
+                    onForget={onForget}
+                    close={close}
+                />
+            )}
         </nav>
     );
 }

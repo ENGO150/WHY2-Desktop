@@ -2107,6 +2107,7 @@ function App()
             onSubmit={handleSubmit}
             onPick={pickServer}
             onAdd={openAdd}
+            onForget={forgetServer}
             onCancel={() => setAdding(false)}
         />
     );

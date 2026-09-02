@@ -20,7 +20,7 @@ import type { UIState, StoredServer } from "./types";
 import { Icon } from "./icons";
 import { avatarColor } from "./theme";
 import type { ServerForm } from "./servers";
-import { serverLabel, AddServerFields } from "./servers";
+import { serverLabel, AddServerFields, ForgetMenu, useHoldMenu } from "./servers";
 
 //THE SCREEN THAT STANDS WHILE THERE IS NO SESSION. IT IS THREE SCREENS IN ONE PLACE, BECAUSE THEY ARE
 //THREE ANSWERS TO THE SAME QUESTION - WHICH SERVER, AND WHO ARE WE THERE:
@@ -31,7 +31,7 @@ import { serverLabel, AddServerFields } from "./servers";
 export function LoginScreen(
 {
     uiState, mode, servers, target, form, setForm, value, setValue, connecting, errorMsg, hint,
-    registering, inputRef, narrow, onSubmit, onPick, onAdd, onCancel,
+    registering, inputRef, narrow, onSubmit, onPick, onAdd, onForget, onCancel,
 }: {
     uiState: UIState;
     mode: "add" | "prompt" | "idle";
@@ -50,9 +50,14 @@ export function LoginScreen(
     onSubmit: (event: React.FormEvent) => void;
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
+    onForget: (id: string) => void;
     onCancel: () => void;
 })
 {
+    //THE LIST IS WHERE A SERVER IS FORGOTTEN, SINCE IT IS WHERE THEY ALL ARE. IT IS THE SAME GESTURE THE
+    //RAIL ASKS FOR, AND THE SAME MENU
+    const { menu, close, bind, held } = useHoldMenu();
+
     const title = mode === "add"
         ? "Add a server"
         : { server_select: servers.length ? "Servers" : "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
@@ -91,7 +96,9 @@ export function LoginScreen(
                         {/* WHICH SERVER THIS IS ABOUT, WHILE IT IS ABOUT ONE - EVERY PROMPT PAST THE
                             ADDRESS BELONGS TO A SERVER, AND WITH A LIST THERE IS MORE THAN ONE TO MEAN */}
                         {target && mode !== "add" && (
-                            <div className="mt-1 truncate font-mono text-[11px] text-faint">{serverLabel(target)} · {target.address}</div>
+                            <div className="mt-1 truncate font-mono text-[11px] text-faint">
+                                {serverLabel(target)}{target.name ? ` · ${target.address}` : ""}
+                            </div>
                         )}
                     </div>
 
@@ -152,9 +159,17 @@ export function LoginScreen(
                         QUESTION WHILE SOMETHING IS. IT IS WHERE A SERVER IS PICKED AND WHERE ONE IS ADDED */}
                     {mode !== "add" && servers.length > 0 && (
                         <div className={mode === "idle" ? "" : "mt-6"}>
-                            {/* THE LIST HAS NO FORM TO CARRY THE STATUS LINE, AND AN EMPTY ONE ABOVE THE
-                                HEADING IS A GAP FOR NOTHING - SO IT IS DRAWN ONLY WHEN IT SAYS SOMETHING */}
-                            {mode === "idle" && (connecting || errorMsg || hint) && status}
+                            {/* THE LIST HAS NO FORM TO CARRY THE STATUS LINE, SO IT CARRIES ITS OWN - AND
+                                AS A BOX, SINCE A BARE SENTENCE BETWEEN A HEADING AND A LIST READS AS
+                                NEITHER. IT IS DRAWN ONLY WHEN IT SAYS SOMETHING */}
+                            {mode === "idle" && (connecting || errorMsg || hint) && (
+                                <div className={`mb-3 flex items-start gap-2 rounded-app border px-3 py-2.5 text-xs ${!connecting && errorMsg
+                                    ? "border-error/40 bg-error/10 text-error"
+                                    : "border-border bg-overlay text-muted"}`}>
+                                    <Icon name={!connecting && errorMsg ? "alert" : "info"} className="mt-px h-3.5 w-3.5 shrink-0" />
+                                    <span className="min-w-0 flex-1 break-words">{connecting ? "Connecting…" : errorMsg || hint}</span>
+                                </div>
+                            )}
 
                             <div className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Your servers</div>
 
@@ -163,9 +178,10 @@ export function LoginScreen(
                                     <button
                                         key={server.id}
                                         type="button"
-                                        onClick={() => onPick(server)}
+                                        onClick={() => { if (held()) return; close(); onPick(server); }}
+                                        {...bind(server.id)}
                                         disabled={connecting}
-                                        className={`flex w-full items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover disabled:opacity-40 ${target?.id === server.id ? "bg-selected" : ""}`}
+                                        className={`flex w-full select-none items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover disabled:opacity-40 ${target?.id === server.id ? "bg-selected" : ""}`}
                                     >
                                         <span
                                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white/90"
@@ -183,6 +199,15 @@ export function LoginScreen(
                                     </button>
                                 ))}
                             </div>
+
+                            {menu && servers.some((server) => server.id === menu.id) && (
+                                <ForgetMenu
+                                    server={servers.find((server) => server.id === menu.id)!}
+                                    at={menu}
+                                    onForget={onForget}
+                                    close={close}
+                                />
+                            )}
 
                             <button
                                 type="button"
