@@ -26,11 +26,12 @@ import { serverLabel, AddServerFields } from "./servers";
 //THREE ANSWERS TO THE SAME QUESTION - WHICH SERVER, AND WHO ARE WE THERE:
 //  - THE FORM THAT ADDS ONE, WHICH IS ALSO WHAT A WINDOW WITH AN EMPTY LIST OPENS ON
 //  - THE ONE-FIELD PROMPT, FOR WHATEVER THE SERVER ASKED THAT WE HAD NOTHING STORED FOR
-//  - THE LIST ITSELF, WAITING TO BE PICKED FROM
+//  - THE LIST ITSELF, WHICH IS ALL IT IS: A SERVER IS PICKED OR ADDED, NEVER TYPED AT AGAIN, SINCE AN
+//    ADDRESS FIELD BESIDE THE ROWS IS THE SAME QUESTION ASKED TWICE
 export function LoginScreen(
 {
     uiState, mode, servers, target, form, setForm, value, setValue, connecting, errorMsg, hint,
-    registering, inputRef, narrow, onSubmit, onPick, onAdd, onCancel, rail,
+    registering, inputRef, narrow, onSubmit, onPick, onAdd, onCancel,
 }: {
     uiState: UIState;
     mode: "add" | "prompt" | "idle";
@@ -50,15 +51,14 @@ export function LoginScreen(
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
     onCancel: () => void;
-    rail: React.ReactNode;
 })
 {
     const title = mode === "add"
         ? "Add a server"
         : { server_select: servers.length ? "Servers" : "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
 
-    const label = { server_select: "Server address", username_prompt: "Username", password_prompt: "Password", connected: "" }[uiState];
-    const button = { server_select: "Connect", username_prompt: "Continue", password_prompt: registering ? "Register" : "Log in", connected: "" }[uiState];
+    const label = { server_select: "", username_prompt: "Username", password_prompt: "Password", connected: "" }[uiState];
+    const button = { server_select: "", username_prompt: "Continue", password_prompt: registering ? "Register" : "Log in", connected: "" }[uiState];
 
     //THE STATUS LINE, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG, OR THE SERVER'S OWN
     //RULES FOR WHAT IS BEING ASKED
@@ -77,12 +77,11 @@ export function LoginScreen(
 
 
     //AN absolute inset-0 CHILD IS LAID OUT AGAINST ITS ANCESTOR'S *PADDING BOX*, SO IT COVERS THE NOTCH
-    //THAT <main>'S PADDING WAS KEEPING CLEAR - AND THE RAIL'S FIRST TILE WOULD SIT UNDER THE STATUS BAR.
-    //IT PAYS THE INSETS AGAIN, THE WAY THE DIALOGS DO
+    //THAT <main>'S PADDING WAS KEEPING CLEAR. IT PAYS THE INSETS AGAIN, THE WAY THE DIALOGS DO.
+    //THE RAIL IS NOT HERE: THIS SCREEN IS THE LIST, AND A COLUMN OF ONE-LETTER TILES BESIDE IT WOULD BE
+    //THE SAME SERVERS SAID TWICE
     return (
         <div className="safe-top safe-bottom absolute inset-0 z-40 flex bg-deep">
-            {rail}
-
             <div className="flex min-w-0 flex-1 items-center justify-center px-4">
                 <div className="rise relative w-full max-w-[420px]">
                     <div className="mb-6 text-center">
@@ -96,60 +95,67 @@ export function LoginScreen(
                         )}
                     </div>
 
-                    <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
-                        {mode === "add" ? (
-                            <>
-                                <AddServerFields form={form} setForm={setForm} connecting={connecting} inputRef={inputRef} autoFocus={!narrow} />
+                    {/* NOTHING IS ASKED IN THE LIST ITSELF, SO THERE IS NO FORM IN FRONT OF IT - ONLY THE
+                        TWO MODES THAT HAVE A QUESTION DRAW ONE */}
+                    {mode !== "idle" && (
+                        <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
+                            {mode === "add" ? (
+                                <>
+                                    <AddServerFields form={form} setForm={setForm} connecting={connecting} inputRef={inputRef} autoFocus={!narrow} />
 
-                                {status}
-                            </>
-                        ) : (
-                            <>
-                                <label htmlFor="login-input" className={caption}>{label}</label>
+                                    {status}
+                                </>
+                            ) : (
+                                <>
+                                    <label htmlFor="login-input" className={caption}>{label}</label>
 
-                                <input
-                                    id="login-input"
-                                    ref={inputRef}
-                                    type={uiState === "password_prompt" ? "password" : "text"}
-                                    value={value}
-                                    onChange={(event) => setValue(event.currentTarget.value)}
-                                    placeholder={uiState === "server_select" ? "127.0.0.1:8080" : undefined}
-                                    className={field}
-                                    disabled={connecting}
-                                    autoFocus={!narrow}
-                                    spellCheck={false}
-                                />
+                                    <input
+                                        id="login-input"
+                                        ref={inputRef}
+                                        type={uiState === "password_prompt" ? "password" : "text"}
+                                        value={value}
+                                        onChange={(event) => setValue(event.currentTarget.value)}
+                                        className={field}
+                                        disabled={connecting}
+                                        autoFocus={!narrow}
+                                        spellCheck={false}
+                                    />
 
-                                {status}
-                            </>
-                        )}
+                                    {status}
+                                </>
+                            )}
 
-                        <button
-                            type="submit"
-                            disabled={connecting || (mode === "add" ? !form.address : !value)}
-                            className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            {mode === "add" ? "Add and connect" : button}
-                        </button>
-
-                        {/* THE WAY BACK OUT OF THE FORM, WHICH ONLY EXISTS WHERE THERE IS SOMETHING TO GO
-                            BACK TO: THE FIRST SERVER EVER ADDED HAS NO LIST BEHIND IT */}
-                        {mode === "add" && servers.length > 0 && (
                             <button
-                                type="button"
-                                onClick={onCancel}
-                                disabled={connecting}
-                                className="mt-2 w-full rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                                type="submit"
+                                disabled={connecting || (mode === "add" ? !form.address : !value)}
+                                className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                                Cancel
+                                {mode === "add" ? "Add and connect" : button}
                             </button>
-                        )}
-                    </form>
 
-                    {/* THE LIST ITSELF, UNDER WHATEVER IS BEING ASKED. THE RAIL SAYS THE SAME THING IN ONE
-                        LETTER EACH; THIS IS THE ONE PLACE THE WHOLE NAME AND THE ADDRESS FIT */}
+                            {/* THE WAY BACK OUT OF THE FORM, WHICH ONLY EXISTS WHERE THERE IS SOMETHING TO
+                                GO BACK TO: THE FIRST SERVER EVER ADDED HAS NO LIST BEHIND IT */}
+                            {mode === "add" && servers.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={onCancel}
+                                    disabled={connecting}
+                                    className="mt-2 w-full rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                                >
+                                    Cancel
+                                </button>
+                            )}
+                        </form>
+                    )}
+
+                    {/* THE LIST ITSELF: THE WHOLE SCREEN WHILE NOTHING IS BEING ASKED, AND UNDER THE
+                        QUESTION WHILE SOMETHING IS. IT IS WHERE A SERVER IS PICKED AND WHERE ONE IS ADDED */}
                     {mode !== "add" && servers.length > 0 && (
-                        <div className="mt-6">
+                        <div className={mode === "idle" ? "" : "mt-6"}>
+                            {/* THE LIST HAS NO FORM TO CARRY THE STATUS LINE, AND AN EMPTY ONE ABOVE THE
+                                HEADING IS A GAP FOR NOTHING - SO IT IS DRAWN ONLY WHEN IT SAYS SOMETHING */}
+                            {mode === "idle" && (connecting || errorMsg || hint) && status}
+
                             <div className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Your servers</div>
 
                             <div className="scroller scroller-quiet max-h-[240px] rounded-xl border border-border bg-overlay p-1">

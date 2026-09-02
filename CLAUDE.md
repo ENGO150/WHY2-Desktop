@@ -190,26 +190,30 @@ What actually got the session in (`typedRef`, whichever of the two it came from)
 writes when `authenticated` arrives — which is also why a server typed into the form is **not** written down
 until it works: a typo is a failed connect rather than a row to be forgotten again.
 
-`dial` is the one way in. It is called by the startup read of the list (the entry with the newest `last_used`
-opens on its own — an empty list is the only reason to ask anything at all), by the connect form, and by the
-rail. Picking a server while another one is up is a **switch and not a second session**: the one in front is
-asked to leave with `/exit`, `switchRef` parks where we are going, and the `disconnected` event dials it.
+`dial` is the one way in. It is called by `goTo` — which is what the list's rows, the rail's tiles and the
+form all come back to — and by the `disconnected` event when a switch is parked. Picking a server while
+another one is up is a **switch and not a second session**: the one in front is asked to leave with `/exit`,
+`switchRef` parks where we are going, and the disconnect dials it.
 
-The connect screen is only up while there is **no** session, so the rail's `+` cannot be it while there is
-one: `AddServerDialog` is the same form as a window over the chat (`addBox`), and `AddServerFields` is the
-three fields written once for both. It closes the way every other menu here does — esc, the X, a press
-outside, the back gesture (it is in `covering`) — and submitting it is a switch like any other, so the
-session in front is left first. On a phone neither it nor the connect screen takes the focus on its own: a
-soft keyboard is half the screen, and on the connect screen the other half is the list being picked from.
+**The program opens on the list and dials nothing.** A window that reconnected to whatever was used last
+would be a session nobody asked for, to be left again by hand; which server this is going to be is the one
+question a list cannot answer by itself. The startup read of `get_servers` therefore only fills the list —
+an empty one is the single case anything is asked, and what it asks is the form that adds the first server.
 
 `LoginScreen` is one screen with three things to ask, and `mode` says which: the **prompt** (one field) while
 the server has an identity step pending that nothing was stored for, the **form** that adds a server (address,
-username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from,
-with the address field above it for a server not in it yet. Typing an address that is already a row dials
-*that* row rather than adding a second one beside it — which is what the address a disconnect leaves in the
-field always is. Two rows for one address are two accounts, which is why the username counts when one is
-given. None of this is on Android's side of a cfg: it is the same file, the same commands and the same
-0600.
+username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from.
+The list is **only** the list: it has no address field, because a row and a field beside it are the same
+question asked twice, and it has no form in front of it — the only two modes that draw one are the two with
+something to ask. A server not in the list is added through `Add another server`, which is the same form,
+and typing an address that is already a row dials *that* row rather than adding a second one beside it. Two
+rows for one address are two accounts, which is why the username counts when one is given.
+
+The rail is **not** drawn on this screen, and it has no `+`: the selection screen already is the list, in
+whole names rather than one letter each, and it is the one place a server is added. Adding one is therefore
+something done between sessions — from inside a session the way to it is the door (`/exit`), which is the
+same walk out that switching servers already takes. None of this is on Android's side of a cfg: it is the
+same file, the same commands and the same 0600.
 
 ### The window
 
@@ -221,11 +225,11 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 **Android**:
 
 - **The rail**, at the far left of the left column: one tile per server in the list, the one we are in marked
-  with a pill against the edge, and a `+` that adds another. It stands whether or not there is a session,
-  because it is the way into one and the way between two — while there is one it is drawn *inside* the left
-  column's `aside` (so a phone slides one drawer and not two), and while there is not, inside the connect
-  screen. A right-click, or a long press on a phone, opens the tile's one menu item: forgetting the server,
-  which is for good, and which is also leaving it when it is the one we are standing in.
+  with a pill against the edge. It is the way *between* two sessions and nothing else — it is drawn inside
+  the left column's `aside` (so a phone slides one drawer and not two) and only while there is a session,
+  since the screen that stands in place of one is the same list already. A right-click, or a long press on a
+  phone, opens the tile's one menu item: forgetting the server, which is for good, and which is also leaving
+  it when it is the one we are standing in.
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
   call: the voice roster while there is

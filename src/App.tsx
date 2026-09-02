@@ -63,7 +63,7 @@ import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
-import { ServerRail, AddServerDialog } from "./servers";
+import { ServerRail } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import { MemberColumn } from "./members";
@@ -163,7 +163,6 @@ function App()
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
-    const addRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const settingsRowRef = useRef<HTMLDivElement>(null);
@@ -182,7 +181,6 @@ function App()
     //DIALLED AT ALL - THE LIST IS READ ONCE AT STARTUP, AND StrictMode READS IT TWICE
     const serverNameRef = useRef("");
     const switchRef = useRef<StoredServer | null>(null);
-    const dialedRef = useRef(false);
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
 
@@ -414,7 +412,6 @@ function App()
     //AND WHAT IT HAS NOT IS SIMPLY ASKED FOR THE WAY IT ALWAYS WAS
     const dial = (server: StoredServer) =>
     {
-        dialedRef.current = true;
         entryRef.current = server;
         credsRef.current = { username: server.username, password: server.password ?? "" };
         typedRef.current = { username: "", password: "" };
@@ -480,17 +477,15 @@ function App()
     {
         invoke<ClientConfig>("get_client_config").then(setConfig).catch(console.error);
 
-        //THE LIST IS THE FIRST THING THE WINDOW ASKS FOR, AND THE SERVER USED LAST OPENS ON ITS OWN: THE
-        //WHOLE POINT OF KEEPING IT IS THAT STARTING THE PROGRAM IS NOT A QUESTIONNAIRE. AN EMPTY LIST IS
-        //THE ONE CASE THERE IS ANYTHING TO ASK, AND THAT IS THE FORM THAT ADDS THE FIRST ONE
+        //THE LIST IS THE FIRST THING THE WINDOW ASKS FOR, AND IT IS WHAT THE PROGRAM OPENS ON: WHICH
+        //SERVER THIS IS GOING TO BE IS THE ONE QUESTION A LIST CANNOT ANSWER BY ITSELF, AND A SESSION
+        //THAT STARTED WITHOUT BEING ASKED FOR IS ONE TO BE LEFT AGAIN. AN EMPTY LIST HAS NOTHING TO PICK
+        //FROM, SO IT OPENS ON THE FORM THAT ADDS THE FIRST ONE
         invoke<StoredServer[]>("get_servers").then((list) =>
         {
             setServers(list);
 
-            if (!list.length) return setAdding(true);
-            if (dialedRef.current) return;
-
-            dial(list.reduce((newest, server) => (server.last_used > newest.last_used ? server : newest), list[0]));
+            if (!list.length) setAdding(true);
         }).catch(console.error);
 
         const unlisten = listen<BridgeEvent>("why2-event", ({ payload }) =>
@@ -889,13 +884,13 @@ function App()
 
         //A SERVER IS NOT WRITTEN DOWN UNTIL IT WORKS: A TYPO IS A FAILED CONNECT RATHER THAN A ROW IN
         //THE LIST TO BE FORGOTTEN AGAIN, AND rememberServer PUTS IT IN WHEN THE SERVER LETS US IN
-        if (mode === "add" || uiState === "server_select")
+        if (mode === "add")
         {
-            const typed = (mode === "add" ? form.address : inputValue).trim();
+            const typed = form.address.trim();
 
             if (!typed) return;
 
-            const wanted = mode === "add" ? form.username.trim() : "";
+            const wanted = form.username.trim();
 
             //THE SAME SERVER TYPED IN AGAIN IS THE ROW THAT IS ALREADY THERE RATHER THAN A SECOND ONE
             //BESIDE IT - THE ADDRESS LEFT IN THE FIELD BY A DISCONNECT IS EXACTLY THAT CASE. TWO ROWS
@@ -907,13 +902,13 @@ function App()
                 ? {
                     ...existing,
                     username: wanted || existing.username,
-                    password: mode === "add" && form.password ? form.password : existing.password,
+                    password: form.password || existing.password,
                 }
                 : {
                     id: newId(),
                     address: typed,
                     username: wanted,
-                    password: mode === "add" && form.password ? form.password : null,
+                    password: form.password || null,
                     name: null,
                     last_used: Date.now(),
                 });
@@ -957,21 +952,13 @@ function App()
         goTo(server);
     };
 
-    //THE + IS A WINDOW OVER THE CHAT WHILE THERE IS ONE AND THE CONNECT SCREEN ITSELF WHILE THERE IS NOT,
-    //WHICH IS THE SAME FORM EITHER WAY. ON A PHONE IT WAS PRESSED INSIDE THE DRAWER, WHICH HAS DONE ITS JOB
+    //ADDING A SERVER IS SOMETHING THE SELECTION SCREEN DOES, SO THIS IS ONLY EVER PRESSED WHILE THAT
+    //SCREEN IS UP - THERE IS NOTHING BEHIND IT TO PUT AWAY
     const openAdd = () =>
     {
         setForm({ address: "", username: "", password: "" });
         setErrorMsg("");
         setAdding(true);
-        setDrawer(null);
-    };
-
-    const closeAdd = () =>
-    {
-        setAdding(false);
-
-        if (!narrow) chatInputRef.current?.focus();
     };
 
     //FORGETTING IS FOR GOOD, AND FORGETTING THE ONE WE ARE STANDING IN IS ALSO LEAVING IT - THERE WOULD
@@ -1423,8 +1410,7 @@ function App()
     //THE PHONE ALREADY HAS ONE NAVIGATION CONTROL, AND EVERYBODY EXPECTS IT TO CLOSE WHATEVER IS IN FRONT
     //RATHER THAN THE PROGRAM. EACH THING THAT COVERS THE CONVERSATION PARKS ONE ENTRY IN THE HISTORY, AND
     //THE BACK GESTURE SPENDS IT - WITH NOTHING IN FRONT, BACK STILL MEANS WHAT IT ALWAYS DID
-    const addOpen = connected && adding;
-    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || addOpen || theater;
+    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || theater;
 
     useEffect(() =>
     {
@@ -1436,7 +1422,6 @@ function App()
         {
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
             if (theater) setView("chat");
-            else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
@@ -2054,24 +2039,8 @@ function App()
 
     //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
-    //THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT. WITHOUT THIS THE BUTTON WOULD SET A FLAG NOTHING
-    //DRAWS: THE CONNECT SCREEN, WHICH IS THE FORM'S OTHER HOME, IS ONLY UP WHILE THERE IS NO SESSION
-    const addBox = addOpen && (
-        <AddServerDialog
-            form={form}
-            setForm={setForm}
-            connecting={connecting}
-            errorMsg={errorMsg}
-            cardRef={addRef}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
-            narrow={narrow}
-            onSubmit={handleSubmit}
-            close={closeAdd}
-        />
-    );
-
-    //THE FAR-LEFT COLUMN, WHICH STANDS WHETHER OR NOT THERE IS A SESSION - IT IS THE WAY INTO ONE AND
+    //THE FAR-LEFT COLUMN, WHICH STANDS INSIDE THE SESSION - THE SELECTION SCREEN IS THE SAME LIST DRAWN
+    //LARGE, AND DRAWING BOTH AT ONCE WOULD BE ASKING THE SAME QUESTION TWICE ON ONE SCREEN - IT IS THE WAY INTO ONE AND
     //THE WAY BETWEEN TWO. IT IS DRAWN INSIDE THE LEFT COLUMN WHILE THERE IS ONE, AND INSIDE THE CONNECT
     //SCREEN WHILE THERE IS NOT; ON A PHONE THAT MAKES IT PART OF THE SAME DRAWER RATHER THAN A SECOND ONE
     const rail = (
@@ -2080,7 +2049,6 @@ function App()
             active={dialing?.id ?? null}
             connecting={connecting}
             onPick={pickServer}
-            onAdd={openAdd}
             onForget={forgetServer}
         />
     );
@@ -2105,7 +2073,6 @@ function App()
             onPick={pickServer}
             onAdd={openAdd}
             onCancel={() => setAdding(false)}
-            rail={servers.length > 0 ? rail : null}
         />
     );
 
@@ -2424,7 +2391,6 @@ function App()
             {settingsBox}
             {filesBox}
             {screensBox}
-            {addBox}
             {loginScreen}
             {tofuBox}
         </main>

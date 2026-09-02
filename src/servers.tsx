@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { StoredServer } from "./types";
 import { avatarColor } from "./theme";
-import { Icon, IconButton } from "./icons";
+import { Icon } from "./icons";
 
 //WHAT A SERVER IS TYPED IN AS. THE PASSWORD IS PART OF IT BECAUSE THE WHOLE POINT OF THE LIST IS THAT
 //NONE OF THIS IS ASKED TWICE - AND IT IS ALLOWED TO BE EMPTY, WHICH IS THE ROW SAYING "ASK ME"
@@ -34,8 +34,8 @@ export interface ServerForm
 const FIELD = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
 const CAPTION = "text-[11px] font-semibold uppercase tracking-wider text-muted";
 
-//THE THREE THINGS A SERVER IS. THEY ARE ASKED IN TWO PLACES - THE CONNECT SCREEN WHILE THERE IS NO
-//SESSION, AND A DIALOG OVER THE CHAT WHILE THERE IS - SO THEY ARE WRITTEN ONCE
+//THE THREE THINGS A SERVER IS, ASKED ON THE CONNECT SCREEN AND NOWHERE ELSE: ADDING A SERVER IS
+//SOMETHING THE SERVER SELECTION DOES, NOT SOMETHING A SESSION HAS A BUTTON FOR
 export function AddServerFields(
 {
     form, setForm, connecting, inputRef, autoFocus,
@@ -97,72 +97,6 @@ export function AddServerFields(
     );
 }
 
-//AND THE SAME FORM AS A WINDOW, FOR THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT. A SERVER ADDED FROM
-//IN HERE IS A SWITCH LIKE ANY OTHER: THE ONE WE ARE IN IS LEFT FIRST, AND THE CONNECT SCREEN TAKES OVER
-//WITH WHAT WAS TYPED STILL IN IT
-export function AddServerDialog(
-{
-    form, setForm, connecting, errorMsg, cardRef, dialogWrap, dialogCard, narrow, onSubmit, close,
-}: {
-    form: ServerForm;
-    setForm: (form: ServerForm) => void;
-    connecting: boolean;
-    errorMsg: string;
-    cardRef: React.RefObject<HTMLDivElement | null>;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
-    narrow: boolean;
-    onSubmit: (event: React.FormEvent) => void;
-    close: () => void;
-})
-{
-    return (
-        <div
-            onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-            className={dialogWrap}
-        >
-            <div
-                ref={cardRef}
-                tabIndex={-1}
-                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
-                className={`rise ${dialogCard("flex max-h-[84vh] w-full max-w-[420px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
-            >
-                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                    <Icon name="plus" className="h-4 w-4 shrink-0 text-muted" />
-                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Add a server</h2>
-
-                    <IconButton icon="close" label="Close" onClick={close} />
-                </header>
-
-                <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-5 py-4">
-                    {/* THE SOFT KEYBOARD IS HALF THE SCREEN, SO ON A PHONE IT OPENS WHEN THE FIELD IS
-                        TAPPED RATHER THAN BECAUSE A WINDOW CAME UP */}
-                    <AddServerFields form={form} setForm={setForm} connecting={connecting} autoFocus={!narrow} />
-
-                    <div className="mt-2 min-h-[1.25rem] text-xs">
-                        {connecting
-                            ? <span className="text-accent">Connecting…</span>
-                            : errorMsg
-                                ? <span className="text-error">{errorMsg}</span>
-                                : null}
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={connecting || !form.address}
-                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        Add and connect
-                    </button>
-
-                    {/* IT LEAVES THE SERVER WE ARE IN, WHICH IS WORTH SAYING BEFORE IT HAPPENS */}
-                    <div className="mt-2 text-center text-[11px] text-faint">This leaves the server you are on.</div>
-                </form>
-            </div>
-        </div>
-    );
-}
-
 //WHAT A SERVER IS CALLED WHEN THERE IS SOMETHING TO CALL IT BY: WHAT IT CALLED ITSELF LAST TIME, AND THE
 //ADDRESS UNTIL IT HAS. A SERVER THAT HAS NEVER BEEN REACHED IS STILL A TILE, BECAUSE IT WAS TYPED IN
 export function serverLabel(server: StoredServer): string
@@ -170,17 +104,17 @@ export function serverLabel(server: StoredServer): string
     return server.name || server.address;
 }
 
-//THE FAR-LEFT COLUMN: EVERY SERVER THE WINDOW REMEMBERS, THE ONE WE ARE IN MARKED, AND THE + THAT ADDS
-//ANOTHER. IT STANDS WHETHER OR NOT THERE IS A SESSION - IT IS THE WAY INTO ONE, AND THE WAY BETWEEN TWO
+//THE FAR-LEFT COLUMN: EVERY SERVER THE WINDOW REMEMBERS, WITH THE ONE WE ARE IN MARKED. IT IS THE WAY
+//BETWEEN TWO SESSIONS AND NOTHING ELSE - THE SERVER SELECTION IS WHERE A SERVER IS ADDED, AND WHILE THAT
+//IS UP THIS COLUMN IS NOT DRAWN AT ALL, SINCE IT WOULD BE THE SAME LIST STANDING BESIDE ITSELF
 export function ServerRail(
 {
-    servers, active, connecting, onPick, onAdd, onForget,
+    servers, active, connecting, onPick, onForget,
 }: {
     servers: StoredServer[];
     active: string | null;
     connecting: boolean;
     onPick: (server: StoredServer) => void;
-    onAdd: () => void;
     onForget: (id: string) => void;
 })
 {
@@ -280,16 +214,6 @@ export function ServerRail(
                     </div>
                 );
             })}
-
-            <button
-                type="button"
-                title="Add a server"
-                aria-label="Add a server"
-                onClick={() => { setMenu(null); onAdd(); }}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border-strong text-muted transition-all hover:rounded-2xl hover:border-accent hover:text-accent"
-            >
-                <Icon name="plus" className="h-5 w-5" />
-            </button>
         </nav>
     );
 }
