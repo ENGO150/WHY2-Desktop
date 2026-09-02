@@ -1,0 +1,130 @@
+/*
+This is part of WHY2
+Copyright (C) 2026 Václav Šmejkal
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* THE SCROLLBAR IS ONLY THERE WHILE SOMETHING IS OFF-SCREEN, AND IT NEVER CLAIMS A COLUMN OF ITS OWN */
+.scroller
+{
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+}
+
+.scroller::-webkit-scrollbar
+{
+    width: 8px;
+    height: 8px;
+}
+
+.scroller::-webkit-scrollbar-track
+{
+    background: transparent;
+}
+
+.scroller::-webkit-scrollbar-thumb
+{
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+
+/* A COLUMN THAT ONLY SHOWS ITS SCROLLBAR WHILE THE POINTER IS IN IT, THE WAY THE SIDEBARS DO */
+.scroller-quiet
+{
+    scrollbar-color: transparent transparent;
+}
+
+.scroller-quiet:hover
+{
+    scrollbar-color: var(--border-strong) transparent;
+}
+
+.scroller-quiet::-webkit-scrollbar-thumb
+{
+    background: transparent;
+}
+
+.scroller-quiet:hover::-webkit-scrollbar-thumb
+{
+    background: var(--border-strong);
+}
+
+/* SOMEBODY IS TALKING - THE RING AROUND THEIR AVATAR IS THE ONE THING IN THE WINDOW THAT MOVES */
+.speaking
+{
+    box-shadow: 0 0 0 2px var(--online);
+    transition: box-shadow 90ms ease-out;
+}
+
+/* THE VOLUME SLIDERS. A NATIVE RANGE IS THE RIGHT CONTROL HERE; IT JUST HAS TO STOP LOOKING NATIVE */
+.slider
+{
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    outline: none;
+}
+
+.slider::-webkit-slider-thumb
+{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px #0009;
+}
+
+.slider::-moz-range-thumb
+{
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--text);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 1px 3px #0009;
+}
+
+/* GRAIN OVER THE WHOLE WINDOW - THE ONE THING A TERMINAL COULD NOT HAVE DONE */
+.noise-overlay::before
+{
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.016;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+}
+
+@keyframes rise
+{
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.rise
+{
+    animation: rise 120ms ease-out;
+}

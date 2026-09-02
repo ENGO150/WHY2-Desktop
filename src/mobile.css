@@ -1,0 +1,61 @@
+/*
+This is part of WHY2
+Copyright (C) 2026 Václav Šmejkal
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* WHAT THE PHONE KEEPS FOR ITSELF - THE NOTCH AT THE TOP, THE GESTURE BAR AT THE BOTTOM. THE PAGE IS DRAWN
+   UNDER BOTH (viewport-fit=cover) SO THE SURFACES REACH THE EDGES OF THE GLASS, AND ONLY THE THINGS THAT
+   ARE ACTUALLY TOUCHED PAY THE INSET BACK. ON A DESKTOP EVERY ONE OF THESE IS ZERO */
+.safe-top    { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* THE SIDEBARS SLIDE IN OVER THE CHAT ON A PHONE INSTEAD OF STANDING BESIDE IT, WHICH IS THE ONE THING
+   EVERY MOBILE CHAT CLIENT DOES THE SAME WAY - AND A DRAWER THAT IS PUT AWAY MUST NOT BE REACHABLE BY A
+   TAP OR BY THE TAB KEY, SO IT IS MOVED *AND* MADE INERT RATHER THAN ONLY MOVED */
+.drawer
+{
+    transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+    touch-action: pan-y;
+}
+
+.drawer-shut
+{
+    visibility: hidden;
+    transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1), visibility 0s linear 180ms;
+}
+
+/* AND THE SHEET OF DARKNESS UNDER ONE, WHICH IS ALSO THE WAY OUT OF IT */
+.scrim
+{
+    animation: fade 180ms ease-out;
+}
+
+@keyframes fade
+{
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* A TAP TARGET IS A FINGERTIP WIDE. THE ICON INSIDE IT DOES NOT CHANGE SIZE - THE ROOM AROUND IT DOES */
+@media (pointer: coarse)
+{
+    .touch-target
+    {
+        min-width: 40px;
+        min-height: 40px;
+    }
+}

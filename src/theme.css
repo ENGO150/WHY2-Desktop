@@ -1,0 +1,122 @@
+/*
+This is part of WHY2
+Copyright (C) 2026 Václav Šmejkal
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* THE SURFACES ARE A DARK STACK - RAIL, SIDEBAR, CHAT, RAISED, OVERLAY - AND EVERY ONE OF THEM IS THE
+   SAME NEAR-BLACK WITH A TRACE OF ROSE IN IT, SO THE WINDOW READS AS ONE MATERIAL LIT FROM ONE SIDE.
+   THE ACCENTS ARE THE TERMINAL CLIENT'S PALETTE PULLED MOST OF THE WAY TOWARDS GREY - THE CHROME IS
+   NEARLY MONOCHROME ON PURPOSE, SO THE ONLY SATURATED THING IN THE WINDOW IS WHAT SOMEBODY SAID */
+:root
+{
+    --deep: #050405;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
+    --sidebar: #0a0809;          /* THE CHANNEL AND MEMBER COLUMNS */
+    --chat: #0d0b0c;             /* WHERE THE MESSAGES ARE */
+    --raised: #131011;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
+    --overlay: #171314;          /* DIALOGS */
+
+    --hover: #ffffff0a;
+    --selected: #ffffff10;
+    --active: #ffffff17;
+
+    --border: #1d191a;
+    --border-strong: #2d2729;
+
+    --text: #cec6c8;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
+    --muted: #877c7f;            /* EVERY DIM LABEL */
+    --faint: #5a5154;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
+
+    --accent: #93a0ac;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
+    --brand: #ae7f9b;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
+    --notice: #ada0a3;           /* PALE ASH */
+    --ok: #9e8a8b;               /* SALMON, WORN DOWN */
+    --error: #ae5c68;
+    --online: #71917e;           /* PRESENCE, AND A CALL THAT IS UP */
+    --warning: #a69166;
+
+    --arg-required: #a0937f;     /* SOFT SAND */
+    --arg-optional: #a58c88;     /* FADED CORAL */
+
+    --radius: 8px;
+}
+
+@theme inline
+{
+    --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    --color-deep: var(--deep);
+    --color-sidebar: var(--sidebar);
+    --color-chat: var(--chat);
+    --color-raised: var(--raised);
+    --color-overlay: var(--overlay);
+
+    --color-hover: var(--hover);
+    --color-selected: var(--selected);
+    --color-active: var(--active);
+
+    --color-border: var(--border);
+    --color-border-strong: var(--border-strong);
+
+    --color-text: var(--text);
+    --color-muted: var(--muted);
+    --color-faint: var(--faint);
+
+    --color-accent: var(--accent);
+    --color-brand: var(--brand);
+    --color-notice: var(--notice);
+    --color-ok: var(--ok);
+    --color-error: var(--error);
+    --color-online: var(--online);
+    --color-warning: var(--warning);
+
+    --color-arg-required: var(--arg-required);
+    --color-arg-optional: var(--arg-optional);
+
+    --radius-app: var(--radius);
+}
+
+@layer base
+{
+    body
+    {
+        @apply bg-deep text-text;
+
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-synthesis-weight: none;
+        text-rendering: optimizeLegibility;
+        overflow: hidden;
+    }
+
+    button
+    {
+        cursor: pointer;
+    }
+
+    /* A TOUCH SCREEN. THE GREY FLASH ANDROID PAINTS OVER EVERY TAP IS THE WEB'S OWN TELL, AND A WINDOW
+       THAT BOUNCES WHEN THE PANE HITS ITS END READS AS A PAGE RATHER THAN AS A PROGRAM */
+    html
+    {
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+    }
+
+    /* NOTHING IN A CHAT WINDOW IS A DOCUMENT TO SELECT BY ACCIDENT - THE MESSAGE TEXT OPTS BACK IN */
+    ::selection
+    {
+        background: color-mix(in oklab, var(--accent) 35%, transparent);
+    }
+}
