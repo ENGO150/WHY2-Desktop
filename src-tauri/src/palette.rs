@@ -28,7 +28,7 @@ use crate::types::*;
 use crate::state::AppState;
 use crate::color::offered_colors;
 
-#[cfg(media)]
+#[cfg(screen)]
 use why2_chat::network::screen::client::capture as screen_capture;
 
 pub(crate) fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandArgInfo> //DESCRIBE ONE COMMAND'S PARAMETERS
@@ -94,7 +94,7 @@ pub(crate) fn get_vocabulary(values: String) -> Vec<VocabularyValue>
 
         //THE CRATE'S OWN LIST AND NOT TAURI'S: THESE ARE THE NAMES /screen RESOLVES AGAINST, AND A WINDOW
         //MANAGER'S IDEA OF WHAT A MONITOR IS CALLED IS NOT ALWAYS THE CAPTURE BACKEND'S
-        #[cfg(media)]
+        #[cfg(screen)]
         "monitors" => screen_capture::monitor_names().into_iter()
             .map(|name| VocabularyValue { value: name, color: None })
             .collect(),

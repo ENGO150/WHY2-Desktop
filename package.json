@@ -8,9 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "android": "tauri android dev",
-    "android:init": "tauri android init",
-    "android:build": "tauri android build"
+    "android": "bash scripts/android-env.sh tauri android dev",
+    "android:init": "bash scripts/android-init.sh",
+    "android:build": "bash scripts/android-env.sh tauri android build"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -14,7 +14,7 @@ key pinning, commands, roles, config) lives in the `why2-chat` crate, pulled in 
 why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base"] }
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 The branch is not a preference: **crates.io stops at `why2-chat` 2.0.0, which has no `SCREEN_FRAME_SINK`** —
@@ -31,7 +31,8 @@ why2-chat = { path = "../../WHY2/chat" }
 
 `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
-script, not in this code. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
+script, not in this code. It is on for **both** targets; what a phone does about the opus it cannot find is
+in **Android**. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
 own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
 which also documents the one change this app needs in that crate. When behaviour looks wrong, the cause is often in that crate, not here — read
 its `chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
@@ -76,7 +77,12 @@ sysroot; it is also what CI uses. `gen/android` is generated and **not** tracked
 symlinks into this machine's `target/`), so it is made rather than cloned. **`cargo check` alone only
 ever checks the desktop half** — the Android half is a different feature set and a different cfg, and the
 cheap way to compile it without an NDK in reach is to point the target sections at the host and turn the
-`media` cfg off in `build.rs` by hand.
+`screen` cfg off in `build.rs` by hand.
+
+All three commands are wrapped: `android` and `android:build` run inside `scripts/android-env.sh`, and
+`android:init` is `scripts/android-init.sh`. That is where **libopus** is built for the ABIs and where the
+generated project is **patched** — see **Android**. Nothing else about them changed, `--` arguments
+included; running `tauri android build` by hand still works, and builds an app whose call cannot link.
 
 ## Architecture
 
@@ -86,8 +92,8 @@ Three layers, and the boundary between them is deliberately narrow:
    `async` on tokio, and the crate spawns its own tasks (uploads, downloads), so every call into it must be
    made from inside the runtime.
 2. **`src-tauri/src/`** — the bridge. Holds `AppState`, exposes the `#[tauri::command]`s, and translates
-   `ClientEvent`s into UI events. Everything that needs the call or the screen share is behind the `media`
-   cfg `build.rs` sets — see **Android**.
+   `ClientEvent`s into UI events. Everything that needs the call is behind the `voice` cfg and everything
+   that needs the screen share behind the `screen` one, both set by `build.rs` — see **Android**.
 3. **`src/`** — the UI. One stateful component with the view drawn by components around it, no router, no
    state library.
 
@@ -118,8 +124,8 @@ pieces the window is built from in `widgets.css`, and what only a phone needs in
 Two things the compiler will not catch when moving view code out of `App.tsx`. A prop named `screen`,
 `history`, `name`, `status` or `location` collides with a **DOM global**, so a component that forgot to
 declare it still compiles against `window.screen` — it is caught only because the *shape* is wrong, and it
-would not be if the shapes happened to match. And a `#[cfg(media)]` or a CSS comment sitting at the seam of
-a cut belongs to what follows it: a stray `#[cfg(media)]` silently made a `#[tauri::command]` desktop-only
+would not be if the shapes happened to match. And a `#[cfg(screen)]` or a CSS comment sitting at the seam of
+a cut belongs to what follows it: a stray one silently made a `#[tauri::command]` desktop-only
 once, which compiled on both targets and only failed at the Android link.
 
 ### The event bridge (the thing to understand first)
@@ -400,8 +406,9 @@ writes `client.toml` or puts a packet on the wire would do it twice.
 
 ### Voice
 
-`client_voice` is on **in the desktop build** (see **Android**, which is compiled without it and draws no
-headset), so the crate owns the whole call — the UDP handshake, the `cpal` streams, the Opus
+`client_voice` is on **in both builds** — a phone calls too, and everything below is the same there (see
+**Android** for the two things it needs of the platform) — so the crate owns the whole call — the UDP
+handshake, the `cpal` streams, the Opus
 codec, the denoiser, the mixing — and there is nothing left on this side but to draw it. `/voice` is a plain
 packet the crate answers by spawning `listen_server_voice`; `/mute` never reaches the server at all, because
 the muted set lives in `options::` and is where the crate drops both a muted user's audio and their messages.
@@ -541,33 +548,80 @@ The same program, on a phone. Two things are different and nothing else is: **wh
 layout is a width and the feature set is a target — because a desktop window dragged narrow has exactly the
 first problem and none of the second.
 
-**What the build contains.** `client_voice` opens its devices through `cpal`'s PulseAudio backend and encodes
-through `audiopus`' bundled C library; `client_screen` captures through `xcap`/`libwayshot` and draws through
-`winit`/`wgpu`, which want the main thread Tauri already owns. None of that cross-compiles to an NDK target as
-it stands, and a phone shares its screen through `MediaProjection` anyway — so **Android is `client_base`
-only**: the chat, the channels, the conversations, the files, TOFU, both configs. `Cargo.toml` says that with
-two `[target.'cfg(…)'.dependencies]` sections, and `build.rs` sets a **`media` cfg** off for the same target,
-which is what every gate under `src-tauri/src/` is written against. **The two are one answer spelled twice — change one
-and change the other.**
+**What the build contains.** **Android is `client_base` + `client_voice`**: the chat, the channels, the
+conversations, the files, TOFU, both configs — and the call. What it is *not* is `client_screen`, which
+captures through `xcap`/`libwayshot` and draws through `winit`/`wgpu`, wanting the main thread Tauri already
+owns; a phone shares its screen through `MediaProjection` anyway. `Cargo.toml` says that with two
+`[target.'cfg(…)'.dependencies]` sections, and `build.rs` sets **two cfgs, `voice` and `screen`**, the second
+off for that target — which is what every gate under `src-tauri/src/` is written against. **The features and
+the cfgs are one answer spelled twice — change one and change the other.**
+
+The call was left out for a long time on the grounds that none of it cross-compiles, and that turned out to
+be one library rather than a wall:
+
+- **`cpal` gates its PulseAudio dependency to Linux itself**, and on a phone its backend is **AAudio**
+  through the `ndk` crate. Nothing in the crate's voice code is in the way either — every platform branch in
+  it is `target_os = "linux"`, so the `default_host()` side is what Android takes.
+- **`nnnoiseless`, `ringbuf` and `lewton` are pure Rust**, and `gag` only wants a unix.
+- **`audiopus` is the one that does not build.** Its `audiopus_sys` compiles a vendored libopus with
+  autotools and passes no `--host`, so `configure` runs *this* machine's tests against a cross compiler and
+  stops. But it asks **pkg-config first and returns the moment that answers**, which is the whole way in:
+  `scripts/opus-android.sh` builds libopus once per ABI from a pinned release tarball into
+  `src-tauri/gen/opus/<target>/`, and `scripts/android-env.sh` — which every `android:*` npm script runs
+  inside — points `PKG_CONFIG_PATH_<target>` at it. **Per target and not once**, because one
+  `tauri android build` compiles all four ABIs in one process and a single path would hand the arm library
+  to the x86 one. `LIBOPUS_STATIC` is set with it, since `audiopus_sys` decides static-or-shared from the
+  machine it is *compiled on* and would otherwise link the phone against a `libopus.so` that is not there.
+
+Two things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in this
+app that speaks JNI:
+
+- **A context.** `cpal` asks `ndk_context` for one whenever it enumerates devices and **panics** where
+  nobody set one — Tauri's Android side is Kotlin and has no use for it, so nothing does. `JNI_OnLoad` is
+  where the `JavaVM` is handed to us (it runs on `Rust.kt`'s `System.loadLibrary`), and the `Application` is
+  reached from there through `ActivityThread.currentApplication()` — no activity needed. Without this the
+  settings dialog's device rows abort the process.
+- **The microphone.** `RECORD_AUDIO` is a runtime permission and only an `Activity` can ask for it, so
+  `MainActivity` carries three statics (`microphoneGranted`, `requestMicrophone`, `microphoneDenied`) and
+  `ensure_microphone` calls them. It is asked **when the call is started and not at launch** — `send_input`
+  holds the `/voice` packet back until the answer is in, so saying yes to the dialog is also joining. The
+  refusal is watched for beside the grant because Android answers for the user once they have said no twice,
+  and answers instantly. `JNI_OnLoad` is also where the activity's class is looked up: a tokio worker has
+  only the system class loader and would not find it.
+
+The class name comes from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
+wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because
+that is where AAudio starts.
 
 The gating is arranged so that call sites do not move:
 
-- `emit_voice` and `emit_screen` exist either way. Without `media` they emit a call that is not running and a
-  share that is not up, so the window draws its panels from an answer rather than from nothing.
+- `emit_voice` and `emit_screen` exist either way. Without the cfg they emit a call that is not running and a
+  share that is not up, so the window draws its panels from an answer rather than from nothing. Android takes
+  the real `emit_voice` and the empty `emit_screen`, which is why they are two cfgs and not one.
 - `ClientEvent`'s variants are **not** behind the crate's features (only what they are answered *with* is), so
   every match arm in `handle_event` stands on both sides and only the bodies that reach into `voice_options`/
   `screen_capture` are cfg'd.
-- `Command::Mute` and `Command::Screen` **are** behind them, so those two arms of `send_input` are cfg'd out.
-- `ClientKind`/`ClientValue` lose their `Volume` and `Device` variants, and `AUDIO_SETTINGS` is empty — the
-  settings dialog is then the `Interface` rows and nothing else, with no row pointing at a device nothing will
-  ever open.
-- `get_audio_devices`, `set_client_volume` and `set_client_device` keep their names and lose their bodies:
-  `generate_handler!` is one list and not a place for a cfg.
+- `Command::Screen` is behind `screen`, so that arm of `send_input` is cfg'd out there; `Command::Mute` is
+  behind `voice` and stands on both.
+- `ClientKind`/`ClientValue` and `AUDIO_SETTINGS` follow `voice`, so a phone gets the whole `Audio` section —
+  devices, volumes, the denoiser — with the device rows listing what AAudio actually reports.
+- `get_audio_devices`, `set_client_volume` and `set_client_device` keep their names and lose their bodies
+  where the cfg is off: `generate_handler!` is one list and not a place for a cfg.
+
+**What the generated project does not know.** `gen/android` is made on every machine and in CI, and it has
+no idea the app records audio. `scripts/android-patch.sh` is what tells it: it inserts `RECORD_AUDIO` and
+`MODIFY_AUDIO_SETTINGS` into the manifest (only where they are missing) and writes `MainActivity.kt` from
+`scripts/android/MainActivity.kt`, keeping the package line the generated file already had. It runs after
+every `init` and again in front of every build, and a **missing anchor is an error and not a shrug** —
+Tauri changing its template should stop the build rather than quietly ship an APK whose microphone never
+opens.
 
 **What the window knows about it.** Nothing on the frontend is told which platform it is on. The palette is
-already `get_commands`, which is `COMMAND_LIST` filtered by role — and on Android `/voice` and `/screens` are
-not in `COMMAND_LIST` **at all**, so `hasVoice`/`hasScreens` in `App.tsx` are read straight off that list.
-That is the one honest answer to "can this build do it", and it is the same question on either platform.
+already `get_commands`, which is `COMMAND_LIST` filtered by role — and `/voice` and `/screens` are in
+`COMMAND_LIST` only where their features are, so `hasVoice`/`hasScreens` in `App.tsx` are read straight off
+that list. That is the one honest answer to "can this build do it", and it is the same question on either
+platform: turning `client_voice` on for Android is the whole of what put the headset in the phone's channel
+header — no frontend change went with it.
 
 **What the window looks like.** Under `NARROW` (820px) `useNarrow` flips the layout to the one every phone
 chat app has settled on:
@@ -613,8 +667,12 @@ provider backed by a real file is the real path), falling back to the URI's own 
 name is what everybody else on the server will see. The copy is blocking I/O over the whole file, so it is in
 `spawn_blocking` like the hash.
 
-Not yet done on Android, and each for its own reason: **voice** wants `cpal`'s `oboe` backend and an `opus`
-that cross-compiles, and **screen sharing** wants a `MediaProjection` capture path in the crate.
+Not yet done on Android: **screen sharing**, which wants a `MediaProjection` capture path in the crate.
+Watching one wants a decoder here as well — the JPEG fallback is `openh264`, which is desktop-only for the
+same build reasons `client_screen` is.
+
+The call **stops when the app is backgrounded**, which is the same disconnect every other feature has there:
+the socket ends while the process is frozen, and nothing reconnects on resume yet.
 
 ### Input history
 

@@ -10,3 +10,8 @@
 # the gradle project is regenerated from tauri.conf.json, and its jniLibs are absolute symlinks into
 # this machine's target dir - the CI workflow makes its own before it builds
 /gen/android
+
+# Built by `scripts/opus-android.sh`
+# libopus for the four ABIs, plus the source it was built from - it is what audiopus links the call
+# against on a phone, and it is made again from the pinned tarball whenever it is not here
+/gen/opus

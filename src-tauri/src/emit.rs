@@ -16,34 +16,37 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#[cfg(media)]
+#[cfg(voice)]
 use std::sync::atomic::Ordering;
 
 use tauri::{ Emitter, AppHandle };
 
-#[cfg(media)]
+#[cfg(voice)]
 use tauri::Manager;
 
-#[cfg(media)]
+#[cfg(voice)]
 use why2_chat::options;
 
-//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
-//THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
-#[cfg(media)]
+//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD HAS THE FIRST OF AND NOT THE SECOND - why2-chat
+//IS PULLED IN THERE WITHOUT client_screen, SO THAT MODULE DOES NOT EXIST TO BE NAMED
+#[cfg(voice)]
 use why2_chat::network::
 {
     client::VoiceUser,
     voice::client::options as voice_options,
-    screen::client::options as screen_options,
 };
 
 use crate::types::*;
 use crate::state::EVENT;
 
-#[cfg(media)]
+#[cfg(voice)]
 use crate::state::AppState;
-#[cfg(media)]
-use why2_chat::network::screen::client::capture as screen_capture;
+#[cfg(screen)]
+use why2_chat::network::screen::client::
+{
+    options as screen_options,
+    capture as screen_capture,
+};
 
 pub(crate) fn emit(app: &AppHandle, event: UiEvent) //HAND ONE EVENT TO THE WEBVIEW
 {
@@ -68,7 +71,7 @@ pub(crate) fn block(app: &AppHandle, title: String, rows: Vec<BlockRow>) //PUSH 
 //THE CALL AS IT STANDS. EVERYTHING THAT TOUCHES ANY PART OF IT ENDS HERE - THE ROSTER ARRIVING, THE
 //SERVER LETTING US IN OR PUTTING US OUT, A MUTE TOGGLED, A VOLUME SLID - BECAUSE THE PANEL AND THE
 //MICROPHONE READING ARE ONE PICTURE AND HALF OF IT IS ALWAYS WRONG
-#[cfg(media)]
+#[cfg(voice)]
 pub(crate) fn emit_voice(app: &AppHandle)
 {
     let state = app.state::<AppState>();
@@ -86,7 +89,7 @@ pub(crate) fn emit_voice(app: &AppHandle)
 
 //OUR SHARE AS IT STANDS. BOTH HALVES OF IT LIVE IN THE CRATE'S GLOBALS AND MOVE WITHOUT US - THE SERVER
 //TOGGLES THE SHARE, THE COMMAND SWAPS THE MONITOR - SO THEY ARE READ HERE RATHER THAN KEPT
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) fn emit_screen(app: &AppHandle)
 {
     let sharing = screen_options::get_use_screen();
@@ -103,15 +106,16 @@ pub(crate) fn emit_screen(app: &AppHandle)
     });
 }
 
-//THERE IS NO CALL AND NO SHARE IN THIS BUILD, AND THE ANSWER TO BOTH QUESTIONS IS THE SAME EVERY TIME -
-//WHICH IS WHAT THE WINDOW DRAWS ITS (ABSENT) HEADSET AND MONITOR BUTTONS FROM
-#[cfg(not(media))]
+//THE SAME TWO QUESTIONS IN A BUILD THAT HAS NOTHING TO ANSWER THEM WITH, WHERE THE ANSWER IS THE SAME
+//EVERY TIME - WHICH IS WHAT THE WINDOW DRAWS ITS (ABSENT) HEADSET AND MONITOR BUTTONS FROM. THE TWO ARE
+//SEPARATE CFGS BECAUSE ANDROID TAKES THIS ONE AND THE REAL emit_voice ABOVE
+#[cfg(not(voice))]
 pub(crate) fn emit_voice(app: &AppHandle)
 {
     emit(app, UiEvent::Voice { voice: VoiceState { enabled: false, mic: false, users: Vec::new() } });
 }
 
-#[cfg(not(media))]
+#[cfg(not(screen))]
 pub(crate) fn emit_screen(app: &AppHandle)
 {
     emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
@@ -119,7 +123,7 @@ pub(crate) fn emit_screen(app: &AppHandle)
 
 //ONE USER OF THE CALL, WITH THE MUTE READ OFF THE CRATE'S GLOBALS THE WAY tui/draw.rs READS IT: OUR OWN
 //ROW ASKS ABOUT THE MICROPHONE, EVERYBODY ELSE'S ABOUT THEIR ID
-#[cfg(media)]
+#[cfg(voice)]
 pub(crate) fn voice_user(user: VoiceUser) -> VoiceUserInfo
 {
     VoiceUserInfo

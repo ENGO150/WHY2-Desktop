@@ -32,6 +32,11 @@ mod input;
 mod events;
 mod screen;
 
+//THE ONLY PLACE IN THE APP THAT SPEAKS JNI, AND THE ONLY ONE A PHONE NEEDS: THE CALL HAS A PERMISSION TO
+//ASK FOR AND cpal HAS A CONTEXT TO BE HANDED
+#[cfg(target_os = "android")]
+mod android;
+
 use std::
 {
     time::Instant,
@@ -55,10 +60,10 @@ use why2_chat::
 #[cfg(target_os = "android")]
 use tauri::Manager;
 
-#[cfg(media)]
+#[cfg(screen)]
 use tokio::sync::mpsc;
 
-#[cfg(media)]
+#[cfg(screen)]
 use why2_chat::network::screen::client as screen_client;
 
 use state::AppState;
@@ -80,7 +85,7 @@ use settings::
     restart_server,
 };
 
-#[cfg(media)]
+#[cfg(screen)]
 use screen::screen_frames;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -138,7 +143,7 @@ pub fn run()
             //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
             if config::read_config("socks5_enabled") { options::enable_socks5(); }
 
-            #[cfg(media)]
+            #[cfg(screen)]
             {
                 let (frames_tx, frames_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 

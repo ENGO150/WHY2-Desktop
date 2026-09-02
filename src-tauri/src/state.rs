@@ -46,14 +46,13 @@ use why2_chat::
     network::client,
 };
 
-//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
-//THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
-#[cfg(media)]
-use why2_chat::network::
-{
-    voice::client::options as voice_options,
-    screen::client::options as screen_options,
-};
+//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD HAS THE FIRST OF AND NOT THE SECOND - why2-chat
+//IS PULLED IN THERE WITHOUT client_screen, SO THAT MODULE DOES NOT EXIST TO BE NAMED
+#[cfg(voice)]
+use why2_chat::network::voice::client::options as voice_options;
+
+#[cfg(screen)]
+use why2_chat::network::screen::client::options as screen_options;
 
 use crate::types::VoiceUserInfo;
 
@@ -111,12 +110,12 @@ pub(crate) fn reset_session()
     client::ACTIVE_UPLOADS.lock().unwrap().clear();
 
     //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
-    #[cfg(media)]
+    #[cfg(voice)]
     voice_options::set_use_voice(false);
 
     //THE SHARE THE SAME WAY, AND THE MONITOR WITH IT - THE PICK LASTS EXACTLY AS LONG AS THE SHARE DOES,
     //SO THE NEXT SESSION'S FIRST BARE /screen STARTS ON THE DEFAULT MONITOR (tui/state.rs DOES THE SAME)
-    #[cfg(media)]
+    #[cfg(screen)]
     {
         screen_options::set_use_screen(false);
         screen_options::set_attach_screen(false);

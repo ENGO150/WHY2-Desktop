@@ -319,10 +319,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //ENUM EITHER WAY - SO THE ARM STANDS AND ONLY THE ROSTER IT BUILDS IS THE VOICE CLIENT'S
         ClientEvent::VoiceActivity(users) =>
         {
-            #[cfg(media)]
+            #[cfg(voice)]
             { *state.voice_users.lock().unwrap() = users.into_iter().map(voice_user).collect(); }
 
-            #[cfg(not(media))]
+            #[cfg(not(voice))]
             let _ = users;
 
             emit_voice(app);

@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#[cfg(media)]
+#[cfg(voice)]
 use tokio::task;
 
 use tauri::{ AppHandle, State };
@@ -29,19 +29,19 @@ use why2_chat::
 
 //THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
 //THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
-#[cfg(media)]
+#[cfg(voice)]
 use why2_chat::network::voice::client::{ self as voice, options as voice_options };
 
 use crate::types::*;
 use crate::state::AppState;
 use crate::emit::say;
 
-#[cfg(media)]
+#[cfg(voice)]
 use crate::emit::emit_voice;
 
 use crate::net::send_packet;
 
-#[cfg(media)]
+#[cfg(voice)]
 pub(crate) const AUDIO_SETTINGS: &[SettingsKey] =
 &[
     ("Audio", "Input device",      "input_device",      ClientKind::Device { input: true }),
@@ -52,7 +52,7 @@ pub(crate) const AUDIO_SETTINGS: &[SettingsKey] =
     ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
 ];
 
-#[cfg(not(media))]
+#[cfg(not(voice))]
 pub(crate) const AUDIO_SETTINGS: &[SettingsKey] = &[];
 
 pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
@@ -69,7 +69,7 @@ pub(crate) fn client_keys() -> impl Iterator<Item = &'static SettingsKey>
 
 //CELLS OF VOLUME BAR AND THE STEP EITHER ARROW MOVES IT BY, BOTH AS tui/settings.rs HAS THEM. THE BAR IS
 //DRAWN IN THE WINDOW, SO ONLY THE STEP IS OURS - THE CEILING IS THE VOICE CLIENT'S OWN
-#[cfg(media)]
+#[cfg(voice)]
 pub(crate) const VOLUME_STEP: u32 = 5;
 
 //ONE ROW OF THE TABLE ABOVE: THE HEADING IT SITS UNDER, THE LABEL, THE KEY, AND WHAT THE KEY TAKES
@@ -108,7 +108,7 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
                 ClientValue::Toggle(if *invert { !stored } else { stored })
             },
 
-            #[cfg(media)]
+            #[cfg(voice)]
             ClientKind::Volume => ClientValue::Volume
             {
                 percent: voice_options::clamp_volume(config::read_config::<u32>(key)),
@@ -116,7 +116,7 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
                 step: VOLUME_STEP,
             },
 
-            #[cfg(media)]
+            #[cfg(voice)]
             ClientKind::Device { input } => ClientValue::Device
             {
                 id: config::read_config::<String>(key),
@@ -137,10 +137,10 @@ pub(crate) fn get_client_settings() -> Vec<ClientSetting>
 #[tauri::command]
 pub(crate) async fn get_audio_devices() -> AudioDevices
 {
-    #[cfg(not(media))]
+    #[cfg(not(voice))]
     return AudioDevices::default();
 
-    #[cfg(media)]
+    #[cfg(voice)]
     task::spawn_blocking(||
     {
         let entry = |device: voice::AudioDevice| AudioDeviceInfo { id: device.id, label: device.label };
@@ -164,7 +164,7 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
     config::client_write_bool(&key, if invert { !on } else { on });
 
     //THE TWO AUDIO TOGGLES ARE READ BY THE CAPTURE CALLBACK OUT OF ITS OWN GLOBALS, NOT OFF THE DISK
-    #[cfg(media)]
+    #[cfg(voice)]
     match key.as_str()
     {
         "noise_suppression" => voice_options::set_noise_suppression(on),
@@ -181,10 +181,10 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
 pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Result<u32, String>
 {
     //THERE IS NO VOLUME TO SLIDE IN A BUILD WITH NO STREAMS TO SLIDE IT ON, AND NO ROW THAT ASKS
-    #[cfg(not(media))]
+    #[cfg(not(voice))]
     { let _ = (key, percent, app); return Err(String::from("Voice is not available on this platform.")) }
 
-    #[cfg(media)]
+    #[cfg(voice)]
     {
     let Some(ClientKind::Volume) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
 
@@ -212,10 +212,10 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
 #[tauri::command]
 pub(crate) fn set_client_device(key: String, id: String) -> Result<(), String>
 {
-    #[cfg(not(media))]
+    #[cfg(not(voice))]
     { let _ = (key, id); return Err(String::from("Voice is not available on this platform.")) }
 
-    #[cfg(media)]
+    #[cfg(voice)]
     {
         let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
 

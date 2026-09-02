@@ -46,7 +46,7 @@ use crate::emit::*;
 use crate::color::{ color_handler, get_colors };
 use crate::net::send_packet;
 
-#[cfg(media)]
+#[cfg(screen)]
 use why2_chat::network::screen::client::capture as screen_capture;
 
 //THE PICKER ON ANDROID ANSWERS WITH A content:// URI: A HANDLE ON SOMEBODY ELSE'S FILE, GRANTED TO THIS
@@ -298,6 +298,14 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
 
         if let (Some(command), parameters) = command::get_command(&input)
         {
+            //A PHONE ASKS BEFORE IT RECORDS, AND IT ASKS HERE - WHEN THE CALL IS STARTED AND NOT AT LAUNCH.
+            //THE PACKET IS HELD BACK UNTIL THE ANSWER IS IN, SO SAYING YES TO THE DIALOG IS ALSO JOINING
+            #[cfg(target_os = "android")]
+            if matches!(command, Command::Voice) && !crate::android::ensure_microphone(&app).await
+            {
+                return Ok(());
+            }
+
             //SEND THE CODE ON A SIMPLE COMMAND, HANDLE IT HERE OTHERWISE
             let sent = command::send_command_code(&mut *write_stream.lock().await, &command, &parameters).await;
 
@@ -337,7 +345,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
                     //MESSAGES) OF ANYBODY IN IT, AND THE SERVER IS NEVER TOLD WHO WE ARE NOT LISTENING TO
                     //NO PARAMETER IS OUR OWN MICROPHONE, WHICH IS ALSO THE ONLY ROW OF THE PANEL WITH NO ID
-                    #[cfg(media)]
+                    #[cfg(voice)]
                     Command::Mute => match parameters.as_deref().map(|id| id.trim().parse::<usize>())
                     {
                         Some(Err(_)) => popup(&app, "Usage: /mute [ID]"),
@@ -377,7 +385,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
 
                     //NOTHING WENT TO THE SERVER BECAUSE NOTHING HAD TO: THE SHARE IS ALREADY UP AND ONLY
                     //THE MONITOR UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
-                    #[cfg(media)]
+                    #[cfg(screen)]
                     Command::Screen =>
                     {
                         say(&app, ChatMessage::ok(match screen_capture::current_monitor()

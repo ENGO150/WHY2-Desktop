@@ -8007,7 +8007,9 @@ dependencies = [
 name = "why2-desktop"
 version = "0.1.0"
 dependencies = [
+ "jni 0.22.4",
  "jpeg-encoder",
+ "ndk-context",
  "openh264",
  "serde",
  "sha2 0.11.0",

@@ -18,16 +18,48 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main()
 {
-    //THE CALL AND THE SCREEN SHARE ARE DESKTOP-ONLY, AND NOT BECAUSE NOBODY WANTED THEM ON A PHONE: THE
-    //CRATE CAPTURES A SCREEN THROUGH xcap/libwayshot AND OPENS AUDIO THROUGH cpal'S PULSEAUDIO BACKEND,
-    //NEITHER OF WHICH EXISTS ON ANDROID. THE FEATURES why2-chat IS PULLED IN WITH ARE SPLIT THE SAME WAY
-    //IN Cargo.toml, SO THIS CFG AND THAT TARGET CONDITION ARE ONE ANSWER SPELLED TWICE - KEEP THEM EQUAL
-    println!("cargo::rustc-check-cfg=cfg(media)");
+    //THE CALL AND THE SCREEN SHARE ARE TWO ANSWERS AND NOT ONE, BECAUSE ANDROID HAS THE FIRST AND NOT THE
+    //SECOND: cpal REACHES A PHONE'S DEVICES THROUGH AAudio AND libopus CROSS-COMPILES (SEE
+    //scripts/opus-android.sh), WHILE THE CAPTURE IS xcap/libwayshot AND THE VIEWER winit/wgpu, NEITHER OF
+    //WHICH EXISTS THERE - A PHONE SHARES ITS SCREEN THROUGH MediaProjection INSTEAD.
+    //THE FEATURES why2-chat IS PULLED IN WITH ARE SPLIT THE SAME WAY IN Cargo.toml, SO THESE TWO CFGS AND
+    //THOSE TWO TARGET SECTIONS ARE ONE ANSWER SPELLED TWICE - KEEP THEM EQUAL
+    println!("cargo::rustc-check-cfg=cfg(voice)");
+    println!("cargo::rustc-check-cfg=cfg(screen)");
+
+    println!("cargo::rustc-cfg=voice");
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("android")
     {
-        println!("cargo::rustc-cfg=media");
+        println!("cargo::rustc-cfg=screen");
+    }
+    else
+    {
+        activity_class();
     }
 
     tauri_build::build()
+}
+
+//WHAT android.rs LOOKS THE ACTIVITY UP BY. THE CLASS IS THE IDENTIFIER WITH ITS DOTS AS SLASHES AND ITS
+//DASHES AS UNDERSCORES, WHICH IS THE PACKAGE TAURI GENERATES THE KOTLIN INTO - AND A NAME THAT IS WRONG
+//IS NOT A BUILD ERROR BUT A CALL THAT SILENTLY NEVER ASKS FOR THE MICROPHONE, SO IT IS READ FROM THE
+//CONFIG RATHER THAN WRITTEN DOWN TWICE
+fn activity_class()
+{
+    const CONFIG: &str = "tauri.conf.json";
+
+    println!("cargo::rerun-if-changed={CONFIG}");
+
+    let config = std::fs::read_to_string(CONFIG).expect("tauri.conf.json is not readable");
+
+    //ONE KEY OUT OF ONE FILE IS NOT WORTH A JSON PARSER IN THE BUILD DEPENDENCIES
+    let identifier = config.split("\"identifier\"").nth(1)
+        .and_then(|rest| rest.split_once(':'))
+        .and_then(|(_, rest)| rest.split('"').nth(1))
+        .expect("tauri.conf.json has no identifier");
+
+    let package = identifier.replace('-', "_").replace('.', "/");
+
+    println!("cargo::rustc-env=ANDROID_ACTIVITY_CLASS={package}/MainActivity");
 }

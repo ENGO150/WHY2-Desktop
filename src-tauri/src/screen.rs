@@ -18,51 +18,51 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::sync::atomic::Ordering;
 
-#[cfg(media)]
+#[cfg(screen)]
 use tokio::sync::mpsc;
 
 use tauri::{ State, ipc::{ Channel, InvokeResponseBody } };
 
-#[cfg(media)]
+#[cfg(screen)]
 use tauri::{ Manager, AppHandle };
 
-#[cfg(media)]
+#[cfg(screen)]
 use openh264::{ decoder::Decoder, formats::YUVSource };
 
-#[cfg(media)]
+#[cfg(screen)]
 use jpeg_encoder::{ Encoder as JpegEncoder, ColorType, SamplingFactor };
 
 //THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
 //THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
-#[cfg(media)]
+#[cfg(screen)]
 use why2_chat::network::screen::client::capture as screen_capture;
 
 use crate::state::AppState;
 
-#[cfg(media)]
+#[cfg(screen)]
 use crate::types::*;
 
-#[cfg(media)]
+#[cfg(screen)]
 use crate::emit::say;
 
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) const JPEG_QUALITY: u8 = 88;
 
 //AND HOW WIDE IT IS DRAWN AT. THE PANE IS A FRACTION OF THE SCREEN BEING SHARED, AND EVERY PIXEL PAST THIS
 //IS PAID FOR THREE TIMES OVER - THE CONVERSION, THE ENCODE, AND THE TRIP ACROSS THE BRIDGE. TAKING A 4K
 //SHARE DOWN BY HALF IS THE WHOLE DIFFERENCE BETWEEN A PICTURE AND A SLIDESHOW. ANYTHING UP TO A 1080p
 //SCREEN IS SENT AS IT IS, BECAUSE THE PANE IS THE WHOLE WINDOW NOW AND HALVING THAT IS VISIBLE
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) const JPEG_WIDTH: usize = 1920;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
 
 //WHAT THE CAPTURE IS POINTED AT, WHERE THERE IS A CAPTURE TO POINT - THE NAME NEVER LEAVES THIS MACHINE
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) fn current_monitor() -> Option<String> { screen_capture::current_monitor() }
 
-#[cfg(not(media))]
+#[cfg(not(screen))]
 pub(crate) fn current_monitor() -> Option<String> { None }
 
 
@@ -70,7 +70,7 @@ pub(crate) fn current_monitor() -> Option<String> { None }
 //IS THE ALIASING THE TUI NEVER SHOWS, BECAUSE IT HANDS THE PLANES TO THE GPU AND LETS A LINEAR SAMPLER
 //SCALE THEM - AND FOR A WHOLE-NUMBER FACTOR, AVERAGING THE BLOCK IS THAT, DONE ON THE CPU. THE MATH IS THE
 //USUAL BT.601 LIMITED-RANGE ONE, WHICH IS WHAT THE CAPTURE ENCODED WITH
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &mut Vec<u8>) -> (usize, usize)
 {
     let (width, height) = yuv.dimensions();
@@ -143,7 +143,7 @@ pub(crate) fn write_rgb(yuv: &openh264::decoder::DecodedYUV, step: usize, rgb: &
 //SOMEBODY ELSE'S SCREEN, ON ITS WAY TO THE PANE. THE FAST PATH HANDS THE H.264 STRAIGHT OVER AND THE
 //WEBVIEW DECODES IT; WHERE THE WEBVIEW CANNOT (WebCodecs IS NOT EVERYWHERE, AND WHERE IT IS THE H.264
 //DECODER BEHIND IT MAY NOT BE), THE FRAME IS DECODED HERE AND SENT ON AS A JPEG THE CANVAS CAN DRAW
-#[cfg(media)]
+#[cfg(screen)]
 pub(crate) fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver<Vec<u8>>)
 {
     let mut decoder: Option<Decoder> = None;

@@ -53,18 +53,26 @@ why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", d
 openh264 = "0.9.8"
 jpeg-encoder = { version = "0.7", features = ["simd"] }
 
-# ANDROID GETS THE CHAT AND NOTHING THAT NEEDS A DESKTOP UNDER IT. client_voice OPENS ITS DEVICES THROUGH
-# cpal'S PULSEAUDIO BACKEND AND ENCODES THROUGH audiopus' BUNDLED C LIBRARY; client_screen CAPTURES THROUGH
-# xcap/libwayshot AND DRAWS THROUGH winit/wgpu, WHICH WANT THE MAIN THREAD TAURI ALREADY OWNS. NONE OF THAT
-# CROSS-COMPILES TO AN NDK TARGET AS IT STANDS, AND A PHONE SHARES ITS SCREEN THROUGH MediaProjection
-# ANYWAY - SO THE FEATURES ARE OFF HERE, AND build.rs TURNS THE `media` CFG OFF WITH THEM
+# ANDROID GETS THE CHAT AND THE CALL, AND NOT THE SCREEN SHARE. client_voice ASKS cpal FOR A DEVICE, AND
+# ON A PHONE THAT IS AAudio RATHER THAN PULSEAUDIO (WHOSE DEPENDENCY cpal GATES TO LINUX ITSELF); THE ONE
+# THING IN IT THAT DOES NOT CROSS-COMPILE IS audiopus' BUNDLED libopus, WHICH IS BUILT AHEAD OF THE APP BY
+# scripts/opus-android.sh AND FOUND THROUGH pkg-config. client_screen CAPTURES THROUGH xcap/libwayshot AND
+# DRAWS THROUGH winit/wgpu, WHICH WANT THE MAIN THREAD TAURI ALREADY OWNS - AND A PHONE SHARES ITS SCREEN
+# THROUGH MediaProjection ANYWAY - SO THAT ONE IS OFF, AND build.rs TURNS THE `screen` CFG OFF WITH IT
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base"] }
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice"] }
 
 # THE FILE PICKER ON ANDROID ANSWERS WITH A content:// URI, WHICH IS A HANDLE ON SOMEBODY ELSE'S FILE AND
 # NOT A PLACE ON THE DISK - THE CONTENT RESOLVER IS THE ONLY THING THAT OPENS ONE, AND THIS IS THE WAY TO
 # IT FROM RUST. IT IS WHAT LETS AN UPLOAD BE STAGED IN OUR OWN CACHE (input.rs, stage_content_uri)
 tauri-plugin-fs = "2"
+
+# ASKING FOR THE MICROPHONE IS A JAVA CALL AND NOTHING ELSE WILL DO IT, AND cpal PANICS ENUMERATING
+# DEVICES UNTIL SOMEBODY HANDS ndk-context THE VM AND A Context - TAURI'S ANDROID SIDE IS KOTLIN AND HAS
+# NO USE FOR EITHER, SO src/android.rs IS WHERE BOTH HAPPEN. THE jni VERSION IS cpal'S, SO THE APP AND ITS
+# AUDIO BACKEND SHARE ONE
+jni = "0.22"
+ndk-context = "0.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

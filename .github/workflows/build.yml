@@ -119,9 +119,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # THE ANDROID BUILD IS client_base ONLY - NO cpal, NO xcap, NO openh264 - SO NONE OF THE DESKTOP'S
-      # SYSTEM LIBRARIES ARE WANTED HERE. WHAT IT NEEDS IS A JDK THE ANDROID GRADLE PLUGIN ACCEPTS (25 IS
-      # TOO NEW FOR IT), THE NDK, AND THE FOUR ANDROID STD TARGETS
+      # THE ANDROID BUILD IS client_base + client_voice - NO xcap, NO openh264 - AND WHAT THE CALL NEEDS IS
+      # NOT ON THE RUNNER EITHER: libopus IS CROSS-COMPILED PER ABI BY scripts/opus-android.sh, WHICH THE
+      # android:* SCRIPTS RUN THEMSELVES. WHAT IS WANTED HERE IS A JDK THE ANDROID GRADLE PLUGIN ACCEPTS
+      # (25 IS TOO NEW FOR IT), THE NDK, AND THE FOUR ANDROID STD TARGETS
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
@@ -154,6 +155,14 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # FOUR C BUILDS OF libopus IS A FEW MINUTES OF EVERY RUN, AND THE ANSWER ONLY CHANGES WHEN THE SCRIPT
+      # THAT ASKS FOR IT DOES - THE OPUS VERSION AND ITS HASH ARE BOTH PINNED IN THERE
+      - name: Cache libopus
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/gen/opus
+          key: opus-${{ runner.os }}-${{ hashFiles('scripts/opus-android.sh') }}
 
       # gen/android IS GENERATED AND NOT COMMITTED, SO IT IS MADE HERE. THE TARGETS ARE ALREADY IN PLACE
       # ABOVE, WHICH IS WHAT --skip-targets-install IS SAYING - IT IS ALSO THE ONE FLAG THAT KEEPS rustup

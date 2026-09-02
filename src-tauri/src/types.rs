@@ -235,8 +235,8 @@ pub(crate) struct VocabularyValue
 pub(crate) enum ClientKind
 {
     Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
-    #[cfg(media)] Volume,
-    #[cfg(media)] Device { input: bool },
+    #[cfg(voice)] Volume,
+    #[cfg(voice)] Device { input: bool },
 }
 
 //AND WHAT IT HOLDS RIGHT NOW. A VOLUME CARRIES THE RANGE IT LIVES IN ALONG WITH IT, SO THE BAR IN THE
@@ -246,8 +246,8 @@ pub(crate) enum ClientKind
 pub(crate) enum ClientValue
 {
     Toggle(bool), //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
-    #[cfg(media)] Volume { percent: u32, max: u32, step: u32 },
-    #[cfg(media)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
+    #[cfg(voice)] Volume { percent: u32, max: u32, step: u32 },
+    #[cfg(voice)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
 }
 
 #[derive(Serialize, Clone, Copy)]
