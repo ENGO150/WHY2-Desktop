@@ -26,6 +26,7 @@ import { LOBBY } from "./types";
 import type
 {
     UIState,
+    StoredServer,
     DirectPeer,
     DirectChat,
     ScreenState,
@@ -61,6 +62,8 @@ import { TofuDialog, CHALLENGE } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
+import type { ServerForm } from "./login";
+import { ServerRail } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import { MemberColumn } from "./members";
@@ -87,6 +90,14 @@ function App()
     const [hint, setHint] = useState("");
     const [registering, setRegistering] = useState(false);
     const [address, setAddress] = useState("");
+
+    //THE SERVERS THIS WINDOW REMEMBERS, WHICHEVER OF THEM IS IN FRONT, AND THE FORM THAT ADDS ONE. THE
+    //TERMINAL CLIENT IS RUN AT A SERVER AND ASKS FOR EVERYTHING EVERY TIME; A WINDOW IS LEFT OPEN, SO
+    //THE ADDRESS AND THE IDENTITY ARE ASKED ONCE AND KEPT (servers.rs, IN A FILE ONLY THE USER CAN READ)
+    const [servers, setServers] = useState<StoredServer[]>([]);
+    const [dialing, setDialing] = useState<StoredServer | null>(null);
+    const [adding, setAdding] = useState(false);
+    const [form, setForm] = useState<ServerForm>({ address: "", username: "", password: "" });
     const [serverName, setServerName] = useState("");
     const [username, setUsername] = useState("");
     const [role, setRole] = useState("user");
@@ -157,6 +168,20 @@ function App()
     const settingsRowRef = useRef<HTMLDivElement>(null);
     const pickerRowRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef("");
+
+    //THE ENTRY THIS DIAL BELONGS TO, AND WHAT IS LEFT OF ITS STORED IDENTITY TO ANSWER THE SERVER WITH.
+    //A CREDENTIAL IS CONSUMED AS IT IS SENT, SO ONE THE SERVER REFUSED IS ASKED FOR RATHER THAN RESENT
+    const entryRef = useRef<StoredServer | null>(null);
+    const credsRef = useRef({ username: "", password: "" });
+
+    //AND WHAT ACTUALLY GOT US IN, WHICHEVER OF THE TWO IT CAME FROM - THAT IS WHAT IS WORTH REMEMBERING
+    const typedRef = useRef({ username: "", password: "" });
+
+    //WHAT THE SERVER CALLS ITSELF, WHERE TO GO ONCE THIS SOCKET IS GONE, AND WHETHER ANYTHING HAS BEEN
+    //DIALLED AT ALL - THE LIST IS READ ONCE AT STARTUP, AND StrictMode READS IT TWICE
+    const serverNameRef = useRef("");
+    const switchRef = useRef<StoredServer | null>(null);
+    const dialedRef = useRef(false);
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLInputElement>(null);
 
@@ -378,9 +403,92 @@ function App()
         historyRef.current = { entries: [], pos: 0, stash: null, prefix: null };
     };
 
+    //AN ID NOBODY BUT THIS WINDOW EVER READS - IT IS ONLY EVER COMPARED WITH ITSELF, SO THE SAME ADDRESS
+    //TWICE IS TWO ACCOUNTS ON ONE SERVER RATHER THAN ONE ROW FIGHTING OVER ITSELF
+    const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+
+    //DIAL ONE ENTRY OF THE LIST. WHATEVER IT HAS STORED IS PUT WHERE THE IDENTITY STEPS WILL FIND IT,
+    //AND WHAT IT HAS NOT IS SIMPLY ASKED FOR THE WAY IT ALWAYS WAS
+    const dial = (server: StoredServer) =>
+    {
+        dialedRef.current = true;
+        entryRef.current = server;
+        credsRef.current = { username: server.username, password: server.password ?? "" };
+        typedRef.current = { username: "", password: "" };
+        serverNameRef.current = "";
+
+        setDialing(server);
+        setAddress(server.address);
+        addressRef.current = server.address;
+        setUsername(server.username);
+        setServerName(server.name ?? "");
+        setUiState("server_select");
+        setInputValue("");
+        setErrorMsg("");
+        setHint("");
+        setConnecting(true);
+
+        invoke("connect_to_server", { address: server.address }).catch((error: unknown) =>
+        {
+            setErrorMsg(String(error));
+            setConnecting(false);
+        });
+    };
+
+    //THE SESSION GOT THROUGH, SO WHAT GOT IT THROUGH IS WORTH KEEPING: THE ADDRESS, WHOEVER WE TURNED
+    //OUT TO BE, THE PASSWORD IF ONE WAS GIVEN AT ALL, AND WHAT THE SERVER CALLS ITSELF. A SERVER TYPED
+    //IN AND CONNECTED TO IS IN THE LIST FROM HERE ON - NOTHING ELSE HAS TO BE PRESSED
+    const rememberServer = () =>
+    {
+        const entry = entryRef.current;
+
+        if (!entry) return;
+
+        const saved: StoredServer =
+        {
+            ...entry,
+            username: typedRef.current.username || entry.username,
+            password: typedRef.current.password || entry.password,
+            name: serverNameRef.current || entry.name,
+            last_used: Date.now(),
+        };
+
+        entryRef.current = saved;
+
+        setDialing(saved);
+        invoke<StoredServer[]>("save_server", { server: saved }).then(setServers).catch(console.error);
+    };
+
+    //AN ANSWER WE ALREADY HAVE GOES BACK DOWN THE PATH THE TYPED ONE WOULD HAVE, AND IS CONSUMED ON THE
+    //WAY: A STORED PASSWORD THE SERVER REFUSES IS ASKED FOR NEXT TIME ROUND RATHER THAN SENT AGAIN
+    const answerStored = (stored: string) =>
+    {
+        setConnecting(true);
+        setInputValue("");
+
+        invoke("send_input", { input: stored }).catch((error: unknown) =>
+        {
+            setErrorMsg(String(error));
+            setConnecting(false);
+        });
+    };
+
     useEffect(() =>
     {
         invoke<ClientConfig>("get_client_config").then(setConfig).catch(console.error);
+
+        //THE LIST IS THE FIRST THING THE WINDOW ASKS FOR, AND THE SERVER USED LAST OPENS ON ITS OWN: THE
+        //WHOLE POINT OF KEEPING IT IS THAT STARTING THE PROGRAM IS NOT A QUESTIONNAIRE. AN EMPTY LIST IS
+        //THE ONE CASE THERE IS ANYTHING TO ASK, AND THAT IS THE FORM THAT ADDS THE FIRST ONE
+        invoke<StoredServer[]>("get_servers").then((list) =>
+        {
+            setServers(list);
+
+            if (!list.length) return setAdding(true);
+            if (dialedRef.current) return;
+
+            dial(list.reduce((newest, server) => (server.last_used > newest.last_used ? server : newest), list[0]));
+        }).catch(console.error);
 
         const unlisten = listen<BridgeEvent>("why2-event", ({ payload }) =>
         {
@@ -388,6 +496,8 @@ function App()
             {
                 case "connected":
                 {
+                    serverNameRef.current = payload.data.server;
+
                     setServerName(payload.data.server);
                     break;
                 }
@@ -400,6 +510,17 @@ function App()
                     setConnecting(false);
                     setInputValue("");
                     setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled.");
+
+                    const stored = credsRef.current.username;
+
+                    if (stored)
+                    {
+                        credsRef.current.username = "";
+                        typedRef.current.username = stored;
+
+                        setUsername(stored);
+                        answerStored(stored);
+                    }
                     break;
                 }
 
@@ -410,12 +531,24 @@ function App()
                     setInputValue("");
                     setRegistering(payload.data.register);
                     setHint("");
+
+                    const stored = credsRef.current.password;
+
+                    if (stored)
+                    {
+                        credsRef.current.password = "";
+                        typedRef.current.password = stored;
+
+                        answerStored(stored);
+                    }
                     break;
                 }
 
                 //A REJECTION ALWAYS ARRIVES JUST BEFORE THE RE-PROMPT, WHICH LEAVES THE ERROR ON SCREEN
                 case "username_rejected":
                 {
+                    typedRef.current.username = "";
+
                     setErrorMsg("Username rejected!");
                     setConnecting(false);
                     break;
@@ -423,6 +556,8 @@ function App()
 
                 case "password_rejected":
                 {
+                    typedRef.current.password = "";
+
                     setErrorMsg(`Password rejected! Enter at least ${payload.data.min} characters.`);
                     setConnecting(false);
                     break;
@@ -435,6 +570,11 @@ function App()
                     setErrorMsg("");
                     setRole(payload.data.role);
                     refreshCommands();
+                    rememberServer();
+
+                    //THE FORM STAYS UP BEHIND A DIAL IT STARTED, SO A SERVER THAT TURNED OUT TO BE
+                    //UNREACHABLE COMES BACK WITH WHAT WAS TYPED INTO IT STILL THERE. THIS IS IT WORKING
+                    setAdding(false);
                     break;
                 }
 
@@ -658,6 +798,13 @@ function App()
                 case "disconnected":
                 {
                     resetSession(payload.data.reason ?? "");
+
+                    //A SERVER PICKED WHILE ANOTHER ONE WAS STILL UP IS DIALLED HERE RATHER THAN THERE:
+                    //THE OLD SESSION IS ASKED TO LEAVE FIRST (/exit), AND THIS IS IT GONE
+                    const next = switchRef.current;
+                    switchRef.current = null;
+
+                    if (next) dial(next);
                     break;
                 }
             }
@@ -708,35 +855,120 @@ function App()
         invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
+    //WHICH OF THE THREE THINGS THE CONNECT SCREEN IS ASKING: THE SERVER'S OWN QUESTION WHILE ONE IS
+    //PENDING, OTHERWISE THE FORM THAT ADDS A SERVER (WHICH AN EMPTY LIST HAS NOTHING BUT), OTHERWISE
+    //THE LIST ITSELF, WAITING TO BE PICKED FROM
+    const mode = uiState === "username_prompt" || uiState === "password_prompt"
+        ? "prompt"
+        : (adding || servers.length === 0 ? "add" : "idle");
+
     const handleSubmit = async (event: React.FormEvent) =>
     {
         event.preventDefault();
+
+        //A SERVER IS NOT WRITTEN DOWN UNTIL IT WORKS: A TYPO IS A FAILED CONNECT RATHER THAN A ROW IN
+        //THE LIST TO BE FORGOTTEN AGAIN, AND rememberServer PUTS IT IN WHEN THE SERVER LETS US IN
+        if (mode === "add" || uiState === "server_select")
+        {
+            const typed = (mode === "add" ? form.address : inputValue).trim();
+
+            if (!typed) return;
+
+            const wanted = mode === "add" ? form.username.trim() : "";
+
+            //THE SAME SERVER TYPED IN AGAIN IS THE ROW THAT IS ALREADY THERE RATHER THAN A SECOND ONE
+            //BESIDE IT - THE ADDRESS LEFT IN THE FIELD BY A DISCONNECT IS EXACTLY THAT CASE. TWO ROWS
+            //FOR ONE ADDRESS ARE TWO ACCOUNTS, WHICH IS WHY THE NAME COUNTS WHEN ONE WAS GIVEN
+            const existing = servers.find((server) => server.address === typed
+                && (!wanted || server.username === wanted));
+
+            dial(existing
+                ? {
+                    ...existing,
+                    username: wanted || existing.username,
+                    password: mode === "add" && form.password ? form.password : existing.password,
+                }
+                : {
+                    id: newId(),
+                    address: typed,
+                    username: wanted,
+                    password: mode === "add" && form.password ? form.password : null,
+                    name: null,
+                    last_used: Date.now(),
+                });
+
+            return;
+        }
+
         if (!inputValue) return;
 
         setErrorMsg("");
         setConnecting(true);
 
+        //WHAT IS TYPED AT AN IDENTITY STEP IS WHAT GETS REMEMBERED, IF IT TURNS OUT TO WORK
+        if (uiState === "username_prompt")
+        {
+            typedRef.current.username = inputValue;
+            setUsername(inputValue);
+        }
+
+        if (uiState === "password_prompt") typedRef.current.password = inputValue;
+
         try
         {
-            if (uiState === "server_select")
-            {
-                setAddress(inputValue);
-                addressRef.current = inputValue;
-
-                await invoke("connect_to_server", { address: inputValue });
-            }
-            else
-            {
-                if (uiState === "username_prompt") setUsername(inputValue);
-
-                await invoke("send_input", { input: inputValue });
-            }
+            await invoke("send_input", { input: inputValue });
         }
         catch (error: unknown)
         {
             setErrorMsg(String(error));
             setConnecting(false);
         }
+    };
+
+    //THE RAIL, THE LIST AND THE TILE MENU ALL COME BACK HERE. A SERVER PICKED WHILE ANOTHER ONE IS UP IS
+    //A SWITCH AND NOT A SECOND SESSION: THE ONE IN FRONT IS LEFT PROPERLY FIRST, AND THE DISCONNECT THAT
+    //COMES BACK IS WHAT DIALS THE NEXT
+    const pickServer = (server: StoredServer) =>
+    {
+        if (server.id === dialing?.id && (connected || connecting)) return;
+
+        setAdding(false);
+
+        if (connected)
+        {
+            switchRef.current = server;
+            send("/exit");
+
+            return;
+        }
+
+        dial(server);
+    };
+
+    const openAdd = () =>
+    {
+        setForm({ address: "", username: "", password: "" });
+        setErrorMsg("");
+        setAdding(true);
+    };
+
+    //FORGETTING IS FOR GOOD, AND FORGETTING THE ONE WE ARE STANDING IN IS ALSO LEAVING IT - THERE WOULD
+    //BE NOTHING LEFT IN THE RAIL SAYING WHERE THIS SESSION IS
+    const forgetServer = (id: string) =>
+    {
+        invoke<StoredServer[]>("remove_server", { id }).then((list) =>
+        {
+            setServers(list);
+
+            if (!list.length && !connected) setAdding(true);
+        }).catch((error: unknown) => setPopupMessage(String(error)));
+
+        if (id !== dialing?.id) return;
+
+        if (connected) send("/exit");
+
+        entryRef.current = null;
+        setDialing(null);
     };
 
     //THE PROMPT IS ANSWERED IN-BAND: THE LISTENING TASK IS PARKED ON IT, AND ON A YES IT PINS THE KEY
@@ -1798,9 +2030,28 @@ function App()
 
     //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
+    //THE FAR-LEFT COLUMN, WHICH STANDS WHETHER OR NOT THERE IS A SESSION - IT IS THE WAY INTO ONE AND
+    //THE WAY BETWEEN TWO. IT IS DRAWN INSIDE THE LEFT COLUMN WHILE THERE IS ONE, AND INSIDE THE CONNECT
+    //SCREEN WHILE THERE IS NOT; ON A PHONE THAT MAKES IT PART OF THE SAME DRAWER RATHER THAN A SECOND ONE
+    const rail = (
+        <ServerRail
+            servers={servers}
+            active={dialing?.id ?? null}
+            connecting={connecting}
+            onPick={pickServer}
+            onAdd={openAdd}
+            onForget={forgetServer}
+        />
+    );
+
     const loginScreen = !connected && !tofu && (
         <LoginScreen
             uiState={uiState}
+            mode={mode}
+            servers={servers}
+            target={dialing}
+            form={form}
+            setForm={setForm}
             value={inputValue}
             setValue={setInputValue}
             connecting={connecting}
@@ -1809,6 +2060,10 @@ function App()
             registering={registering}
             inputRef={loginInputRef}
             onSubmit={handleSubmit}
+            onPick={pickServer}
+            onAdd={openAdd}
+            onCancel={() => setAdding(false)}
+            rail={servers.length > 0 ? rail : null}
         />
     );
 
@@ -1870,6 +2125,7 @@ function App()
                         showDirect={showDirect}
                         closeDirect={closeDirect}
                         openScreens={openScreens}
+                        rail={rail}
                     />
 
                     {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}

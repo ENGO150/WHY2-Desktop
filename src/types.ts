@@ -21,6 +21,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 export const LOBBY = "";
 export type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
 
+//ONE SERVER THE WINDOW REMEMBERS, THE MIRROR OF servers.rs' StoredServer. THE PASSWORD IS OPTIONAL AND
+//AN ABSENT ONE MEANS "ASK ME" - THE FILE IT LIVES IN IS THE USER'S OWN AND NOBODY ELSE'S (0600)
+export interface StoredServer
+{
+    id: string;
+    address: string;
+    username: string;
+    password: string | null;
+    name: string | null;
+    last_used: number;
+}
+
 export type MessageKind = "user" | "private" | "system" | "notice" | "ok" | "error";
 
 export interface ChatMessage

@@ -26,6 +26,7 @@ mod emit;
 mod color;
 mod settings;
 mod palette;
+mod servers;
 mod net;
 mod input;
 mod events;
@@ -63,6 +64,7 @@ use why2_chat::network::screen::client as screen_client;
 use state::AppState;
 
 use net::{ connect_to_server, refresh_screens, answer_tofu };
+use servers::{ get_servers, save_server, remove_server };
 use input::{ send_input, upload_file_from_path };
 use palette::{ get_commands, get_vocabulary };
 use screen::{ watch_frames, drop_frames };
@@ -161,6 +163,9 @@ pub fn run()
             watch_frames,
             drop_frames,
             refresh_screens,
+            get_servers,
+            save_server,
+            remove_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

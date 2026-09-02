@@ -16,15 +16,36 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { UIState } from "./types";
+import type { UIState, StoredServer } from "./types";
+import { Icon } from "./icons";
+import { avatarColor } from "./theme";
+import { serverLabel } from "./servers";
 
-//THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
-//TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
+//WHAT A SERVER IS TYPED IN AS. THE PASSWORD IS PART OF IT BECAUSE THE WHOLE POINT OF THE LIST IS THAT
+//NONE OF THIS IS ASKED TWICE - AND IT IS ALLOWED TO BE EMPTY, WHICH IS THE ROW SAYING "ASK ME"
+export interface ServerForm
+{
+    address: string;
+    username: string;
+    password: string;
+}
+
+//THE SCREEN THAT STANDS WHILE THERE IS NO SESSION. IT IS THREE SCREENS IN ONE PLACE, BECAUSE THEY ARE
+//THREE ANSWERS TO THE SAME QUESTION - WHICH SERVER, AND WHO ARE WE THERE:
+//  - THE FORM THAT ADDS ONE, WHICH IS ALSO WHAT A WINDOW WITH AN EMPTY LIST OPENS ON
+//  - THE ONE-FIELD PROMPT, FOR WHATEVER THE SERVER ASKED THAT WE HAD NOTHING STORED FOR
+//  - THE LIST ITSELF, WAITING TO BE PICKED FROM
 export function LoginScreen(
 {
-    uiState, value, setValue, connecting, errorMsg, hint, registering, inputRef, onSubmit,
+    uiState, mode, servers, target, form, setForm, value, setValue, connecting, errorMsg, hint,
+    registering, inputRef, onSubmit, onPick, onAdd, onCancel, rail,
 }: {
     uiState: UIState;
+    mode: "add" | "prompt" | "idle";
+    servers: StoredServer[];
+    target: StoredServer | null;
+    form: ServerForm;
+    setForm: (form: ServerForm) => void;
     value: string;
     setValue: (value: string) => void;
     connecting: boolean;
@@ -33,55 +54,189 @@ export function LoginScreen(
     registering: boolean;
     inputRef: React.RefObject<HTMLInputElement | null>;
     onSubmit: (event: React.FormEvent) => void;
+    onPick: (server: StoredServer) => void;
+    onAdd: () => void;
+    onCancel: () => void;
+    rail: React.ReactNode;
 })
 {
-        const title = { server_select: "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
-        const label = { server_select: "Server address", username_prompt: "Username", password_prompt: "Password", connected: "" }[uiState];
-        const button = { server_select: "Connect", username_prompt: "Continue", password_prompt: registering ? "Register" : "Log in", connected: "" }[uiState];
+    const title = mode === "add"
+        ? "Add a server"
+        : { server_select: servers.length ? "Servers" : "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
 
-        return (
-            <div className="absolute inset-0 z-40 flex items-center justify-center bg-deep px-4">
+    const label = { server_select: "Server address", username_prompt: "Username", password_prompt: "Password", connected: "" }[uiState];
+    const button = { server_select: "Connect", username_prompt: "Continue", password_prompt: registering ? "Register" : "Log in", connected: "" }[uiState];
+
+    //THE STATUS LINE, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG, OR THE SERVER'S OWN
+    //RULES FOR WHAT IS BEING ASKED
+    const status = (
+        <div className="mt-2 min-h-[1.25rem] text-xs">
+            {connecting
+                ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
+                : errorMsg
+                    ? <span className="text-error">{errorMsg}</span>
+                    : <span className="text-faint">{hint}</span>}
+        </div>
+    );
+
+    const field = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
+    const caption = "text-[11px] font-semibold uppercase tracking-wider text-muted";
+
+    return (
+        <div className="absolute inset-0 z-40 flex bg-deep">
+            {rail}
+
+            <div className="flex min-w-0 flex-1 items-center justify-center px-4">
                 <div className="rise relative w-full max-w-[420px]">
                     <div className="mb-6 text-center">
                         <div className="text-2xl font-bold tracking-tight">WHY2</div>
                         <div className="mt-1 text-sm text-muted">{title}</div>
+
+                        {/* WHICH SERVER THIS IS ABOUT, WHILE IT IS ABOUT ONE - EVERY PROMPT PAST THE
+                            ADDRESS BELONGS TO A SERVER, AND WITH A LIST THERE IS MORE THAN ONE TO MEAN */}
+                        {target && mode !== "add" && (
+                            <div className="mt-1 truncate font-mono text-[11px] text-faint">{serverLabel(target)} · {target.address}</div>
+                        )}
                     </div>
 
                     <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
-                        <label htmlFor="login-input" className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</label>
+                        {mode === "add" ? (
+                            <>
+                                <label htmlFor="login-input" className={caption}>Server address</label>
 
-                        <input
-                            id="login-input"
-                            ref={inputRef}
-                            type={uiState === "password_prompt" ? "password" : "text"}
-                            value={value}
-                            onChange={(event) => setValue(event.currentTarget.value)}
-                            placeholder={uiState === "server_select" ? "127.0.0.1:8080" : undefined}
-                            className="mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent"
-                            disabled={connecting}
-                            autoFocus
-                            spellCheck={false}
-                        />
+                                <input
+                                    id="login-input"
+                                    ref={inputRef}
+                                    type="text"
+                                    value={form.address}
+                                    onChange={(event) => setForm({ ...form, address: event.currentTarget.value })}
+                                    placeholder="127.0.0.1:8080"
+                                    className={field}
+                                    disabled={connecting}
+                                    autoFocus
+                                    spellCheck={false}
+                                />
 
-                        {/* THE STATUS LINE, ALWAYS IN THE SAME PLACE: WHAT IS HAPPENING, WHAT WENT WRONG,
-                            OR THE SERVER'S OWN RULES FOR WHAT IS BEING ASKED */}
-                        <div className="mt-2 min-h-[1.25rem] text-xs">
-                            {connecting
-                                ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
-                                : errorMsg
-                                    ? <span className="text-error">{errorMsg}</span>
-                                    : <span className="text-faint">{hint}</span>}
-                        </div>
+                                <label htmlFor="login-username" className={`${caption} mt-4 block`}>Username</label>
+
+                                <input
+                                    id="login-username"
+                                    type="text"
+                                    value={form.username}
+                                    onChange={(event) => setForm({ ...form, username: event.currentTarget.value })}
+                                    className={field}
+                                    disabled={connecting}
+                                    spellCheck={false}
+                                />
+
+                                <label htmlFor="login-password" className={`${caption} mt-4 block`}>Password</label>
+
+                                <input
+                                    id="login-password"
+                                    type="password"
+                                    value={form.password}
+                                    onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
+                                    className={field}
+                                    disabled={connecting}
+                                />
+
+                                {/* THE HONEST FOOTNOTE. THERE IS NO KEY TO ENCRYPT THIS WITH THAT THE
+                                    PROGRAM WOULD NOT HAVE TO KEEP BESIDE IT, SO IT SAYS WHAT IT DOES */}
+                                <div className="mt-2 flex items-start gap-1.5 text-[11px] text-faint">
+                                    <Icon name="lock" className="mt-px h-3.5 w-3.5 shrink-0" />
+                                    <span>Kept in a file only you can read. Leave the password empty to be asked at every connect.</span>
+                                </div>
+
+                                {status}
+                            </>
+                        ) : (
+                            <>
+                                <label htmlFor="login-input" className={caption}>{label}</label>
+
+                                <input
+                                    id="login-input"
+                                    ref={inputRef}
+                                    type={uiState === "password_prompt" ? "password" : "text"}
+                                    value={value}
+                                    onChange={(event) => setValue(event.currentTarget.value)}
+                                    placeholder={uiState === "server_select" ? "127.0.0.1:8080" : undefined}
+                                    className={field}
+                                    disabled={connecting}
+                                    autoFocus
+                                    spellCheck={false}
+                                />
+
+                                {status}
+                            </>
+                        )}
 
                         <button
                             type="submit"
-                            disabled={connecting || !value}
+                            disabled={connecting || (mode === "add" ? !form.address : !value)}
                             className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            {button}
+                            {mode === "add" ? "Add and connect" : button}
                         </button>
+
+                        {/* THE WAY BACK OUT OF THE FORM, WHICH ONLY EXISTS WHERE THERE IS SOMETHING TO GO
+                            BACK TO: THE FIRST SERVER EVER ADDED HAS NO LIST BEHIND IT */}
+                        {mode === "add" && servers.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={onCancel}
+                                disabled={connecting}
+                                className="mt-2 w-full rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                            >
+                                Cancel
+                            </button>
+                        )}
                     </form>
+
+                    {/* THE LIST ITSELF, UNDER WHATEVER IS BEING ASKED. THE RAIL SAYS THE SAME THING IN ONE
+                        LETTER EACH; THIS IS THE ONE PLACE THE WHOLE NAME AND THE ADDRESS FIT */}
+                    {mode !== "add" && servers.length > 0 && (
+                        <div className="mt-6">
+                            <div className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Your servers</div>
+
+                            <div className="scroller scroller-quiet max-h-[240px] rounded-xl border border-border bg-overlay p-1">
+                                {servers.map((server) => (
+                                    <button
+                                        key={server.id}
+                                        type="button"
+                                        onClick={() => onPick(server)}
+                                        disabled={connecting}
+                                        className={`flex w-full items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover disabled:opacity-40 ${target?.id === server.id ? "bg-selected" : ""}`}
+                                    >
+                                        <span
+                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white/90"
+                                            style={{ background: avatarColor(server.name || server.address) }}
+                                        >
+                                            {(serverLabel(server).trim()[0] ?? "?").toUpperCase()}
+                                        </span>
+
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-sm">{serverLabel(server)}</span>
+                                            <span className="block truncate font-mono text-[11px] text-faint">
+                                                {server.address}{server.username ? ` · ${server.username}` : ""}
+                                            </span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={onAdd}
+                                disabled={connecting}
+                                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                            >
+                                <Icon name="plus" className="h-4 w-4" />
+                                Add another server
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
-        );
+        </div>
+    );
 }

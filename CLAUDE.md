@@ -101,7 +101,7 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `emit_screen`), then the paths that do something: `net.rs` (the socket, the roster clock, `connect_to_server`),
 `input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
 `pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), plus `settings.rs`,
-`palette.rs` and `color.rs` for the three things that are their own vocabulary.
+`palette.rs`, `color.rs` and `servers.rs` for the four things that are their own vocabulary.
 
 **`src/`** — `App.tsx` still owns all the state, every effect and every handler, and that is deliberate: the
 event listener, the channel routing and the palette all read each other, and prop-drilling them apart would
@@ -110,7 +110,7 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 `SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
-`login.tsx`, `tofu.tsx`.
+`servers.tsx`, `login.tsx`, `tofu.tsx`.
 
 **`src/index.css`** is the fonts and the Tailwind import and nothing else; the palette is in `theme.css`, the
 pieces the window is built from in `widgets.css`, and what only a phone needs in `mobile.css`.
@@ -163,6 +163,47 @@ Two things make session lifetime subtle:
   half-finished upload still holds a `Sender`), so it checks the counter and goes quiet rather than letting
   its last events — or its cleanup — land on the connection that replaced it.
 
+### The server list
+
+The TUI asks for an address and an identity every time it starts, because a terminal client is *run at* a
+server. A window is left open, and the one question it should not be asking again is the one it was already
+answered — so this app keeps a list, the way every other chat program does.
+
+`servers.rs` is the whole of it: `desktop_servers.toml` beside the crate's own config (`misc::get_why2_dir()`,
+which on Android is the app data dir `run()` points `HOME` at), an array of `[[server]]` tables, and three
+commands — `get_servers`, `save_server`, `remove_server`. It is **ours and not the crate's**: `client.toml` is
+shared with the terminal client, which has no list and no use for one. A file that is missing, empty or
+unreadable is an empty list, since the window's answer to all three is the same screen that asks for the first
+server.
+
+**The password is kept in plain text in a file chmodded 0600** (and on Windows, in the user's own profile with
+its ACL). There is no key to encrypt it with that the program would not have to keep beside it, and asking for
+a second password to unlock the first is exactly the comfort the list exists to buy. The mode is set on the
+file *before* the passwords go into it, and on one that is already there, so a list written before a password
+was ever stored is tightened the same way. It is optional per row: an entry with no password simply asks at
+every connect, which is what the connect form's empty field means.
+
+Nothing about the login path changed — that is the point. A stored credential is put where the identity steps
+will find it (`credsRef` in `App.tsx`) and sent back down `send_input`, the same path a typed one takes; it is
+**consumed as it is sent**, so a credential the server refuses is asked for rather than sent again in a loop.
+What actually got the session in (`typedRef`, whichever of the two it came from) is what `rememberServer`
+writes when `authenticated` arrives — which is also why a server typed into the form is **not** written down
+until it works: a typo is a failed connect rather than a row to be forgotten again.
+
+`dial` is the one way in. It is called by the startup read of the list (the entry with the newest `last_used`
+opens on its own — an empty list is the only reason to ask anything at all), by the connect form, and by the
+rail. Picking a server while another one is up is a **switch and not a second session**: the one in front is
+asked to leave with `/exit`, `switchRef` parks where we are going, and the `disconnected` event dials it.
+
+`LoginScreen` is one screen with three things to ask, and `mode` says which: the **prompt** (one field) while
+the server has an identity step pending that nothing was stored for, the **form** that adds a server (address,
+username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from,
+with the address field above it for a server not in it yet. Typing an address that is already a row dials
+*that* row rather than adding a second one beside it — which is what the address a disconnect leaves in the
+field always is. Two rows for one address are two accounts, which is why the username counts when one is
+given. None of this is on Android's side of a cfg: it is the same file, the same commands and the same
+0600.
+
 ### The window
 
 The app used to be the terminal client redrawn cell for cell. It is not any more: the layout is the one every
@@ -172,6 +213,12 @@ Three columns, and a screen in front of them while there is no session — this 
 narrow one (a phone, or a window dragged down to one) turns the outer two into drawers over the middle; see
 **Android**:
 
+- **The rail**, at the far left of the left column: one tile per server in the list, the one we are in marked
+  with a pill against the edge, and a `+` that adds another. It stands whether or not there is a session,
+  because it is the way into one and the way between two — while there is one it is drawn *inside* the left
+  column's `aside` (so a phone slides one drawer and not two), and while there is not, inside the connect
+  screen. A right-click, or a long press on a phone, opens the tile's one menu item: forgetting the server,
+  which is for good, and which is also leaving it when it is the one we are standing in.
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
   call: the voice roster while there is

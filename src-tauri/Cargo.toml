@@ -41,6 +41,9 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
 sha2 = "0.11"
 
+# THE SERVER LIST IS OURS AND LIVES BESIDE THE CRATE'S OWN CONFIG, IN THE SAME LANGUAGE AS IT
+toml = "1"
+
 # THE DESKTOP BUILD IS THE WHOLE PROGRAM: THE CHAT, THE CALL AND THE SCREEN SHARE BOTH WAYS
 [target.'cfg(not(target_os = "android"))'.dependencies]
 why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
