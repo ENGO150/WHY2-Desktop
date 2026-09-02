@@ -61,6 +61,11 @@ jpeg-encoder = { version = "0.7", features = ["simd"] }
 [target.'cfg(target_os = "android")'.dependencies]
 why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base"] }
 
+# THE FILE PICKER ON ANDROID ANSWERS WITH A content:// URI, WHICH IS A HANDLE ON SOMEBODY ELSE'S FILE AND
+# NOT A PLACE ON THE DISK - THE CONTENT RESOLVER IS THE ONLY THING THAT OPENS ONE, AND THIS IS THE WAY TO
+# IT FROM RUST. IT IS WHAT LETS AN UPLOAD BE STAGED IN OUR OWN CACHE (input.rs, stage_content_uri)
+tauri-plugin-fs = "2"
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

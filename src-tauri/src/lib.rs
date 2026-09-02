@@ -86,9 +86,16 @@ use screen::screen_frames;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run()
 {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    //THE ONE WAY TO A content:// URI FROM RUST, AND ANDROID'S PICKER ANSWERS WITH NOTHING ELSE. IT IS NOT
+    //ON THE DESKTOP SIDE BECAUSE THERE IS NOTHING THERE THAT NEEDS IT - SEE input.rs::stage_content_uri
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_fs::init());
+
+    builder
         .manage(AppState
         {
             write_stream: MutexAsync::new(None),

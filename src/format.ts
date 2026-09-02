@@ -83,3 +83,54 @@ export function fileKind(name: string): { icon: string; label: string }
 
     return { icon: "file", label: extension ? `${extension.toUpperCase()} file` : "File" };
 }
+
+//A LINE IS TEXT WITH LINKS IN IT, AND THIS IS WHERE THEY ARE. THE PROTOCOL CARRIES NO MARKUP, SO THE
+//ONLY THING TO GO ON IS THE http:// OR https:// ITSELF - AND ONLY THOSE TWO, SINCE A LINK IS OPENED IN
+//THE BROWSER AND file:// OR javascript: ARE NOT THINGS A STRANGER ON A SERVER GETS TO HAND US.
+//THE TRAILING PUNCTUATION IS WALKED BACK OFF: A URL AT THE END OF A SENTENCE KEEPS THE FULL STOP
+//OTHERWISE, AND A CLOSING BRACKET ONLY BELONGS TO THE URL IF IT OPENED ONE
+const LINK = /https?:\/\/[^\s<>"']+/gi;
+
+export interface TextPart
+{
+    text: string;
+    href?: string;
+}
+
+export function linkParts(text: string): TextPart[]
+{
+    const parts: TextPart[] = [];
+    let at = 0;
+
+    for (const match of text.matchAll(LINK))
+    {
+        let found = match[0];
+
+        while (found.length > 0)
+        {
+            const last = found[found.length - 1];
+
+            if (".,;:!?'\"".includes(last) || (last === ")" && !found.includes("(")))
+            {
+                found = found.slice(0, -1);
+                continue;
+            }
+
+            break;
+        }
+
+        //NOTHING LEFT OF IT ONCE THE PUNCTUATION IS OFF, SO IT WAS NEVER A LINK
+        if (!/^https?:\/\/[^\s/]+/i.test(found)) continue;
+
+        const start = match.index;
+
+        if (start > at) parts.push({ text: text.slice(at, start) });
+
+        parts.push({ text: found, href: found });
+        at = start + found.length;
+    }
+
+    if (at < text.length) parts.push({ text: text.slice(at) });
+
+    return parts;
+}

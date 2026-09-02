@@ -209,11 +209,18 @@ something to ask. A server not in the list is added through `Add another server`
 and typing an address that is already a row dials *that* row rather than adding a second one beside it. Two
 rows for one address are two accounts, which is why the username counts when one is given.
 
-The rail is **not** drawn on this screen, and it has no `+`: the selection screen already is the list, in
-whole names rather than one letter each, and it is the one place a server is added. Adding one is therefore
-something done between sessions — from inside a session the way to it is the door (`/exit`), which is the
-same walk out that switching servers already takes. None of this is on Android's side of a cfg: it is the
-same file, the same commands and the same 0600.
+The rail is **not** drawn on this screen: the selection screen already is the list, in whole names rather
+than one letter each. It keeps its `+` for the other side of that — while there is a session, the selection
+screen is not up, so the `+` is the way to the form from in there. `AddServerDialog` is that form as a window
+over the chat (`addBox`), and `AddServerFields` is the three fields written once for both homes. It closes
+the way every other menu here does — esc, the X, a press outside, the back gesture (it is in `covering`) —
+and submitting it is a switch like any other, so the session in front is left first.
+
+A stored answer is not a question, which is what keeps the identity steps from **flashing**: `request_username`
+and `request_password` look for the credential *before* they touch `uiState`, and where there is one the screen
+stays on `Connecting…` while it goes back down `send_input`. Drawing the prompt and answering it a frame later
+is what put a password box on screen for an instant on every connect. None of this is on Android's side of a
+cfg: it is the same file, the same commands and the same 0600.
 
 ### The window
 
@@ -225,11 +232,11 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 **Android**:
 
 - **The rail**, at the far left of the left column: one tile per server in the list, the one we are in marked
-  with a pill against the edge. It is the way *between* two sessions and nothing else — it is drawn inside
-  the left column's `aside` (so a phone slides one drawer and not two) and only while there is a session,
-  since the screen that stands in place of one is the same list already. A right-click, or a long press on a
-  phone, opens the tile's one menu item: forgetting the server, which is for good, and which is also leaving
-  it when it is the one we are standing in.
+  with a pill against the edge, and a `+` that adds another. It is drawn inside the left column's `aside` (so
+  a phone slides one drawer and not two) and only while there is a session, since the screen that stands in
+  place of one is the same list already, written out in full. A right-click, or a long press on a phone,
+  opens the tile's one menu item: forgetting the server, which is for good, and which is also leaving it when
+  it is the one we are standing in.
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
   call: the voice roster while there is
@@ -241,6 +248,15 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
   floats on the composer.
 - **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
   own button. A row is a button, and it opens the conversation with that person — see **Direct messages**.
+
+A line that has a link in it gets one: `linkParts` in `format.ts` finds the `http://` and `https://` in the
+text — those two and nothing else, since a line is written by a stranger on a server and `file://` is not
+something to hand the system — walking the trailing punctuation back off, so a URL at the end of a sentence
+keeps the full stop and the link does not. `linked` in `messages.tsx` draws the pieces, and a click goes to
+`openUrl` rather than to the `href`: this window is a chat client, and a page that navigated it away would
+take the session with it. The opener's scope is what actually allows the two schemes, so the capability
+carries an `opener:allow-open-url` entry beside `opener:default` — **a glob there is `http://**`, not
+`http://*`, which stops at the first slash**.
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
@@ -571,10 +587,20 @@ inside `.setup()` rather than ahead of the builder**: nothing knows the path unt
 Moving the config work back out breaks Android only, and breaks it as a `SIGABRT` at launch with no window
 ever drawn. Everything lands in `/data/user/0/<identifier>/.config/WHY2/`.
 
+**What an upload is on a phone.** The picker answers with a `content://` URI: a handle on somebody else's
+file, granted to this process, and not a place on the disk. `File::open` cannot take one, and neither can the
+crate's upload task, which reopens the path by itself when the server approves — so `stage_content_uri` in
+`input.rs` reads it through the content resolver once and copies it into the app's own cache, which is a real
+path. That resolver is reachable from Rust through **`tauri-plugin-fs`**, which is therefore an Android-only
+dependency (`app.fs().open(FilePath::Url(…))` hands back a `std::fs::File` made from the provider's fd); the
+generated Gradle project picks the plugin up from Cargo on the next build, with no `android:init` needed. The
+copy is named after the file the descriptor actually points at (`/proc/self/fd/N`, which for a
+provider backed by a real file is the real path), falling back to the URI's own last segment decoded — the
+name is what everybody else on the server will see. The copy is blocking I/O over the whole file, so it is in
+`spawn_blocking` like the hash.
+
 Not yet done on Android, and each for its own reason: **voice** wants `cpal`'s `oboe` backend and an `opus`
-that cross-compiles; **screen sharing** wants a `MediaProjection` capture path in the crate; and
-**`/upload`** hands `File::open` whatever the file dialog returned, which on Android is a `content://` URI and
-not a path.
+that cross-compiles, and **screen sharing** wants a `MediaProjection` capture path in the crate.
 
 ### Input history
 
@@ -665,7 +691,14 @@ which color is actually being picked.
 ### Adding a Tauri plugin
 
 Three places, all required: `src-tauri/Cargo.toml`, the `.plugin(…)` chain in `run()`, and the `permissions`
-array in `src-tauri/capabilities/default.json`. Missing the capability entry fails only at runtime.
+array in `src-tauri/capabilities/default.json`. Missing the capability entry fails only at runtime — and a
+permission with a **scope** (`opener:allow-open-url` is one) needs the entry written as an object with its
+`allow` list, since the bare identifier allows the command and no argument to it.
+
+A plugin only one platform needs is a target-gated dependency and a gated `.plugin(…)`, which is why `run()`
+builds the builder into a `let` rather than one chain: `tauri-plugin-fs` is Android's alone. Nothing has to be
+regenerated for it — `gen/android/tauri.settings.gradle` is written from the Cargo dependencies on every
+build.
 
 ### CI
 

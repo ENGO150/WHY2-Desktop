@@ -20,7 +20,32 @@ import type { ChatMessage, BlockRow, ClientConfig } from "./types";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
-import { branches } from "./format";
+import { branches, linkParts } from "./format";
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+//A LINE AS IT IS READ: THE TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE. IT OPENS IN THE
+//SYSTEM BROWSER RATHER THAN IN HERE - THIS WINDOW IS A CHAT CLIENT AND NOT A BROWSER, AND A PAGE THAT
+//REPLACED IT WOULD TAKE THE SESSION WITH IT. THE href IS KEPT ON THE ELEMENT FOR THE HOVER AND THE
+//CONTEXT MENU, AND THE DEFAULT NAVIGATION IS THE ONE THING IT MUST NOT DO
+export function linked(text: string): React.ReactNode
+{
+    const parts = linkParts(text);
+
+    if (parts.length === 1 && !parts[0].href) return text;
+
+    return parts.map((part, index) => (part.href
+        ? (
+            <a
+                key={index}
+                href={part.href}
+                onClick={(event) => { event.preventDefault(); openUrl(part.href!).catch(() => {}); }}
+                className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+            >
+                {part.text}
+            </a>
+        )
+        : <span key={index}>{part.text}</span>));
+}
 
 //WHAT A LINE IS PAINTED IN, WHERE ANYTHING IS: THE PROTOCOL'S SIXTEEN, AND NOTHING AT ALL WHERE THE
 //CONFIG TURNED THE MESSAGE COLORS OFF
@@ -50,7 +75,7 @@ export function renderNotice(message: ChatMessage, key: number)
                 </div>
                 <div className={`min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed ${tone}`}>
                     {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                    {message.text}
+                    {linked(message.text)}
                 </div>
             </div>
         );
@@ -101,7 +126,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         style={{ color: messageColor(config, message.message_color) }}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {message.text}
+                        {linked(message.text)}
                     </div>
                 </div>
             </div>

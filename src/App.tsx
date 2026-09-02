@@ -63,7 +63,7 @@ import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
-import { ServerRail } from "./servers";
+import { ServerRail, AddServerDialog } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import { MemberColumn } from "./members";
@@ -163,6 +163,7 @@ function App()
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
+    const addRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const settingsRowRef = useRef<HTMLDivElement>(null);
@@ -500,16 +501,15 @@ function App()
                     break;
                 }
 
+                //AN ANSWER WE ALREADY HAVE IS NOT A QUESTION: THE SCREEN STAYS ON `Connecting…` AND THE
+                //STORED ONE GOES STRAIGHT BACK, RATHER THAN THE PROMPT BEING DRAWN AND ANSWERED A FRAME
+                //LATER - WHICH LOOKED LIKE A PASSWORD BOX FLASHING PAST ON EVERY CONNECT
                 case "request_username":
                 {
                     const { registration, min, max } = payload.data;
-
-                    setUiState("username_prompt");
-                    setConnecting(false);
-                    setInputValue("");
-                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled.");
-
                     const stored = credsRef.current.username;
+
+                    setInputValue("");
 
                     if (stored)
                     {
@@ -518,19 +518,21 @@ function App()
 
                         setUsername(stored);
                         answerStored(stored);
+                        break;
                     }
+
+                    setUiState("username_prompt");
+                    setConnecting(false);
+                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled.");
                     break;
                 }
 
                 case "request_password":
                 {
-                    setUiState("password_prompt");
-                    setConnecting(false);
+                    const stored = credsRef.current.password;
+
                     setInputValue("");
                     setRegistering(payload.data.register);
-                    setHint("");
-
-                    const stored = credsRef.current.password;
 
                     if (stored)
                     {
@@ -538,7 +540,12 @@ function App()
                         typedRef.current.password = stored;
 
                         answerStored(stored);
+                        break;
                     }
+
+                    setUiState("password_prompt");
+                    setConnecting(false);
+                    setHint("");
                     break;
                 }
 
@@ -952,13 +959,21 @@ function App()
         goTo(server);
     };
 
-    //ADDING A SERVER IS SOMETHING THE SELECTION SCREEN DOES, SO THIS IS ONLY EVER PRESSED WHILE THAT
-    //SCREEN IS UP - THERE IS NOTHING BEHIND IT TO PUT AWAY
+    //THE FORM IS THE CONNECT SCREEN ITSELF WHILE THERE IS NO SESSION AND A WINDOW OVER THE CHAT WHILE
+    //THERE IS ONE. ON A PHONE THE + WAS PRESSED INSIDE THE DRAWER, WHICH HAS DONE ITS JOB
     const openAdd = () =>
     {
         setForm({ address: "", username: "", password: "" });
         setErrorMsg("");
         setAdding(true);
+        setDrawer(null);
+    };
+
+    const closeAdd = () =>
+    {
+        setAdding(false);
+
+        if (!narrow) chatInputRef.current?.focus();
     };
 
     //FORGETTING IS FOR GOOD, AND FORGETTING THE ONE WE ARE STANDING IN IS ALSO LEAVING IT - THERE WOULD
@@ -1410,7 +1425,8 @@ function App()
     //THE PHONE ALREADY HAS ONE NAVIGATION CONTROL, AND EVERYBODY EXPECTS IT TO CLOSE WHATEVER IS IN FRONT
     //RATHER THAN THE PROGRAM. EACH THING THAT COVERS THE CONVERSATION PARKS ONE ENTRY IN THE HISTORY, AND
     //THE BACK GESTURE SPENDS IT - WITH NOTHING IN FRONT, BACK STILL MEANS WHAT IT ALWAYS DID
-    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || theater;
+    const addOpen = connected && adding;
+    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || addOpen || theater;
 
     useEffect(() =>
     {
@@ -1422,6 +1438,7 @@ function App()
         {
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
             if (theater) setView("chat");
+            else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
@@ -2039,6 +2056,23 @@ function App()
 
     //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
+    //THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT: THE CONNECT SCREEN IS THE FORM'S OTHER HOME, AND
+    //THAT ONE IS ONLY UP WHILE THERE IS NONE
+    const addBox = addOpen && (
+        <AddServerDialog
+            form={form}
+            setForm={setForm}
+            connecting={connecting}
+            errorMsg={errorMsg}
+            cardRef={addRef}
+            dialogWrap={dialogWrap}
+            dialogCard={dialogCard}
+            narrow={narrow}
+            onSubmit={handleSubmit}
+            close={closeAdd}
+        />
+    );
+
     //THE FAR-LEFT COLUMN, WHICH STANDS INSIDE THE SESSION - THE SELECTION SCREEN IS THE SAME LIST DRAWN
     //LARGE, AND DRAWING BOTH AT ONCE WOULD BE ASKING THE SAME QUESTION TWICE ON ONE SCREEN - IT IS THE WAY INTO ONE AND
     //THE WAY BETWEEN TWO. IT IS DRAWN INSIDE THE LEFT COLUMN WHILE THERE IS ONE, AND INSIDE THE CONNECT
@@ -2049,6 +2083,7 @@ function App()
             active={dialing?.id ?? null}
             connecting={connecting}
             onPick={pickServer}
+            onAdd={openAdd}
             onForget={forgetServer}
         />
     );
@@ -2391,6 +2426,7 @@ function App()
             {settingsBox}
             {filesBox}
             {screensBox}
+            {addBox}
             {loginScreen}
             {tofuBox}
         </main>
