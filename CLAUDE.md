@@ -85,17 +85,49 @@ Three layers, and the boundary between them is deliberately narrow:
 1. **`why2-chat` crate** — owns the socket, the protocol, and persistent config/TOFU state. Everything is
    `async` on tokio, and the crate spawns its own tasks (uploads, downloads), so every call into it must be
    made from inside the runtime.
-2. **`src-tauri/src/lib.rs`** (single file) — the bridge. Holds `AppState`, exposes five `#[tauri::command]`s,
-   and translates `ClientEvent`s into UI events. Everything that needs the call or the screen share is behind
-   the `media` cfg `build.rs` sets — see **Android**.
-3. **`src/App.tsx`** (single file) — the entire UI. One component, no router, no state library.
+2. **`src-tauri/src/`** — the bridge. Holds `AppState`, exposes the `#[tauri::command]`s, and translates
+   `ClientEvent`s into UI events. Everything that needs the call or the screen share is behind the `media`
+   cfg `build.rs` sets — see **Android**.
+3. **`src/`** — the UI. One stateful component with the view drawn by components around it, no router, no
+   state library.
+
+### Where things are
+
+Neither half is one file any more, and the split is by *what a thing is*, not by how big it got.
+
+**`src-tauri/src/`** — `lib.rs` is only the module list and `run()`. Under it: `types.rs` (everything the
+wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, the session counter,
+`reset_session`), `emit.rs` (everything that pushes at the window — `say`, `block`, `emit_voice`,
+`emit_screen`), then the paths that do something: `net.rs` (the socket, the roster clock, `connect_to_server`),
+`input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
+`pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), plus `settings.rs`,
+`palette.rs` and `color.rs` for the three things that are their own vocabulary.
+
+**`src/`** — `App.tsx` still owns all the state, every effect and every handler, and that is deliberate: the
+event listener, the channel routing and the palette all read each other, and prop-drilling them apart would
+buy nothing. What moved out is what does not need the state: `types.ts` (the mirror of `UiEvent`, and
+`LOBBY`), `theme.ts` (the two ANSI tables), `format.ts`, `icons.tsx`, `components.tsx` (`Avatar`, `Switch`,
+`SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
+`palette::update`), `settings.ts` (the row model), `history.ts`, `narrow.ts` — and the views that take props
+and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
+`login.tsx`, `tofu.tsx`.
+
+**`src/index.css`** is the fonts and the Tailwind import and nothing else; the palette is in `theme.css`, the
+pieces the window is built from in `widgets.css`, and what only a phone needs in `mobile.css`.
+
+Two things the compiler will not catch when moving view code out of `App.tsx`. A prop named `screen`,
+`history`, `name`, `status` or `location` collides with a **DOM global**, so a component that forgot to
+declare it still compiles against `window.screen` — it is caught only because the *shape* is wrong, and it
+would not be if the shapes happened to match. And a `#[cfg(media)]` or a CSS comment sitting at the seam of
+a cut belongs to what follows it: a stray `#[cfg(media)]` silently made a `#[tauri::command]` desktop-only
+once, which compiled on both targets and only failed at the Android link.
 
 ### The event bridge (the thing to understand first)
 
 `connect_to_server` spawns two tasks: `client::listen_server` writes `ClientEvent`s into a tokio `mpsc`
 channel, and `pump_events` drains it and re-emits to the webview as a **single Tauri event named
 `why2-event`**. The payload is `UiEvent`, adjacently tagged by serde, so the frontend sees
-`{ "event": "message", "data": { … } }` and switches on one field. `BridgeEvent` in `App.tsx` is the mirror of
+`{ "event": "message", "data": { … } }` and switches on one field. `BridgeEvent` in `types.ts` is the mirror of
 that enum — **adding an event means adding a variant on both sides**, and the TS union is what makes a missed
 case visible.
 
@@ -124,7 +156,7 @@ Nothing else carries a download, so `BlockRow` no longer has that field.
 Two things make session lifetime subtle:
 
 - The crate keeps session state in **process-wide globals** (`options::`): sequence counters, login state,
-  the active channel, the shared keys. `reset_session()` in `lib.rs` mirrors the TUI's function of the same
+  the active channel, the shared keys. `reset_session()` in `state.rs` mirrors the TUI's function of the same
   name and must run on every connect and teardown — a second connection that kept the first one's sequence
   numbers has every packet it sends refused.
 - `AppState::session` is a counter bumped on every connect. An old `pump_events` can outlive its socket (a
@@ -183,8 +215,8 @@ The window is nearly monochrome on purpose. The surfaces are a near-black stack 
 `chat` → `raised` → `overlay`) with a trace of rose in every one of them, and the accents are still
 `tui/theme.rs`'s meanings — the active thing, a notice, what went right, an error, presence — pulled most of
 the way towards grey, so **the only saturated thing in the window is what somebody said**: the sixteen
-protocol colors in `ANSI`. `index.css` holds the whole palette as CSS custom properties, mapped to Tailwind
-tokens in one `@theme inline` block.
+protocol colors in `ANSI`. `theme.css` holds the whole palette as CSS custom properties, mapped to Tailwind
+tokens in one `@theme inline` block beside them.
 
 The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
 characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
@@ -225,7 +257,7 @@ privileged packet itself.
 
 ### The palette
 
-`analyze` in `App.tsx` is `palette::update` rewritten in TypeScript, and the four states are the TUI's
+`analyze` in `palette.ts` is `palette::update` rewritten in TypeScript, and the four states are the TUI's
 `PaletteMode`: a **menu** of commands (or, once `/server ` has its space, of *its actions* — a command that is
 a doorway is one row until then, never nine), the **values** a parameter accepts, the **signature** hint for
 one that accepts anything, or hidden. The matching is on `triggers`, not on the canonical name, so `/stfu`
@@ -251,7 +283,7 @@ the selection skips headings the way the TUI's does.
 
 The two halves are not symmetrical, and that is the whole shape of it. **`client.toml` is ours**: a row is
 written through the moment it is flipped (`set_client_setting`, which hands back the config so the pane
-redraws at once), and the `invert` flag lives in `CLIENT_SETTINGS` in `lib.rs` because the key is the truth
+redraws at once), and the `invert` flag lives in `CLIENT_SETTINGS` in `settings.rs` because the key is the truth
 and the label is what it means — `disable_colors` held is "Message colors" turned off. **`server.toml` is
 not**: rows are edited locally, marked, and sent in one go by `save_server_settings`, and what comes back is
 the config *as it actually stands*, so a row the server refused snaps back instead of sitting there looking
@@ -427,7 +459,7 @@ through `audiopus`' bundled C library; `client_screen` captures through `xcap`/`
 it stands, and a phone shares its screen through `MediaProjection` anyway — so **Android is `client_base`
 only**: the chat, the channels, the conversations, the files, TOFU, both configs. `Cargo.toml` says that with
 two `[target.'cfg(…)'.dependencies]` sections, and `build.rs` sets a **`media` cfg** off for the same target,
-which is what every gate in `lib.rs` is written against. **The two are one answer spelled twice — change one
+which is what every gate under `src-tauri/src/` is written against. **The two are one answer spelled twice — change one
 and change the other.**
 
 The gating is arranged so that call sites do not move:
@@ -488,7 +520,7 @@ not a path.
 
 ### Input history
 
-`↑`/`↓` on the input line are `InputBuffer`'s history from `tui/input.rs`, rewritten in `App.tsx`
+`↑`/`↓` on the input line are `InputBuffer`'s history from `tui/input.rs`, rewritten in `history.ts`
 (`historyUp`, `historyDown`, `pushHistory`). `pos` at the end of `entries` means "not searching"; the first
 `↑` parks the half-written line in `stash` **and** locks the search to it as `prefix`, so `↑` walks what was
 typed before rather than everything ever sent, and the last `↓` puts that line back. A line starting with `/`
@@ -563,8 +595,8 @@ through `send_packet` so the clock it reads stays honest.
 
 ### Colors
 
-The protocol carries 16 ANSI color codes. `to_color` in `lib.rs` parses names/numbers → code plus canonical
-name (persisted to `client.toml`); the `ANSI` table in `App.tsx` maps code → hex. Both must stay in sync, and
+The protocol carries 16 ANSI color codes. `to_color` in `color.rs` parses names/numbers → code plus canonical
+name (persisted to `client.toml`); the `ANSI` table in `theme.ts` maps code → hex. Both must stay in sync, and
 `disable_colors` turns the message colors off without touching the theme.
 
 There are **two** tables: `ANSI` is the lifted set the names and the message text are painted in — these sit
@@ -601,19 +633,19 @@ Release is ~10 MB and debug is ~377 MB, which is the whole argument for building
 ## Conventions
 
 - **Every source file** (`.rs`, `.ts`, `.tsx`, `.css`, `.html`, `.toml`) carries the GPLv3 header block naming
-  Václav Šmejkal. Copy it into any new file.
+  Václav Šmejkal. Copy it into any new file — every module under `src/` and `src-tauri/src/` has one.
 - Rust uses **Allman braces** — opening brace on its own line, including for `match` arms, closures, `if`, and
   struct literals. This is not rustfmt default; do not run `cargo fmt`, it will reformat the whole codebase.
   TS/TSX and CSS follow the same brace style with 4-space indent.
 - Comments in Rust are `//ALL CAPS`, no space after the slashes. The upstream crate writes them as short
   explanations of *why*, often several lines above a block; match that rather than narrating the code.
 - Styling is Tailwind v4 (`@import "tailwindcss"` in `src/index.css`, configured with CSS custom properties in
-  an `@theme inline` block — there is no `tailwind.config.js`). Use the semantic tokens — surfaces
+  the `@theme inline` block in `src/theme.css` — there is no `tailwind.config.js`). Use the semantic tokens — surfaces
   (`bg-deep`, `bg-sidebar`, `bg-chat`, `bg-raised`, `bg-overlay`, `bg-hover`, `bg-selected`, `bg-active`),
   text (`text-text`, `text-muted`, `text-faint`), meaning (`text-accent`, `text-brand`, `text-notice`,
   `text-ok`, `text-error`, `text-online`, `text-warning`), and `border-border` / `border-border-strong` —
   never raw colors. The app is dark only; there is no light theme to switch to.
-- Icons are `Icon`/`IconButton` in `App.tsx`: one component over a table of 24×24 stroked paths. An icon set
+- Icons are `Icon`/`IconButton` in `icons.tsx`: one component over a table of 24×24 stroked paths. An icon set
   is not worth a dependency. Every `IconButton` carries a `label`, which is its tooltip and its accessible
   name both.
 - Add `font-mono` deliberately, to the things that are measured in characters — the branch glyphs, the padded
