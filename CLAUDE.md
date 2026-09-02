@@ -4,22 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-WHY2 Desktop is a Tauri 2 desktop GUI for the WHY2 chat protocol. All protocol work (async TCP framing,
-hybrid ECC+ML-KEM key exchange, TOFU key pinning, commands, roles, config) lives in the sibling `why2-chat`
-crate, pulled in as a **path dependency**:
+WHY2 Desktop is a Tauri 2 GUI for the WHY2 chat protocol — a desktop program on Linux/macOS/Windows and an
+Android app from the same source. All protocol work (async TCP framing, hybrid ECC+ML-KEM key exchange, TOFU
+key pinning, commands, roles, config) lives in the `why2-chat` crate, pulled in as a **git dependency on the
+`development` branch**, with a **different feature set per target** (see **Android**):
 
 ```toml
-why2-chat = { path = "../../WHY2/chat", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+[target.'cfg(not(target_os = "android"))'.dependencies]
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base"] }
 ```
 
-That resolves to `/mnt/data/Rust/WHY2` relative to `src-tauri/`. **The sibling checkout must be present or the
-Rust build fails.** `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
+The branch is not a preference: **crates.io stops at `why2-chat` 2.0.0, which has no `SCREEN_FRAME_SINK`** —
+see **Screen sharing** — so the published crate does not compile this app's desktop half. Move to a version
+dependency once that change is released. `Cargo.lock` pins the commit, so `cargo update -p why2-chat` is what
+takes newer `development` work.
+
+To read the crate against local edits instead, patch it rather than editing the dependency line:
+
+```toml
+[patch."https://github.com/ENGO150/WHY2"]
+why2-chat = { path = "../../WHY2/chat" }
+```
+
+`client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
 script, not in this code. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
 own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
-which also documents the one change this app needs in the sibling crate. When behaviour looks wrong, the cause is often in that crate, not here — read
-`/mnt/data/Rust/WHY2/chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
-assuming a bug in this repo. This app is a thin presentation layer over it.
+which also documents the one change this app needs in that crate. When behaviour looks wrong, the cause is often in that crate, not here — read
+its `chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
+assuming a bug in this repo — in the checkout at `/mnt/data/Rust/WHY2` if there is one, otherwise in the copy
+cargo fetched under `~/.cargo/git`. This app is a thin presentation layer over it.
 
 `chat/src/bin/client/` is the crate's own terminal client (ratatui). **It is the reference implementation for
 everything this app does** — `tui/event.rs` maps every `ClientEvent` to UI state, `mod.rs::submit` handles every
@@ -28,14 +45,17 @@ feature here, read how the TUI does it first: the two are deliberately kept in s
 what a line does, what an event means, what a session has to reset. They no longer look alike, and are not
 meant to (see **The window**).
 
-Do not run cargo inside `/mnt/data/Rust/WHY2` — path dependencies build into *this* repo's `src-tauri/target`,
-and that is the only reason the sibling checkout stays clean.
+Do not run cargo inside `/mnt/data/Rust/WHY2` — nothing here builds from it any more, and a target directory
+in there is a checkout dirtied for nothing.
 
 ## Commands
 
 ```bash
 npm run tauri dev      # full app (spawns vite on :1420 + cargo, hot reload on both sides)
 npm run tauri build    # bundled release binary
+npm run android:init   # generates src-tauri/gen/android — run once, and again after an identifier change
+npm run android        # the app on a connected device/emulator (same vite server, hot reload both sides)
+npm run android:build  # the APK/AAB
 npm run dev            # frontend only in a browser — Tauri `invoke`/`listen` are unavailable, so
                        # nothing past the server-select screen works. Rarely useful.
 npm run build          # tsc typecheck + vite build (this is the only "lint": tsconfig has
@@ -46,6 +66,18 @@ cargo check --manifest-path src-tauri/Cargo.toml   # fast Rust-only feedback
 There is no test suite, no ESLint/Prettier, and no formatter config. Verification is `npm run build` +
 `cargo check`, then running the app against a WHY2 server.
 
+The Android commands want the SDK, the NDK and a JDK, with `ANDROID_HOME`/`NDK_HOME`/`JAVA_HOME` pointing at
+them, plus the four Rust targets (`aarch64-`, `armv7-`, `i686-`, `x86_64-linux-android`). Two things bite
+before any code does: the **JDK must be 17 or 21** — the Android Gradle Plugin refuses a newer one, so a
+system default of 25 needs `JAVA_HOME` pointed elsewhere for these commands — and **`android:init` shells out
+to `rustup target add`** before it generates anything, which fails outright on a toolchain installed any other
+way. `npm run android:init -- --skip-targets-install` is the way past that once the targets are in the
+sysroot; it is also what CI uses. `gen/android` is generated and **not** tracked (its `jniLibs` are absolute
+symlinks into this machine's `target/`), so it is made rather than cloned. **`cargo check` alone only
+ever checks the desktop half** — the Android half is a different feature set and a different cfg, and the
+cheap way to compile it without an NDK in reach is to point the target sections at the host and turn the
+`media` cfg off in `build.rs` by hand.
+
 ## Architecture
 
 Three layers, and the boundary between them is deliberately narrow:
@@ -54,7 +86,8 @@ Three layers, and the boundary between them is deliberately narrow:
    `async` on tokio, and the crate spawns its own tasks (uploads, downloads), so every call into it must be
    made from inside the runtime.
 2. **`src-tauri/src/lib.rs`** (single file) — the bridge. Holds `AppState`, exposes five `#[tauri::command]`s,
-   and translates `ClientEvent`s into UI events.
+   and translates `ClientEvent`s into UI events. Everything that needs the call or the screen share is behind
+   the `media` cfg `build.rs` sets — see **Android**.
 3. **`src/App.tsx`** (single file) — the entire UI. One component, no router, no state library.
 
 ### The event bridge (the thing to understand first)
@@ -103,7 +136,9 @@ Two things make session lifetime subtle:
 The app used to be the terminal client redrawn cell for cell. It is not any more: the layout is the one every
 chat program has settled on, because that is the one a user already knows how to read.
 
-Three columns, and a screen in front of them while there is no session:
+Three columns, and a screen in front of them while there is no session — this is the wide shape, and the
+narrow one (a phone, or a window dragged down to one) turns the outer two into drawers over the middle; see
+**Android**:
 
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
@@ -245,7 +280,8 @@ writes `client.toml` or puts a packet on the wire would do it twice.
 
 ### Voice
 
-`client_voice` is on, so the crate owns the whole call — the UDP handshake, the `cpal` streams, the Opus
+`client_voice` is on **in the desktop build** (see **Android**, which is compiled without it and draws no
+headset), so the crate owns the whole call — the UDP handshake, the `cpal` streams, the Opus
 codec, the denoiser, the mixing — and there is nothing left on this side but to draw it. `/voice` is a plain
 packet the crate answers by spawning `listen_server_voice`; `/mute` never reaches the server at all, because
 the muted set lives in `options::` and is where the crate drops both a muted user's audio and their messages.
@@ -272,7 +308,8 @@ session takes its streams with it.
 
 ### Screen sharing
 
-`client_screen` is on, and both halves of it work in this window — but the watching half **depends on a
+`client_screen` is on **in the desktop build** (see **Android**, which is compiled without it and draws no
+monitor button), and both halves of it work in this window — but the watching half **depends on a
 change in the sibling crate**, described below, without which this app will not compile.
 
 **Sharing** needs no surface at all: capture, H.264 encode and upload happen inside the crate, so
@@ -296,7 +333,8 @@ pub static SCREEN_FRAME_SINK: RwLock<Option<UnboundedSender<Vec<u8>>>> = RwLock:
 — which `attach` prefers over the proxy: with a sink set it hands over each H.264 access unit as it arrives
 and opens no window. That is the whole crate-side change (three edits in one file: the static, the `Video`
 branch, and an early return before `UserEvent::NewSession`); the TUI is untouched, because with no sink set
-nothing about its path changes.
+nothing about its path changes. **It lives on `development` and in no published version** — which is why the
+dependency is a git one and not a crates.io one (see **What this is**).
 
 This app sets the sink once in `run()`'s `setup`, for the life of the process, and forwards frames to
 whatever `Channel<InvokeResponseBody>` the pane last handed it through `watch_frames` (`drop_frames` takes it
@@ -375,6 +413,78 @@ belong in it.
 `reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, exactly what
 `tui/state.rs::reset_session` clears: the pick lasts as long as the share does. The session teardown also
 drops the frame channel, so a picture cannot outlive the socket it came from.
+
+### Android
+
+The same program, on a phone. Two things are different and nothing else is: **what the build contains**, and
+**what the window looks like when it is the shape of a phone**. The two are decided independently — the
+layout is a width and the feature set is a target — because a desktop window dragged narrow has exactly the
+first problem and none of the second.
+
+**What the build contains.** `client_voice` opens its devices through `cpal`'s PulseAudio backend and encodes
+through `audiopus`' bundled C library; `client_screen` captures through `xcap`/`libwayshot` and draws through
+`winit`/`wgpu`, which want the main thread Tauri already owns. None of that cross-compiles to an NDK target as
+it stands, and a phone shares its screen through `MediaProjection` anyway — so **Android is `client_base`
+only**: the chat, the channels, the conversations, the files, TOFU, both configs. `Cargo.toml` says that with
+two `[target.'cfg(…)'.dependencies]` sections, and `build.rs` sets a **`media` cfg** off for the same target,
+which is what every gate in `lib.rs` is written against. **The two are one answer spelled twice — change one
+and change the other.**
+
+The gating is arranged so that call sites do not move:
+
+- `emit_voice` and `emit_screen` exist either way. Without `media` they emit a call that is not running and a
+  share that is not up, so the window draws its panels from an answer rather than from nothing.
+- `ClientEvent`'s variants are **not** behind the crate's features (only what they are answered *with* is), so
+  every match arm in `handle_event` stands on both sides and only the bodies that reach into `voice_options`/
+  `screen_capture` are cfg'd.
+- `Command::Mute` and `Command::Screen` **are** behind them, so those two arms of `send_input` are cfg'd out.
+- `ClientKind`/`ClientValue` lose their `Volume` and `Device` variants, and `AUDIO_SETTINGS` is empty — the
+  settings dialog is then the `Interface` rows and nothing else, with no row pointing at a device nothing will
+  ever open.
+- `get_audio_devices`, `set_client_volume` and `set_client_device` keep their names and lose their bodies:
+  `generate_handler!` is one list and not a place for a cfg.
+
+**What the window knows about it.** Nothing on the frontend is told which platform it is on. The palette is
+already `get_commands`, which is `COMMAND_LIST` filtered by role — and on Android `/voice` and `/screens` are
+not in `COMMAND_LIST` **at all**, so `hasVoice`/`hasScreens` in `App.tsx` are read straight off that list.
+That is the one honest answer to "can this build do it", and it is the same question on either platform.
+
+**What the window looks like.** Under `NARROW` (820px) `useNarrow` flips the layout to the one every phone
+chat app has settled on:
+
+- The two sidebars become **drawers** over the conversation — the same JSX, `position: fixed` and translated
+  off-canvas. They are always rendered and never conditionally mounted, because a panel that is mounted when it
+  opens has nowhere to slide from; `.drawer-shut` makes the parked one `visibility: hidden` so it is out of
+  reach of a tap and of the tab key.
+- The channel header gains the hamburger, and its members button toggles the right drawer instead of the
+  column. Picking a channel, a conversation or a member closes the drawer it was picked in.
+- A **sideways swipe** on the window opens and closes them (`onSwipeStart`/`onSwipeEnd`). It takes both a
+  distance and a direction (`SWIPE`, `SWIPE_SLOPE`): a drag that is mostly vertical is somebody reading.
+- The **back gesture** closes whatever is in front rather than the program. Everything that covers the
+  conversation parks one history entry and the gesture spends it — with nothing in front, back means what it
+  always did.
+- Every dialog is the whole screen rather than a card in a darkened room (`dialogWrap`/`dialogCard`), the
+  composer is a pill, and the composer does not take the focus on its own: a soft keyboard is half the screen,
+  and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
+  before pulling the focus back.
+- `index.html` asks for `viewport-fit=cover` **and** `interactive-widget=resizes-content` — the second is the
+  whole difference between a composer above the keys and one pushed off the top of the screen. `<main>` is
+  `h-dvh` for the same reason, and pays the safe-area insets back once (`.safe-top`/`.safe-bottom`) so every
+  column inside is already clear of the notch. A `fixed` drawer is positioned against the viewport and not
+  against `<main>`, so it pays its own.
+
+**Where the config lives.** The crate expands `{HOME}` into every path it keeps `client.toml`, `server.toml`
+and the TOFU pins in, through `dirs::home_dir()` — which is `None` on Android, because an app process has no
+home directory, and the crate `expect`s its way out of that. So `run()` sets `HOME` to
+`app.path().app_data_dir()` before anything reads it, and **that is why `config::init_config()` is called from
+inside `.setup()` rather than ahead of the builder**: nothing knows the path until there is an `App` to ask.
+Moving the config work back out breaks Android only, and breaks it as a `SIGABRT` at launch with no window
+ever drawn. Everything lands in `/data/user/0/<identifier>/.config/WHY2/`.
+
+Not yet done on Android, and each for its own reason: **voice** wants `cpal`'s `oboe` backend and an `opus`
+that cross-compiles; **screen sharing** wants a `MediaProjection` capture path in the crate; and
+**`/upload`** hands `File::open` whatever the file dialog returned, which on Android is a `content://` URI and
+not a path.
 
 ### Input history
 
@@ -466,6 +576,27 @@ which color is actually being picked.
 
 Three places, all required: `src-tauri/Cargo.toml`, the `.plugin(…)` chain in `run()`, and the `permissions`
 array in `src-tauri/capabilities/default.json`. Missing the capability entry fails only at runtime.
+
+### CI
+
+`.github/workflows/build.yml` is one workflow with two jobs, and it is a plain single-repo checkout because
+the crate arrives over git rather than off the disk beside it.
+
+**`build-desktop`** is a four-way matrix — Linux, macOS on both architectures (`macos-latest` is Apple
+silicon, `macos-13` is Intel), Windows — installing the same system libraries the local build wants, then
+`npm run tauri build`. That runs `beforeBuildCommand` on the way in, so the tsc typecheck is part of it
+rather than a job of its own. The bundles are uploaded per runner.
+
+**`build-android`** installs JDK 21, the SDK, the NDK and the four targets, generates `gen/android` (it is
+not tracked), and builds a **release** APK. The generated Gradle project carries **no `signingConfigs`**, so
+that APK comes out unsigned and nothing will install it; a step gated on `secrets.ANDROID_KEYSTORE` aligns
+and signs it with `zipalign`/`apksigner` out of build-tools, and is skipped when the secrets are absent, the
+unsigned APK still being uploaded. It is done that way round — signing the finished file rather than teaching
+the Gradle project to sign — because `app/build.gradle.kts` is generated by the job two steps earlier, and a
+patch against it would rot silently the first time Tauri changes the template. The other secrets are
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+
+Release is ~10 MB and debug is ~377 MB, which is the whole argument for building the release one.
 
 ## Conventions
 
