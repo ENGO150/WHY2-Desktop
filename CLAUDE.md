@@ -312,7 +312,11 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 - **The rail**, at the far left of the left column: one tile per server in the list, the one we are in marked
   with a pill against the edge, and a `+` that adds another. It is drawn inside the left column's `aside` (so
   a phone slides one drawer and not two) and only while there is a session, since the screen that stands in
-  place of one is the same list already, written out in full. A right-click, or a long press on a phone,
+  place of one is the same list already, written out in full. On a phone it is only as **tall** as the part
+  of the column that scrolls, and the row with the person using the program runs under it across the whole
+  drawer — the drawer is 86% of the glass, the rail takes 68 of it, and with an avatar and three
+  fingertip-wide buttons that left the name and the role about forty pixels between them. That row is the one
+  thing in the column with nothing to scroll, so it is the one that can have the width. A right-click, or a long press on a phone,
   opens the tile's one menu item: forgetting the server, which is for good, and which is also leaving it when
   it is the one we are standing in.
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to

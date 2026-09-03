@@ -59,16 +59,45 @@ export function Sidebar(
     panelRef: React.Ref<HTMLElement>;
 })
 {
+    //THE PERSON USING THE PROGRAM, WRITTEN ONCE AND HUNG IN ONE OF TWO PLACES - SEE THE aside BELOW
+    const identity = (
+        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
+            <Avatar name={username} size={32} />
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{username}</div>
+                <div className="flex items-center gap-1 text-[11px] text-muted">
+                    <Icon name="shield" className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{role}</span>
+                </div>
+            </div>
+
+            {/* THE MICROPHONE READS WHAT IS ACTUALLY BEING SENT: THE CAPTURE CALLBACK COUNTS 0% AS OFF,
+                SO A SLIDER AT THE BOTTOM SHOWS UP HERE AS MUTED */}
+            {hasVoice && (
+                <IconButton
+                    icon={voice.mic ? "mic" : "mic_off"}
+                    label={voice.mic ? "Mute microphone" : "Unmute microphone"}
+                    tone={voice.mic ? "default" : "error"}
+                    onClick={() => send("/mute")}
+                />
+            )}
+            <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
+            <IconButton icon="logout" label="Disconnect from the server" tone="error" onClick={() => send("/exit")} />
+        </div>
+    );
+
     return (
                     <aside ref={panelRef} className={`${narrow
                         ? `drawer safe-top safe-bottom fixed inset-y-0 left-0 z-40 w-[86%] max-w-[368px] shadow-2xl ${drawer === "left" ? "translate-x-0" : "drawer-shut -translate-x-full"}`
-                        : "w-[308px] shrink-0"} border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
+                        : "w-[308px] shrink-0"} flex-col border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
+                    <div className="flex min-h-0 flex-1">
                         {/* THE SERVER RAIL BELONGS TO THIS COLUMN RATHER THAN BESIDE IT: ON A PHONE THE
                             WHOLE LEFT SIDE IS ONE DRAWER, AND A RAIL THAT SLID IN ON ITS OWN WOULD BE A
-                            SECOND ONE OVER THE FIRST */}
+                            SECOND ONE OVER THE FIRST. IT IS ONLY AS TALL AS THE PART OF THE COLUMN THAT
+                            SCROLLS, SO THE ROW UNDER IT CAN RUN THE WHOLE WIDTH WHERE IT HAS TO */}
                         {rail}
 
-                        <div className="flex min-w-0 flex-1 flex-col">
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-sm font-semibold">{serverName || "WHY2"}</div>
@@ -265,30 +294,16 @@ export function Sidebar(
                                 </div>
                             )}
 
-                            <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
-                                <Avatar name={username} size={32} />
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-semibold">{username}</div>
-                                    <div className="flex items-center gap-1 text-[11px] text-muted">
-                                        <Icon name="shield" className="h-3 w-3" />
-                                        <span className="truncate">{role}</span>
-                                    </div>
-                                </div>
-
-                                {/* THE MICROPHONE READS WHAT IS ACTUALLY BEING SENT: THE CAPTURE CALLBACK COUNTS
-                                    0% AS OFF, SO A SLIDER AT THE BOTTOM SHOWS UP HERE AS MUTED */}
-                                {hasVoice && (
-                                    <IconButton
-                                        icon={voice.mic ? "mic" : "mic_off"}
-                                        label={voice.mic ? "Mute microphone" : "Unmute microphone"}
-                                        tone={voice.mic ? "default" : "error"}
-                                        onClick={() => send("/mute")}
-                                    />
-                                )}
-                                <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
-                                <IconButton icon="logout" label="Disconnect from the server" tone="error" onClick={() => send("/exit")} />
-                            </div>
+                            {!narrow && identity}
                         </div>
+                    </div>
+
+                    {/* AND ON A PHONE IT IS OUT HERE INSTEAD, UNDER THE RAIL RATHER THAN BESIDE IT. THE
+                        DRAWER IS 86% OF THE GLASS AND THE RAIL TAKES 68px OF IT, WHICH WITH AN AVATAR AND
+                        THREE FINGERTIP-WIDE BUTTONS LEAVES THE NAME AND THE ROLE ABOUT FORTY PIXELS
+                        BETWEEN THEM - THE ROW IS THE ONE THING HERE WITH NOTHING TO SCROLL, SO IT IS THE
+                        ONE THAT CAN HAVE THE WHOLE WIDTH */}
+                    {narrow && identity}
                     </aside>
     );
 }
