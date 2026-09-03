@@ -25,7 +25,7 @@ use std::
     sync::
     {
         Once, OnceLock,
-        atomic::{ AtomicBool, Ordering },
+        atomic::{ AtomicBool, AtomicU8, Ordering },
     },
     time::Duration,
 };
@@ -47,8 +47,8 @@ use crate::emit::say;
 
 //THE TWO CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
 //tauri.conf.json - build.rs READS IT THERE SO THEY CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
-//NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS IT
-//OPEN ONCE THE WINDOW IS GONE
+//NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS THE
+//SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 const SERVICE: &str = env!("ANDROID_SERVICE_CLASS");
 
@@ -59,9 +59,17 @@ static VM: OnceLock<JavaVM> = OnceLock::new();
 static CONTEXT: Once = Once::new();
 static PREPARED: OnceLock<()> = OnceLock::new();
 
-//WHETHER THE SERVICE IS UP, WHICH IS WHAT ANDROID DID AND NOT WHAT WE ASKED FOR - hold_call IS CALLED
-//OFF EVERY VOICE EVENT, AND IN A LIVE CALL THAT IS EVERY PACKET
-static HELD: AtomicBool = AtomicBool::new(false);
+//THE TWO THINGS WORTH HOLDING THE PROCESS OPEN FOR, KEPT APART BECAUSE THEY ARE SET FROM TWO PLACES AND
+//OUTLIVE EACH OTHER IN BOTH DIRECTIONS: A SESSION WITHOUT A CALL IS THE ORDINARY CASE, AND A CALL IS
+//ALWAYS INSIDE ONE. WHAT ANDROID ACTUALLY HAS IS HELD, WHICH IS NOT THE SAME THING AS WHAT WE ASKED FOR
+static SESSION: AtomicBool = AtomicBool::new(false);
+static CALL: AtomicBool = AtomicBool::new(false);
+
+static HELD: AtomicU8 = AtomicU8::new(DOWN);
+
+const DOWN: u8 = 0;
+const HOLDING: u8 = 1;
+const CALLING: u8 = 2;
 
 //THE PERMISSION ITSELF, WHICH IS ASKED ABOUT FROM BOTH SIDES: THE ACTIVITY ASKS FOR IT, AND THE
 //APPLICATION IS ENOUGH TO SEE WHETHER IT IS ALREADY THERE
@@ -274,7 +282,7 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
 //ONE STATIC CALL INTO THE SERVICE, WHICH TAKES THE CONTEXT RATHER THAN HOLDING ONE: THE APPLICATION IS
 //WHAT WE HAVE, AND IT IS ALSO THE CONTEXT THAT IS STILL STANDING WHEN THE ACTIVITY IS NOT - WHICH IS
 //EXACTLY THE MOMENT THE SERVICE MATTERS
-fn service(method: &str) -> Option<bool>
+fn service(method: &str, call: Option<bool>) -> Option<bool>
 {
     prepare();
 
@@ -284,28 +292,69 @@ fn service(method: &str) -> Option<bool>
 
     vm.attach_current_thread(|env| -> jni::errors::Result<bool>
     {
-        env.call_static_method(&**class, JNIString::new(method),
-            jni_sig!("(Landroid/content/Context;)Z"), &[JValue::Object(&**application)])?.z()
+        let context = JValue::Object(&**application);
+
+        match call
+        {
+            Some(call) => env.call_static_method(&**class, JNIString::new(method),
+                jni_sig!("(Landroid/content/Context;Z)Z"), &[context, JValue::Bool(call.into())])?.z(),
+
+            None => env.call_static_method(&**class, JNIString::new(method),
+                jni_sig!("(Landroid/content/Context;)Z"), &[context])?.z(),
+        }
     }).ok()
 }
 
-//THE CALL, HELD OPEN BEHIND THE HOME BUTTON. AN APP THAT IS NOT ON SCREEN IS A PROCESS ANDROID FREEZES
-//AND THEN KILLS - AND SINCE 9 IT IS ALSO ONE THE MICROPHONE IS SIMPLY CUT OFF FROM, SO A CALL THAT
-//SURVIVES BEING MINIMISED IS A FOREGROUND SERVICE AND NOTHING ELSE WILL DO. THE SOCKET COMES WITH IT:
-//WHAT ENDED THE SESSION WAS THE PROCESS BEING PUT TO SLEEP, AND A HELD PROCESS IS NOT.
-//IT IS DRIVEN FROM emit_voice, WHICH IS THE ONE PLACE THAT ALREADY KNOWS WHETHER THERE IS A CALL
+//WHAT THE SERVICE SHOULD BE DOING, PUT TO ANDROID ONLY WHEN IT IS NOT DOING IT ALREADY. THE FLAG FOLLOWS
+//ANDROID AND NOT US, SO A START THAT DID NOT TAKE - THE ONE WAY THIS FAILS IS A FOREGROUND SERVICE ASKED
+//FOR FROM THE BACKGROUND, WHICH 14 REFUSES - IS ASKED FOR AGAIN AT THE NEXT EVENT RATHER THAN BEING
+//REMEMBERED AS DONE
+fn apply()
+{
+    let want = if CALL.load(Ordering::Relaxed) { CALLING }
+        else if SESSION.load(Ordering::Relaxed) { HOLDING }
+        else { DOWN };
+
+    if HELD.load(Ordering::Relaxed) == want { return }
+
+    let done = match want
+    {
+        DOWN => service("stop", None),
+        _ => service("start", Some(want == CALLING)),
+    };
+
+    if done == Some(true) { HELD.store(want, Ordering::Relaxed); }
+    else { warn(&format!("the session service would not go to state {want}")); }
+}
+
+//THE SESSION, HELD OPEN BEHIND THE HOME BUTTON. AN APP THAT IS NOT ON SCREEN IS A PROCESS ANDROID FREEZES
+//AND THEN KILLS, WHICH IS WHAT USED TO END THE SOCKET THE MOMENT THE WINDOW WENT AWAY - A FOREGROUND
+//SERVICE IS THE ONLY THING THAT SAYS OTHERWISE. IT IS SET WHERE THE SOCKET IS, AND reset_session TAKES IT
+//DOWN WITH EVERYTHING ELSE THE SESSION OWNED
+pub(crate) fn hold_session(on: bool)
+{
+    SESSION.store(on, Ordering::Relaxed);
+
+    apply();
+}
+
+//AND THE CALL INSIDE IT, WHICH IS THE SAME HOLD SAYING A SECOND THING: SINCE 9 A BACKGROUND PROCESS IS
+//ONE THE MICROPHONE IS CUT OFF FROM UNLESS THE SERVICE IS TYPED FOR IT.
+//IT IS DRIVEN FROM emit_voice, WHICH IS THE ONE PLACE THAT ALREADY KNOWS WHETHER THERE IS A CALL - AND
+//THAT RUNS ON EVERY VOICE PACKET, WHICH IS WHY apply() ASKS ANDROID FOR NOTHING WHEN NOTHING CHANGED
 pub(crate) fn hold_call(on: bool)
 {
-    if HELD.load(Ordering::Relaxed) == on { return }
+    CALL.store(on, Ordering::Relaxed);
 
-    //THE FLAG FOLLOWS ANDROID AND NOT US, SO A START THAT DID NOT TAKE IS ASKED FOR AGAIN AT THE NEXT
-    //VOICE EVENT RATHER THAN BEING REMEMBERED AS DONE
-    if service(if on { "start" } else { "stop" }) == Some(true)
-    {
-        HELD.store(on, Ordering::Relaxed);
-    }
-    else
-    {
-        warn(if on { "the call service would not start" } else { "the call service would not stop" });
-    }
+    apply();
+}
+
+//BOTH AT ONCE, WHICH IS WHAT THE END OF A SESSION IS: THE NOTIFICATION IS THE ONLY THING THE USER CAN SEE
+//OF THE SERVICE, AND ONE LEFT STANDING OVER A DEAD SOCKET IS A LIE
+pub(crate) fn release()
+{
+    SESSION.store(false, Ordering::Relaxed);
+    CALL.store(false, Ordering::Relaxed);
+
+    apply();
 }

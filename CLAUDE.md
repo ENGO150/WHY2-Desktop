@@ -597,22 +597,30 @@ this app that speaks JNI:
   since the second is a bug here rather than something to send somebody to Settings for, and `warn` puts it
   in logcat under `WHY2` beside the line in the pane. `prepare()` is retried until it works for the same
   reason: one lookup that failed early used to be a microphone that never opened again.
-- **The call, once the window is gone.** An app that is not on screen is a process Android is free to
-  freeze and then kill, and since 9 it is also one the microphone is simply cut off from — so a call that
-  survives being minimised is a **foreground service** and nothing else will do. `scripts/android/CallService.kt`
-  is that service: a `microphone`-typed `startForeground` with an ongoing low-importance notification whose
-  tap comes back to the app, `START_NOT_STICKY` because a call belongs to a session and a service Android
-  brought back by itself would have no socket under it. Its two statics take a `Context` rather than holding
-  one — the application, which is the context still standing when the activity is not, and that is exactly
-  the moment the service matters. **The socket comes with it**: what used to end a session in the background
-  was the process being put to sleep, and a held process is not.
-  `hold_call` is driven from **`emit_voice`**, which is the one place that already knows whether there is a
-  call — so nothing else has a lifetime to get wrong, and `reset_session` takes it down with the session. It
-  is guarded by a `HELD` flag because `emit_voice` runs on every voice packet, and that flag follows what
-  Android *did* rather than what was asked: a start that did not take is asked for again at the next voice
-  event, which in a live call is the next packet.
-  A **refused notification** (`POST_NOTIFICATIONS`, 13+) costs the line in the shade and not the call, which
-  is why it is asked for in the same dialog as the microphone rather than gating anything. Aggressive
+- **The session, once the window is gone.** An app that is not on screen is a process Android is free to
+  freeze and then kill — which is what used to end the socket the moment the window went away — and since 9
+  it is also one the microphone is simply cut off from. A **foreground service** is the only answer to
+  either, and the notification is the price of it rather than a feature.
+  `scripts/android/SessionService.kt` is that service. It runs for **as long as there is a session**, call
+  or no call, and says which of the two things it is holding: `specialUse` for the socket, and `microphone`
+  beside it while there is a call. **`specialUse` and not `dataSync`** because 15 stops a `dataSync` service
+  after six hours in a day, and a chat connection that dies at lunchtime is worse than one that never
+  claimed to survive — the one cost is that publishing this on Play would put the manifest's
+  `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` in front of a reviewer. Changing between the two is `startForeground`
+  again on the same notification id with the other type, and a `microphone` the system refuses falls back to
+  the half that is always allowed rather than taking the socket's hold down with it. `START_NOT_STICKY`,
+  because a session is something somebody opened and a service Android brought back by itself would have no
+  socket under it. Both statics take a `Context` rather than holding one — the application, which is the
+  context still standing when the activity is not, and that is exactly the moment the service matters.
+  Two flags, because the two are set from two places: `hold_session` from `connect_to_server`, the moment
+  there is a socket **and while the window still has the screen** (14 refuses a foreground service started
+  from the background, which is where asking any later would be from), and `hold_call` from **`emit_voice`**,
+  the one place that already knows whether there is a call. `apply()` is what puts the pair to Android, and
+  only when it is not already doing it — `emit_voice` runs on every voice packet. `release()` takes both
+  down, out of `reset_session`, with everything else the session owned. `HELD` follows what Android *did*
+  rather than what was asked, so a start that did not take is asked for again at the next event.
+  A **refused notification** (`POST_NOTIFICATIONS`, 13+) costs the line in the shade and not the session,
+  which is why it is asked for in the same dialog as the microphone rather than gating anything. Aggressive
   vendor battery managers — MIUI's among them — can still kill a held process; that is a setting on the
   phone and not something the app can ask for.
 
@@ -636,14 +644,19 @@ The gating is arranged so that call sites do not move:
   where the cfg is off: `generate_handler!` is one list and not a place for a cfg.
 
 **What the generated project does not know.** `gen/android` is made on every machine and in CI, and it has
-no idea the app records audio, still less that it goes on recording behind the home button.
+no idea the app records audio, still less that it goes on doing so behind the home button.
 `scripts/android-patch.sh` is what tells it: it inserts `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
-`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE` and `POST_NOTIFICATIONS` into the manifest along with
-the `<service android:name=".CallService" android:foregroundServiceType="microphone">` element (each only
-where it is missing, and in the order written there), and writes `MainActivity.kt` and `CallService.kt` from
-`scripts/android/`, keeping the package line the generated activity already had. It runs after every `init`
-and again in front of every build, and a **missing anchor is an error and not a shrug** — Tauri changing its
-template should stop the build rather than quietly ship an APK whose microphone never opens.
+`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE` and
+`POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
+with the `<service android:name=".SessionService">` element and its special-use subtype, and writes
+`MainActivity.kt` and `SessionService.kt` from `scripts/android/`, keeping the package line the generated
+activity already had. It runs after every `init` and again in front of every build, and a **missing anchor
+is an error and not a shrug** — Tauri changing its template should stop the build rather than quietly ship
+an APK whose microphone never opens.
+The service element is **rewritten and not skipped when present** (matched by class name, the old one
+included), so a change here reaches a `gen/android` that was patched by an earlier version — the manifest is
+then parsed back as XML before it is written, because a half-removed element fails several steps later, in
+the manifest merger, saying nothing about where it came from.
 
 **What the window knows about it.** Nothing on the frontend is told which platform it is on. The palette is
 already `get_commands`, which is `COMMAND_LIST` filtered by role — and `/voice` and `/screens` are in
@@ -713,9 +726,9 @@ Not yet done on Android: **screen sharing**, which wants a `MediaProjection` cap
 Watching one wants a decoder here as well — the JPEG fallback is `openh264`, which is desktop-only for the
 same build reasons `client_screen` is.
 
-A session with **no call in it** still stops when the app is backgrounded: nothing holds the process then,
-the socket ends while it is frozen, and nothing reconnects on resume yet. A call holds it (see
-**The call, once the window is gone**), and the chat rides along for as long as one is up.
+A session survives being backgrounded for as long as it lasts — see **The session, once the window is
+gone** — so the one thing left here is that **nothing reconnects on resume**: a socket the network dropped
+while the phone was asleep is a session to dial again by hand.
 
 ### Input history
 

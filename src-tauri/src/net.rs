@@ -177,6 +177,12 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     state.screens_queued.store(false, Ordering::Relaxed);
     *state.last_sent.lock().unwrap() = Instant::now();
 
+    //THERE IS A SOCKET NOW, AND ON A PHONE THAT IS SOMETHING TO KEEP THE PROCESS AWAKE FOR - IT IS ASKED
+    //FOR HERE BECAUSE THIS IS WHERE THE WINDOW STILL HAS THE SCREEN: 14 REFUSES A FOREGROUND SERVICE
+    //STARTED FROM THE BACKGROUND, WHICH IS EXACTLY WHERE ASKING ANY LATER WOULD BE FROM
+    #[cfg(target_os = "android")]
+    crate::android::hold_session(true);
+
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
 
     //CHECK THE PACKAGE VERSION ONCE PER PROCESS - IT REPORTS THROUGH tx LIKE ANYTHING ELSE, SO IT MUST

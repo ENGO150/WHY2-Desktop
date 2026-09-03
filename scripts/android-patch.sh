@@ -41,12 +41,14 @@ if [ ! -f "$MANIFEST" ]; then
     exit 1
 fi
 
-# THE CALL RECORDS, IT ASKS THE SYSTEM TO ROUTE ITSELF THROUGH THE EARPIECE OR A HEADSET, AND IT KEEPS
-# DOING BOTH WHILE THE WINDOW IS AWAY - WHICH IS A FOREGROUND SERVICE, ITS TYPED PERMISSION (14+), AND
-# THE NOTIFICATION THAT PAYS FOR IT (13+). THE SERVICE ELEMENT GOES WITH THEM, TYPE AND ALL: FROM 10
+# THE CALL RECORDS, IT ASKS THE SYSTEM TO ROUTE ITSELF THROUGH THE EARPIECE OR A HEADSET, AND THE SESSION
+# GOES ON WHILE THE WINDOW IS AWAY - WHICH IS A FOREGROUND SERVICE, ITS TWO TYPED PERMISSIONS (14+), AND
+# THE NOTIFICATION THAT PAYS FOR IT (13+). THE SERVICE ELEMENT GOES WITH THEM, TYPES AND ALL: FROM 10
 # ONWARDS AN UNTYPED microphone SERVICE IS ONE THE MICROPHONE IS CUT OFF FROM ANYWAY
 python3 - "$MANIFEST" <<'PATCH'
+import re
 import sys
+import xml.dom.minidom
 
 path = sys.argv[1]
 
@@ -63,6 +65,7 @@ for name in (
     "MODIFY_AUDIO_SETTINGS",
     "FOREGROUND_SERVICE",
     "FOREGROUND_SERVICE_MICROPHONE",
+    "FOREGROUND_SERVICE_SPECIAL_USE",
     "POST_NOTIFICATIONS",
 ):
     line = '<uses-permission android:name="android.permission.%s" />' % name
@@ -78,21 +81,44 @@ APPLICATION = "    </application>"
 if APPLICATION not in text:
     sys.exit("android-patch: the manifest template changed - no application element to write inside")
 
-if "CallService" not in text:
-    service = (
-        '        <service\n'
-        '            android:name=".CallService"\n'
-        '            android:exported="false"\n'
-        '            android:foregroundServiceType="microphone" />\n\n'
-    )
+# WHATEVER THIS SCRIPT WROTE LAST TIME COMES OUT FIRST, SO THAT A CHANGE HERE REACHES A gen/android THAT
+# HAS ALREADY BEEN PATCHED ONCE - MATCHING ON THE OLD NAME TOO, SINCE THE SERVICE HAS HAD ANOTHER
+text = re.sub(
+    r"\n?[ \t]*<service\b[^>]*\.(?:Session|Call)Service(?:[^>]*/>|[^>]*>.*?</service>)\n?",
+    "\n",
+    text,
+    flags=re.S,
+)
 
-    text = text.replace(APPLICATION, service + APPLICATION, 1)
+# AND THE HOLE IT LEFT, SO THAT RUNNING THIS TWICE IS THE SAME FILE AND NOT THE SAME FILE PLUS A BLANK LINE
+text = re.sub(r"\n{3,}", "\n\n", text)
+
+service = (
+    '        <service\n'
+    '            android:name=".SessionService"\n'
+    '            android:exported="false"\n'
+    '            android:foregroundServiceType="microphone|specialUse">\n'
+    '            <property\n'
+    '                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"\n'
+    '                android:value="Holds the chat connection and the voice call open while the app is in the background" />\n'
+    '        </service>\n\n'
+)
+
+text = text.replace(APPLICATION, service + APPLICATION, 1)
+
+# THE ANCHORS ABOVE ARE STRINGS AND THE MANIFEST IS A TREE, SO WHAT WAS WRITTEN IS READ BACK AS ONE
+# BEFORE IT GOES TO DISK - A HALF-REMOVED ELEMENT IS A BUILD THAT FAILS SEVERAL STEPS LATER, IN THE
+# MANIFEST MERGER, SAYING NOTHING ABOUT WHERE IT CAME FROM
+try:
+    xml.dom.minidom.parseString(text)
+except Exception as broken:
+    sys.exit("android-patch: the patched manifest is not valid XML (%s)" % broken)
 
 with open(path, "w", encoding="utf-8") as manifest:
     manifest.write(text)
 PATCH
 
-echo "android-patch: the manifest asks for the microphone and can hold the call"
+echo "android-patch: the manifest asks for the microphone and can hold the session"
 
 ACTIVITY="$(find "$PROJECT/app/src/main/java" -name MainActivity.kt -print -quit)"
 
@@ -114,6 +140,10 @@ sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/MainActivity.
 
 # THE SERVICE IS A SIBLING OF THE ACTIVITY AND NOT A GENERATED FILE AT ALL, SO IT IS SIMPLY WRITTEN BESIDE
 # IT - THE PACKAGE IS THE ONE THE ACTIVITY DECLARED, WHICH IS ALSO THE DIRECTORY IT SITS IN
-sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/CallService.kt" > "$(dirname "$ACTIVITY")/CallService.kt"
+sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/SessionService.kt" > "$(dirname "$ACTIVITY")/SessionService.kt"
 
-echo "android-patch: the activity can ask for the microphone, and the service can hold the call"
+# AND WHAT IT USED TO BE CALLED GOES, SINCE gen/android IS ONLY EVER ADDED TO: A CLASS LEFT LYING THERE
+# WOULD COMPILE INTO THE APK AS A SERVICE NOTHING STARTS
+rm -f "$(dirname "$ACTIVITY")/CallService.kt"
+
+echo "android-patch: the activity can ask for the microphone, and the service can hold the session"

@@ -63,5 +63,5 @@ fn activity_class()
     let package = identifier.replace('-', "_");
 
     println!("cargo::rustc-env=ANDROID_ACTIVITY_CLASS={package}.MainActivity");
-    println!("cargo::rustc-env=ANDROID_SERVICE_CLASS={package}.CallService");
+    println!("cargo::rustc-env=ANDROID_SERVICE_CLASS={package}.SessionService");
 }
