@@ -2557,10 +2557,16 @@ function App()
                 </>
             )}
 
-            {/* WHAT THE SERVER SAID IN PASSING - IT IS NOT A MESSAGE, AND IT DOES NOT BELONG IN THE PANE */}
+            {/* WHAT THE SERVER SAID IN PASSING - IT IS NOT A MESSAGE, AND IT DOES NOT BELONG IN THE PANE.
+                IT HANGS FROM THE TOP, WHERE IT COVERS A HEADER THAT SAYS THE SAME THING WHENEVER IT IS
+                DISMISSED - AT THE BOTTOM IT SAT ON THE COMPOSER, WHICH IS WHERE SOMEBODY IS TYPING WHILE
+                IT IS UP. THE INSET IS ITS OWN: THIS IS PINNED TO main AND NOT INSIDE A COLUMN THAT HAS
+                ALREADY PAID FOR THE NOTCH */}
             {popupMessage && (
-                <div className="rise absolute bottom-6 left-1/2 z-50 max-w-[80vw] -translate-x-1/2 rounded-app border border-border bg-overlay px-4 py-2 text-sm text-muted shadow-2xl">
-                    {popupMessage}
+                <div className="fall safe-top pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center">
+                    <div className="mt-4 max-w-[80vw] rounded-app border border-border bg-overlay px-4 py-2 text-sm text-muted shadow-2xl">
+                        {popupMessage}
+                    </div>
                 </div>
             )}
 

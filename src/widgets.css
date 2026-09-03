@@ -128,3 +128,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 {
     animation: rise 120ms ease-out;
 }
+
+/* AND THE SAME THING FOR WHAT HANGS FROM THE TOP OF THE WINDOW: IT COMES DOWN OUT OF THE EDGE IT IS
+   PINNED TO, RATHER THAN UP THROUGH THE HEADER IT IS STANDING ON */
+@keyframes fall
+{
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.fall
+{
+    animation: fall 120ms ease-out;
+}
