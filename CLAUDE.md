@@ -765,6 +765,9 @@ chat app has settled on:
   (it reads that render's state, so a dependency list would be the same list twice and the stale one would
   close nothing), closes whatever is on top and answers `true`. With nothing in front it answers `false`, the
   callback stands aside for one press, and back means what it always did.
+- **The keyboard hints go**, since a soft keyboard has none of those keys on it: the palette's
+  `↑↓ select · tab complete · esc dismiss` and the settings footer's `Arrows move and change, esc closes.`
+  are both drawn only where `narrow` is false. The footer's other two lines are not hints and stay.
 - Every dialog is the whole screen rather than a card in a darkened room (`dialogWrap`/`dialogCard`), the
   composer is a pill, and the composer does not take the focus on its own: a soft keyboard is half the screen,
   and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
@@ -888,6 +891,12 @@ There are **two** tables: `ANSI` is the lifted set the names and the message tex
 on a near-black surface rather than in a terminal, and `black` on black is not a name anybody could read —
 while `ANSI_TRUE` is the unmodified set, used for the swatch in the color palette, where the point is to show
 which color is actually being picked.
+
+**Our own name is painted in our own color**, the same as everybody else's — `theme.rs::render` in the TUI
+makes no exception for the person reading, and neither does `renderChat`. The accent is only what is left
+where there is no color to use (nobody picked one, or `disable_colors` is on), which is what still says
+"this one is you"; painting our own name accent regardless made `/ucolor` a command with no visible effect
+in the window that ran it.
 
 ### Adding a Tauri plugin
 

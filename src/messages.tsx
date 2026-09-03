@@ -94,6 +94,11 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //BADGE ON EVERY ONE OF THEM SAYS NOTHING THE COLUMN'S OWN HEADING HAS NOT SAID ALREADY
         const whisper = message.kind === "private" && !dm;
 
+        //OUR OWN NAME IS PAINTED IN THE COLOUR WE PICKED, THE SAME AS EVERYBODY ELSE'S - THE TUI MAKES NO
+        //EXCEPTION FOR THE PERSON READING AND NEITHER DOES THIS. THE ACCENT IS WHAT IS LEFT WHERE THERE IS
+        //NO COLOUR TO USE (NOBODY PICKED ONE, OR disable_colors IS ON), SO "THIS ONE IS YOU" SURVIVES
+        const color = messageColor(config, message.username_color);
+
         return (
             <div
                 key={key}
@@ -107,8 +112,8 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     {!grouped && (
                         <div className="flex items-baseline gap-2">
                             <span
-                                className={`text-[15px] font-semibold ${own ? "text-accent" : ""}`}
-                                style={{ color: own ? undefined : messageColor(config, message.username_color) }}
+                                className={`text-[15px] font-semibold ${own && !color ? "text-accent" : ""}`}
+                                style={{ color }}
                             >
                                 {author}
                             </span>

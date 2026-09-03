@@ -241,7 +241,8 @@ export function SettingsDialog(
                             <span className="flex-1 text-xs text-faint">
                                 {box.confirm
                                     ? "Restarting drops every client on the server."
-                                    : unsaved ? "Nothing leaves this window until you save." : "Arrows move and change, esc closes."}
+                                    : unsaved ? "Nothing leaves this window until you save."
+                                    : narrow ? "" : "Arrows move and change, esc closes."}
                             </span>
 
                             {actions.map(({ row, index }) =>

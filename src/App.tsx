@@ -2495,7 +2495,9 @@ function App()
                                 <div className={`rise absolute bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl ${narrow ? "inset-x-2" : "inset-x-4"}`}>
                                     <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
                                         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{paletteTitle}</span>
-                                        {active && <span className="text-[11px] text-faint">↑↓ select · tab complete · esc dismiss</span>}
+                                        {/* THE KEYS THIS IS DRIVEN WITH, WHERE THERE ARE ANY: A PHONE HAS A
+                                            SOFT KEYBOARD WITH NONE OF THEM ON IT, AND A ROW IS TAPPED THERE */}
+                                        {active && !narrow && <span className="text-[11px] text-faint">↑↓ select · tab complete · esc dismiss</span>}
                                     </div>
 
                                     <div className="scroller" style={{ maxHeight: `${PALETTE_ROWS * 2.1}rem` }}>
