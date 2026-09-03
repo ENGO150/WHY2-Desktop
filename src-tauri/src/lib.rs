@@ -90,7 +90,6 @@ use settings::
 #[cfg(screen)]
 use screen::screen_frames;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 //WHAT THE WINDOW'S OWN FRAME IS. THIS IS THE ONE THING THE PAGE IS TOLD ABOUT THE PLATFORM IT IS ON -
 //EVERYTHING ELSE IT ASKS AS "CAN THIS BUILD DO IT" AND IS ANSWERED BY get_commands - BECAUSE A TITLE BAR
 //IS NOT A CAPABILITY: IT IS EITHER DRAWN BY SOMEBODY ELSE OR IT IS OURS TO DRAW, AND ONLY THE TARGET
@@ -109,6 +108,7 @@ fn window_chrome() -> &'static str
     { "buttons" }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run()
 {
     let builder = tauri::Builder::default()

@@ -140,7 +140,12 @@ Two things the compiler will not catch when moving view code out of `App.tsx`. A
 declare it still compiles against `window.screen` — it is caught only because the *shape* is wrong, and it
 would not be if the shapes happened to match. And a `#[cfg(screen)]` or a CSS comment sitting at the seam of
 a cut belongs to what follows it: a stray one silently made a `#[tauri::command]` desktop-only
-once, which compiled on both targets and only failed at the Android link.
+once, which compiled on both targets and only failed at the Android link. The same shape has a worse
+case in `lib.rs`: **`#[cfg_attr(mobile, tauri::mobile_entry_point)]` must sit on `run()` and nothing
+else**. A `fn` inserted between the two takes the attribute, and then the phone's entry point is that
+function — the app compiles, the APK builds, and the activity opens on the splash and stays there,
+`run()` never called and the whole of Tauri dead-stripped out of the library (the APK loses tens of
+megabytes, which is the visible half of it).
 
 ### The event bridge (the thing to understand first)
 
