@@ -586,8 +586,17 @@ app that speaks JNI:
   `ensure_microphone` calls them. It is asked **when the call is started and not at launch** — `send_input`
   holds the `/voice` packet back until the answer is in, so saying yes to the dialog is also joining. The
   refusal is watched for beside the grant because Android answers for the user once they have said no twice,
-  and answers instantly. `JNI_OnLoad` is also where the activity's class is looked up: a tokio worker has
-  only the system class loader and would not find it.
+  and answers instantly. `prepare()` is also where the activity's class is looked up, and it goes through the
+  application's own class loader: a tokio worker is attached with the system one, which knows nothing this
+  app wrote.
+  Whether the permission is *already* there is asked of the **application** as well (`context_granted`,
+  `Context.checkSelfPermission` on the object `ndk_context` was handed), because that one is always
+  standing: a permission allowed in Android's own app settings is then seen even where the activity cannot
+  be reached at all, which is the one answer a user who has already said yes must never get again. The two
+  ways of failing to ask are kept apart — no activity on screen, and the Java side not reached at all —
+  since the second is a bug here rather than something to send somebody to Settings for, and `warn` puts it
+  in logcat under `WHY2` beside the line in the pane. `prepare()` is retried until it works for the same
+  reason: one lookup that failed early used to be a microphone that never opened again.
 
 The class name comes from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
 wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because

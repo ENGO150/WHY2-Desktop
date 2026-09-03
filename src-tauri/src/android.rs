@@ -30,7 +30,7 @@ use jni::
 {
     JavaVM,
     jni_sig,
-    objects::{ JClass, JValue },
+    objects::{ JClass, JObject, JValue },
     refs::Global,
     strings::JNIString,
     sys::{ jint, JNI_VERSION_1_6 },
@@ -47,8 +47,19 @@ use crate::emit::say;
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
+static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
-static PREPARED: Once = Once::new();
+static CONTEXT: Once = Once::new();
+static PREPARED: OnceLock<()> = OnceLock::new();
+
+//THE PERMISSION ITSELF, WHICH IS ASKED ABOUT FROM BOTH SIDES: THE ACTIVITY ASKS FOR IT, AND THE
+//APPLICATION IS ENOUGH TO SEE WHETHER IT IS ALREADY THERE
+const RECORD_AUDIO: &str = "android.permission.RECORD_AUDIO";
+
+//WHAT PackageManager.PERMISSION_GRANTED IS. IT IS A CONSTANT ON A CLASS NOBODY WOULD OTHERWISE LOAD
+const GRANTED: i32 = 0;
+
+const TAG: &str = "WHY2";
 
 //HOW LONG THE CALL WAITS ON THE PERMISSION DIALOG BEFORE GIVING UP ON IT. THE ANSWER IS A TAP AWAY, AND
 //A USER WHO WALKED OFF INSTEAD IS ONE WHO DID NOT WANT A CALL
@@ -73,7 +84,12 @@ pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_v
 //QUESTION BELOW, SINCE A CALL THAT ARRIVES FIRST SHOULD NOT DEPEND ON WHERE ELSE IT WAS ASKED FROM
 pub(crate) fn prepare()
 {
-    PREPARED.call_once(|| { ready(); });
+    if PREPARED.get().is_some() { return }
+
+    //AND IT IS *NOT* REMEMBERED AS DONE UNLESS IT WAS: A LOOKUP THAT FAILED ONCE - BECAUSE IT WAS ASKED
+    //TOO EARLY, OR FROM A THREAD THAT COULD NOT ATTACH - IS A MICROPHONE THAT NEVER OPENS AGAIN, WHICH IS
+    //TOO MUCH TO HANG ON ONE ATTEMPT. EVERY STEP INSIDE IS A OnceLock OR A Once, SO A SECOND RUN IS FREE
+    if ready().is_some() { let _ = PREPARED.set(()); }
 }
 
 fn ready() -> Option<()>
@@ -90,11 +106,19 @@ fn ready() -> Option<()>
         let application = env.call_static_method(&thread, JNIString::new("currentApplication"),
             jni_sig!("()Landroid/app/Application;"), &[])?.l()?;
 
-        let application = env.new_global_ref(&application)?;
+        //THE CONTEXT OUTLIVES EVERYTHING THAT READS IT - cpal ASKS FOR IT ON EVERY ENUMERATION, AND THE
+        //PERMISSION CHECK BELOW IS A METHOD ON IT - SO THE REFERENCE IS KEPT FOR THE LIFE OF THE PROCESS
+        let application = APPLICATION.get_or_init(|| env.new_global_ref(&application)
+            .expect("the application object could not be kept"));
+
+        CONTEXT.call_once(||
+        {
+            unsafe { ndk_context::initialize_android_context(vm.get_raw().cast(), application.as_raw().cast()) };
+        });
 
         //AND THE ACTIVITY THROUGH THE APP'S OWN CLASS LOADER RATHER THAN THROUGH FindClass: A TOKIO
         //WORKER IS ATTACHED WITH THE SYSTEM LOADER, WHICH KNOWS NOTHING THIS APP WROTE
-        let loader = env.call_method(&application, JNIString::new("getClassLoader"),
+        let loader = env.call_method(&**application, JNIString::new("getClassLoader"),
             jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
 
         let name = env.new_string(ACTIVITY)?;
@@ -106,12 +130,50 @@ fn ready() -> Option<()>
 
         let _ = ACTIVITY_CLASS.set(env.new_global_ref(&activity)?);
 
-        //THE CONTEXT OUTLIVES EVERYTHING THAT READS IT, SO THE REFERENCE IS NEVER GIVEN BACK
-        unsafe { ndk_context::initialize_android_context(vm.get_raw().cast(), application.as_raw().cast()) };
+        Ok(())
+    }).ok()
+}
 
-        std::mem::forget(application);
+//WHAT WENT WRONG, WHERE A USER CANNOT BE SHOWN IT: EVERY ANSWER HERE IS A JAVA CALL THAT EITHER WORKED OR
+//DID NOT, AND `adb logcat -s WHY2` IS THE ONLY PLACE THAT DIFFERENCE IS VISIBLE FROM THE OUTSIDE
+fn warn(message: &str)
+{
+    let Some(vm) = VM.get() else { return };
+
+    let _ = vm.attach_current_thread(|env| -> jni::errors::Result<()>
+    {
+        let class = env.find_class(JNIString::new("android/util/Log"))?;
+
+        let tag = env.new_string(TAG)?;
+        let text = env.new_string(message)?;
+
+        env.call_static_method(&class, JNIString::new("w"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)I"),
+            &[JValue::Object(&tag), JValue::Object(&text)])?;
 
         Ok(())
+    });
+}
+
+//WHETHER THE PERMISSION IS THERE, ASKED OF THE APPLICATION AND NOT OF THE ACTIVITY. checkSelfPermission IS
+//A METHOD ON ANY Context, AND THE APPLICATION IS THE ONE CONTEXT THAT IS ALWAYS STANDING - A PERMISSION
+//GRANTED IN ANDROID'S OWN SETTINGS IS THEREFORE SEEN EVEN WHERE THE ACTIVITY CANNOT BE REACHED AT ALL,
+//WHICH IS THE ONE ANSWER A USER WHO HAS ALREADY SAID YES SHOULD NEVER BE ASKED FOR AGAIN
+fn context_granted() -> Option<bool>
+{
+    prepare();
+
+    let vm = VM.get()?;
+    let application = APPLICATION.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<bool>
+    {
+        let name = env.new_string(RECORD_AUDIO)?;
+
+        let answer = env.call_method(&**application, JNIString::new("checkSelfPermission"),
+            jni_sig!("(Ljava/lang/String;)I"), &[JValue::Object(&name)])?.i()?;
+
+        Ok(answer == GRANTED)
     }).ok()
 }
 
@@ -130,9 +192,12 @@ fn ask(method: &str) -> Option<bool>
     }).ok()
 }
 
+//THE TWO WAYS OF ASKING THE SAME QUESTION, AND EITHER ONE SAYING YES IS YES: THE ACTIVITY IS THE FIRST
+//BECAUSE IT IS THE THING THAT PUT THE DIALOG UP, AND THE APPLICATION IS THE ONE THAT ANSWERS WHEN THERE
+//IS NO ACTIVITY TO REACH - A GRANT MADE IN ANDROID'S APP SETTINGS IS THE SAME GRANT EITHER WAY
 pub(crate) fn microphone_granted() -> bool
 {
-    ask("microphoneGranted").unwrap_or(false)
+    ask("microphoneGranted") == Some(true) || context_granted() == Some(true)
 }
 
 //THE MICROPHONE IS ASKED FOR WHEN THE CALL IS AND NOT AT LAUNCH: A PERMISSION DIALOG IN FRONT OF A CHAT
@@ -143,12 +208,30 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
 {
     if microphone_granted() { return true }
 
-    //false HERE IS AN ACTIVITY THAT IS NOT ON SCREEN TO ASK FROM
-    if ask("requestMicrophone") != Some(true)
+    //THE TWO WAYS THIS FAILS ARE NOT THE SAME THING AND MUST NOT READ AS ONE: false IS AN ACTIVITY THAT
+    //IS NOT ON SCREEN TO ASK FROM, AND None IS THE JAVA SIDE NOT REACHED AT ALL - THE SECOND IS A BUG IN
+    //THIS APP, AND A USER TOLD TO GO AND ALLOW SOMETHING THEY HAVE ALREADY ALLOWED LEARNS NOTHING
+    match ask("requestMicrophone")
     {
-        say(app, ChatMessage::error("The microphone is off. Allow it for WHY2 in Android's app settings."));
+        Some(true) => {},
 
-        return false;
+        Some(false) =>
+        {
+            warn("no activity to ask for the microphone from");
+
+            say(app, ChatMessage::error("Android would not open the microphone dialog. Allow the microphone for WHY2 in Android's app settings."));
+
+            return false;
+        },
+
+        None =>
+        {
+            warn(&format!("{ACTIVITY} could not be reached - the microphone cannot be asked for"));
+
+            say(app, ChatMessage::error("WHY2 could not reach Android to ask for the microphone. Allow the microphone for WHY2 in Android's app settings."));
+
+            return false;
+        },
     }
 
     let deadline = std::time::Instant::now() + PROMPT_WAIT;
@@ -163,7 +246,7 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
         //REFUSAL IS WATCHED FOR AS WELL, RATHER THAN SPENDING THE WHOLE MINUTE ON A DIALOG NOBODY SAW
         if ask("microphoneDenied") == Some(true)
         {
-            say(app, ChatMessage::error("The microphone is off. Allow it for WHY2 in Android's app settings."));
+            say(app, ChatMessage::error("The microphone was refused. Allow it for WHY2 in Android's app settings."));
 
             return false;
         }
