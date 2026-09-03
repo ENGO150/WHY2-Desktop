@@ -39,6 +39,16 @@ its `chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options
 assuming a bug in this repo — in the checkout at `/mnt/data/Rust/WHY2` if there is one, otherwise in the copy
 cargo fetched under `~/.cargo/git`. This app is a thin presentation layer over it.
 
+That `wgpu` is also the one place a `cargo update` can break the build without a line of this code
+changing, and it breaks **Windows only**: `wgpu-hal`'s dx12 backend asks for `windows` `0.62`, while the
+`gpu-allocator` it hands its device to asks for `>=0.53, <=0.62` — a range that also matches the `0.61`
+half the rest of the graph is on, and which excludes `0.62.1` and up, `<=0.62` meaning `0.62.0`. Resolved
+either way but the same way for both, the two see one `ID3D12Device`; resolved apart, `wgpu-hal` will not
+compile. So **`windows` is pinned to `0.62.0` in `Cargo.lock`**, which is the only version both requirements
+accept, and `gpu-allocator`'s entry is pointed at it rather than at `0.61.3`. A `cargo update` that takes
+`windows` to `0.62.2` again is a green Linux, macOS and Android build and a wall of mismatched-types errors
+out of `wgpu-hal` on the Windows runner.
+
 `chat/src/bin/client/` is the crate's own terminal client (ratatui). **It is the reference implementation for
 everything this app does** — `tui/event.rs` maps every `ClientEvent` to UI state, `mod.rs::submit` handles every
 line the user types, and `tui/state.rs::reset_session` lists the globals a session has to put back. When adding a
