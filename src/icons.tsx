@@ -52,6 +52,12 @@ export const ICONS: Record<string, string[]> =
     monitor: ["M3 5h18v11H3z", "M9 20h6", "M12 16v4"],
     at: ["M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"],
     menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
+
+    //THE WINDOW'S OWN THREE, WHICH EVERY DESKTOP HAS DRAWN THE SAME WAY FOR THIRTY YEARS - A LINE, A
+    //SQUARE, AND A SQUARE STANDING OFF ANOTHER. THE FOURTH IS close, WHICH WAS ALREADY HERE
+    win_minimize: ["M6 12h12"],
+    win_maximize: ["M5 5h14v14H5z"],
+    win_restore: ["M8 8h11v11H8z", "M16 8V5H5v11h3"],
 };
 
 //AN ACCESS UNIT IS A KEYFRAME WHEN IT CARRIES AN IDR SLICE, OR THE PARAMETER SETS THAT COME IN FRONT OF

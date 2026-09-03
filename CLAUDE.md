@@ -118,7 +118,7 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 `SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
-`servers.tsx`, `login.tsx`, `tofu.tsx`.
+`servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`.
 
 **`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
 mark that stands on it until the window is ready. Everything else arrives with the bundle, and on a phone that
@@ -308,6 +308,37 @@ cfg: it is the same file, the same commands and the same 0600.
 
 The app used to be the terminal client redrawn cell for cell. It is not any more: the layout is the one every
 chat program has settled on, because that is the one a user already knows how to read.
+
+**The frame is ours.** `decorations` is `false`, so nothing outside the page draws a title bar, and
+`titlebar.tsx` draws the one the window has: 32 pixels of `deep` across the top, the mark and the name on the
+left, the three buttons on the right, and the whole width between them a place to pick the window up by
+(`data-tauri-drag-region`, which the crate answers — it also takes the double-click). It is above the shell
+rather than inside it: `App.tsx` builds the columns into a `shell` const and returns it wrapped in a flex
+column, so the bar is a row of its own and every `absolute inset-0` overlay inside `main` — the login screen,
+every dialog — lands under the bar rather than over it. It is `relative z-50` for the one case that would
+otherwise beat it: a narrow window's drawers are `fixed` against the viewport, and one sliding over the only
+way to close the program is not a drawer, it is a trap.
+
+`window_chrome` is the one thing this side is ever told about the platform it is on — every other such
+question is "can this build do it", which `get_commands` answers (see **Android**) — because a title bar is
+not a capability: it is either somebody else's to draw or ours, and only the target says which.
+
+- **`buttons`** (Windows, Linux) is the whole bar as described. It also carries the **resize edges**: eight
+  `fixed` strips, three pixels along the sides and ten in the corners, each calling `startResizeDragging`.
+  They are not decoration — an undecorated window on most of X11 cannot be resized at all without them — and
+  they are dropped while the window is maximized, where there is no edge to pull and a strip along the glass
+  is a strip over somebody's scrollbar.
+- **`native`** (macOS) keeps the system's traffic lights, because a Mac window without them is a broken
+  window. `tauri.macos.conf.json` is that: the same window with `decorations` left on, `titleBarStyle`
+  `Overlay` and `hiddenTitle`, so the bar is transparent and the page runs under it. **A platform config
+  replaces the array it overrides rather than merging into it**, which is why that file repeats the title and
+  the size. The bar is then drawn with its left 78 pixels left empty and no buttons of its own.
+- **`none`** is a phone — and a browser, where `invoke` never answers — and there is no bar and no column
+  holding one, the shell being returned as it always was.
+
+The four window commands the bar calls (and `start_dragging`, `internal_toggle_maximize` for the drag region)
+are each their own permission in `capabilities/default.json`: `core:default` does not carry them, and a
+missing one is a button that does nothing.
 
 Three columns, and a screen in front of them while there is no session — this is the wide shape, and the
 narrow one (a phone, or a window dragged down to one) turns the outer two into drawers over the middle; see

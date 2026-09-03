@@ -91,6 +91,24 @@ use settings::
 use screen::screen_frames;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+//WHAT THE WINDOW'S OWN FRAME IS. THIS IS THE ONE THING THE PAGE IS TOLD ABOUT THE PLATFORM IT IS ON -
+//EVERYTHING ELSE IT ASKS AS "CAN THIS BUILD DO IT" AND IS ANSWERED BY get_commands - BECAUSE A TITLE BAR
+//IS NOT A CAPABILITY: IT IS EITHER DRAWN BY SOMEBODY ELSE OR IT IS OURS TO DRAW, AND ONLY THE TARGET
+//SAYS WHICH. WINDOWS AND LINUX RUN UNDECORATED (tauri.conf.json), MACOS KEEPS ITS TRAFFIC LIGHTS OVER
+//THE PAGE (tauri.macos.conf.json), AND A PHONE HAS NO WINDOW FRAME TO SPEAK OF
+#[tauri::command]
+fn window_chrome() -> &'static str
+{
+    #[cfg(target_os = "android")]
+    { "none" }
+
+    #[cfg(target_os = "macos")]
+    { "native" }
+
+    #[cfg(not(any(target_os = "android", target_os = "macos")))]
+    { "buttons" }
+}
+
 pub fn run()
 {
     let builder = tauri::Builder::default()
@@ -193,6 +211,7 @@ pub fn run()
             get_servers,
             save_server,
             remove_server,
+            window_chrome,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

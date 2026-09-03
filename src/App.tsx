@@ -66,6 +66,8 @@ import type { ServerForm } from "./servers";
 import { ServerRail, AddServerDialog } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
+import type { WindowChrome } from "./titlebar";
+import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import { renderNotice, renderChat, renderBlock } from "./messages";
 import
@@ -124,9 +126,14 @@ function App()
     const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [], speaker: null });
     const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null });
 
+    //WHOSE THE WINDOW'S FRAME IS - THE ONE THING THE PAGE IS TOLD ABOUT WHAT IT IS RUNNING ON. IT STARTS
+    //AS THE ANSWER THAT DRAWS NOTHING, WHICH IS ALSO WHAT A BROWSER (WHERE THERE IS NO invoke) KEEPS
+    const [chrome, setChrome] = useState<WindowChrome>("none");
+
     //THE SCREEN WINDOW: WHICH OF OURS TO SHARE, AND WHOSE TO WATCH. THE MONITORS ARE ENUMERATED WHEN IT
     //OPENS AND NOT KEPT - ONE PLUGGED IN MID-SESSION IS SUPPOSED TO SHOW UP WITHOUT A RECONNECT - AND THE
-    //SHARERS ARE WHATEVER THE SERVER LAST ANSWERED, SINCE IT NEVER SAYS ON ITS OWN THAT SOMEBODY STARTED
+    //SHARERS ARE WHATEVER THE SERVER LAST ANSWERED: IT SAYS WHEN SOMEBODY STARTS, BUT WITH A NAME AND
+    //NOT THE ID A ROW NEEDS, SO THE LIST IS STILL A PHOTOGRAPH OF THE MOMENT IT WAS ASKED FOR
     const [screensOpen, setScreensOpen] = useState(false);
     const [monitors, setMonitors] = useState<string[]>([]);
     const [sharers, setSharers] = useState<ScreenUser[]>([]);
@@ -476,6 +483,11 @@ function App()
     useEffect(() =>
     {
         invoke<ClientConfig>("get_client_config").then(setConfig).catch(console.error);
+
+        //WHOSE THE WINDOW'S FRAME IS. IT IS ASKED ONCE AND NEVER CHANGES, AND UNTIL IT ANSWERS THE PAGE
+        //DRAWS NO BAR - WHICH IS THE RIGHT WAY ROUND: A BAR THAT APPEARED AND WENT AGAIN WOULD BE A
+        //LAYOUT THAT MOVED UNDER SOMEBODY, AND ON EVERY DESKTOP THE ANSWER IS BACK BEFORE THE MARK FADES
+        invoke<WindowChrome>("window_chrome").then(setChrome).catch(console.error);
 
         //THE LIST IS THE FIRST THING THE WINDOW ASKS FOR, AND IT IS WHAT THE PROGRAM OPENS ON: WHICH
         //SERVER THIS IS GOING TO BE IS THE ONE QUESTION A LIST CANNOT ANSWER BY ITSELF, AND A SESSION
@@ -2257,7 +2269,7 @@ function App()
     const tofuBox = tofu && (
         <TofuDialog tofu={tofu} typed={tofuTyped} setTyped={setTofuTyped} answer={answerTofu} />
     );
-    return (
+    const shell = (
         <main
             //A CLICK ANYWHERE THAT IS NOT THE COMPOSER PUTS THE PALETTE AWAY - IT IS A MENU LIKE ANY OTHER,
             //AND THE NEXT KEYSTROKE IN THE LINE BRINGS IT STRAIGHT BACK
@@ -2270,7 +2282,9 @@ function App()
             //h-dvh AND NOT h-screen: A PHONE'S VIEWPORT IS THE ONE THING THAT CHANGES HEIGHT WHILE THE
             //PAGE IS UP, AND WITH interactive-widget=resizes-content THE SOFT KEYBOARD IS EXACTLY THAT.
             //THE INSETS ARE PAID BACK HERE ONCE, SO EVERY COLUMN INSIDE IS ALREADY CLEAR OF THE NOTCH
-            className="noise-overlay safe-top safe-bottom relative flex h-dvh w-screen overflow-hidden bg-chat text-[15px] text-text"
+            //h-dvh IS THE WINDOW WHERE WE ARE THE ONLY THING IN IT, AND A COLUMN OF WHAT IS LEFT UNDER
+            //THE TITLE BAR WHERE THERE IS ONE
+            className={`noise-overlay safe-top safe-bottom relative flex overflow-hidden bg-chat text-[15px] text-text ${chrome === "none" ? "h-dvh w-screen" : "min-h-0 w-full flex-1"}`}
         >
             {connected && (
                 <>
@@ -2588,6 +2602,15 @@ function App()
             {loginScreen}
             {tofuBox}
         </main>
+    );
+
+    //AND THE FRAME AROUND IT, WHERE IT IS OURS TO DRAW. A PHONE AND A BROWSER GET THE SHELL ALONE - THE
+    //BAR IS NOT HIDDEN THERE, IT DOES NOT EXIST, AND NEITHER DOES THE COLUMN THAT WOULD HOLD IT
+    return chrome === "none" ? shell : (
+        <div className="flex h-dvh w-screen flex-col overflow-hidden bg-deep">
+            <TitleBar chrome={chrome} title="WHY2" />
+            {shell}
+        </div>
     );
 }
 
