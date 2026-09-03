@@ -28,10 +28,40 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#050405" />
         <title>WHY2</title>
+
+        <!-- THE FIRST PAINT, AND THE ONLY STYLING IN THIS PROJECT THAT IS NOT IN index.css: EVERYTHING
+             ELSE ARRIVES WITH THE BUNDLE, AND ON A PHONE THAT IS A FEW SECONDS OF SOMETHING TO LOOK AT.
+             SO THE PAGE IS THE WINDOW'S OWN SURFACE FROM THE VERY FIRST FRAME - NOT THE WEBVIEW'S
+             DEFAULT - AND THE MARK STANDS ON IT, BREATHING, UNTIL createRoot CLEARS #root OVER IT -->
+        <style>
+            html, body { margin: 0; height: 100%; background: #050405; }
+
+            #boot
+            {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #boot img
+            {
+                width: 96px;
+                height: 96px;
+                animation: boot 1.4s ease-in-out infinite;
+            }
+
+            @keyframes boot
+            {
+                0%, 100% { opacity: 0.3; }
+                50%      { opacity: 1; }
+            }
+        </style>
     </head>
 
     <body>
-        <div id="root"></div>
+        <div id="root"><div id="boot"><img src="/why2.svg" alt="WHY2" /></div></div>
         <script type="module" src="/src/main.tsx"></script>
     </body>
 </html>

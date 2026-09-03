@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- WHAT ANDROID DRAWS BETWEEN THE LAUNCHER AND THE FIRST FRAME OF THE PAGE. THE ACTIVITY'S WINDOW IS
+     UP LONG BEFORE THE WEBVIEW HAS ANYTHING IN IT, AND ITS DEFAULT BACKGROUND IS A BLACK RECTANGLE -
+     THIS IS THE SAME MARK ON THE SAME SURFACE index.html PAINTS THE MOMENT IT CAN, SO THE TWO ARE ONE
+     PICTURE AND THERE IS NOTHING IN BETWEEN THEM TO SEE.
+     THE MARK IS THE ADAPTIVE ICON'S OWN FOREGROUND LAYER, WHICH IS ALREADY THE MARK ALONE ON NOTHING -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+
+    <item android:gravity="center" android:width="192dp" android:height="192dp">
+        <bitmap android:src="@mipmap/ic_launcher_foreground" android:gravity="center" />
+    </item>
+</layer-list>

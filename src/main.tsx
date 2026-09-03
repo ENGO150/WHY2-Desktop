@@ -20,6 +20,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 
+//THE MARK index.html STOOD UP WHILE THIS WAS STILL ON ITS WAY. THE CONTAINER IS CLEARED BY THE FIRST
+//RENDER ANYWAY - SAYING IT HERE IS THE DIFFERENCE BETWEEN A SPLASH THAT GOES AND ONE THAT MIGHT
+document.getElementById("boot")?.remove();
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
         <App />

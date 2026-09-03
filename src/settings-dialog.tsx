@@ -27,7 +27,7 @@ import { RESTART_LABEL, DEFAULT_DEVICE, unsavedRows } from "./settings";
 //Restart server ROWS ARE STILL ROWS AS FAR AS THE KEYBOARD IS CONCERNED, DRAWN AS BUTTONS IN THE FOOTER
 export function SettingsDialog(
 {
-    settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard,
+    settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard, narrow,
     onKeyDown, setToggle, setVolume, setDevice, activateRow, commitEdit, editSettings, close,
 }: {
     settings: SettingsBox;
@@ -36,6 +36,7 @@ export function SettingsDialog(
     pickerRowRef: React.RefObject<HTMLDivElement | null>;
     dialogWrap: string;
     dialogCard: (wide: string) => string;
+    narrow: boolean;
     onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
     setToggle: (index: number, on: boolean) => void;
     setVolume: (index: number, percent: number, max: number) => void;
@@ -55,8 +56,16 @@ export function SettingsDialog(
         const listed = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row !== "action");
         const actions = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row === "action");
 
+        //A ROW IS A NAME AND A CONTROL BESIDE IT UNTIL THERE IS NOT THE ROOM, AND ON A PHONE THERE NEVER
+        //IS: A 220px CONTROL AND A 24px GAP LEAVE A SETTING'S NAME ABOUT THREE LETTERS AND AN ELLIPSIS.
+        //SO THE CONTROL GOES UNDER THE NAME AND TAKES THE WIDTH - EXCEPT A SWITCH, WHICH IS SMALL ENOUGH
+        //TO STAY WHERE EVERY OTHER SETTINGS SCREEN PUTS IT, ON THE RIGHT OF THE THING IT TURNS OFF
+        const stacks = (item: SettingsItem) => narrow && item.value.kind !== "toggle";
+
         const control = (item: SettingsItem, index: number) =>
         {
+            const wide = stacks(item) ? "w-full" : "w-[220px]";
+
             if (item.value.kind === "toggle")
             {
                 const on = item.value.value;
@@ -69,7 +78,7 @@ export function SettingsDialog(
                 const { percent, max, step } = item.value.value;
 
                 return (
-                    <div className="flex items-center gap-3">
+                    <div className={`flex items-center gap-3 ${stacks(item) ? "w-full" : ""}`}>
                         <Icon name={percent === 0 ? "speaker_off" : "speaker"} className={`h-4 w-4 ${percent === 0 ? "text-faint" : "text-muted"}`} />
                         <input
                             type="range"
@@ -79,7 +88,7 @@ export function SettingsDialog(
                             value={percent}
                             onChange={(event) => setVolume(index, Number(event.currentTarget.value), max)}
                             onKeyDown={(event) => event.stopPropagation()}
-                            className="slider w-[150px]"
+                            className={`slider ${stacks(item) ? "min-w-0 flex-1" : "w-[150px]"}`}
                             style={{ accentColor: "var(--accent)" }}
                         />
                         <span className="w-[4ch] text-right font-mono text-xs text-muted">{percent}%</span>
@@ -97,7 +106,7 @@ export function SettingsDialog(
                     <button
                         type="button"
                         onClick={(event) => { event.stopPropagation(); activateRow(index); }}
-                        className="flex w-[220px] items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong"
+                        className={`flex ${wide} items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
                     >
                         <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
                         <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
@@ -134,7 +143,7 @@ export function SettingsDialog(
                             settingsRef.current?.focus();
                         }}
                         onBlur={commitEdit}
-                        className="w-[220px] rounded-app border border-accent bg-deep px-3 py-1.5 text-sm text-accent caret-accent outline-none"
+                        className={`${wide} rounded-app border border-accent bg-deep px-3 py-1.5 text-sm text-accent caret-accent outline-none`}
                         spellCheck={false}
                     />
                 );
@@ -146,7 +155,7 @@ export function SettingsDialog(
                 <button
                     type="button"
                     onClick={(event) => { event.stopPropagation(); activateRow(index); }}
-                    className="w-[220px] truncate rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong"
+                    className={`${wide} truncate rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
                 >
                     {text || <span className="text-faint">empty</span>}
                 </button>
@@ -194,6 +203,7 @@ export function SettingsDialog(
 
                             const item = row.item;
                             const chosen = index === box.selected;
+                            const stacked = stacks(item);
 
                             return (
                                 <div
@@ -201,11 +211,13 @@ export function SettingsDialog(
                                     ref={chosen ? settingsRowRef : undefined}
                                     onMouseDown={() => editSettings((current) => ({ ...current, selected: index }))}
                                     onClick={() => { if (item.value.kind === "toggle") activateRow(index); }}
-                                    className={`flex items-center gap-6 rounded-app border-l-2 px-3 py-2.5 ${chosen ? "border-accent bg-selected" : "border-transparent hover:bg-hover"}`}
+                                    className={`flex rounded-app border-l-2 px-3 py-2.5 ${stacked ? "flex-col items-start gap-2" : "items-center gap-6"} ${chosen ? "border-accent bg-selected" : "border-transparent hover:bg-hover"}`}
                                 >
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="truncate text-sm">{item.label}</span>
+                                    <div className={`min-w-0 ${stacked ? "w-full" : "flex-1"}`}>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {/* A SETTING'S NAME IS A PHRASE AND NOT SOMETHING MEASURED IN
+                                                CHARACTERS, SO A LONG ONE WRAPS RATHER THAN BEING CUT */}
+                                            <span className="text-sm">{item.label}</span>
 
                                             {/* AN EDITED ROW IS MARKED UNTIL THE SERVER HAS SAID WHAT IT STORED, AND ONE IT
                                                 WILL NOT PICK UP UNTIL IT IS RESTARTED CARRIES THAT SAVED OR NOT */}
@@ -216,7 +228,7 @@ export function SettingsDialog(
                                         {item.hint && <div className="mt-0.5 pr-2 text-xs leading-snug text-faint">{item.hint}</div>}
                                     </div>
 
-                                    <div className="shrink-0">{control(item, index)}</div>
+                                    <div className={stacked ? "w-full" : "shrink-0"}>{control(item, index)}</div>
                                 </div>
                             );
                         })}

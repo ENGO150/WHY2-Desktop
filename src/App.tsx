@@ -451,7 +451,6 @@ function App()
             username: typedRef.current.username || entry.username,
             password: typedRef.current.password || entry.password,
             name: serverNameRef.current || entry.name,
-            last_used: Date.now(),
         };
 
         entryRef.current = saved;
@@ -1053,7 +1052,6 @@ function App()
                     username: wanted,
                     password: form.password || null,
                     name: null,
-                    last_used: Date.now(),
                 });
 
             return;
@@ -2144,6 +2142,7 @@ function App()
             pickerRowRef={pickerRowRef}
             dialogWrap={dialogWrap}
             dialogCard={dialogCard}
+            narrow={narrow}
             onKeyDown={handleSettingsKey}
             setToggle={setToggle}
             setVolume={setVolume}

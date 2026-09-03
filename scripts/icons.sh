@@ -19,9 +19,12 @@
 # STEP - IT IS RUN BY HAND WHEN THE MARK CHANGES, AND WHAT IT WRITES IS COMMITTED - BECAUSE IT WANTS
 # rsvg-convert AND PILLOW, WHICH NOTHING ELSE HERE DOES, AND BECAUSE tauri icon PUTS A TIMESTAMP IN THE
 # .icns AND WOULD MAKE THE TREE DIRTY ON EVERY BUILD.
-# THE TWO HALVES GO TO TWO PLACES: THE DESKTOP SET IS src-tauri/icons/, WHICH IS WHERE tauri.conf.json
-# POINTS; THE LAUNCHER IS scripts/android/res/, WHICH scripts/android-patch.sh COPIES INTO gen/android
-# AFTER EVERY init - `tauri android init` WRITES TAURI'S OWN TEMPLATE ICONS AND KNOWS NOTHING OF OURS
+# IT GOES THREE PLACES: THE DESKTOP SET IS src-tauri/icons/, WHICH IS WHERE tauri.conf.json POINTS; THE
+# LAUNCHER IS scripts/android/res/mipmap-*, WHICH scripts/android-patch.sh COPIES INTO gen/android AFTER
+# EVERY init - `tauri android init` WRITES TAURI'S OWN TEMPLATE ICONS AND KNOWS NOTHING OF OURS - AND
+# public/why2.svg IS WHAT index.html PUTS ON THE SCREEN WHILE THE BUNDLE IS STILL ON ITS WAY.
+# WHAT IS *NOT* WRITTEN HERE IS scripts/android/res/drawable/why2_splash.xml, WHICH IS HAND-WRITTEN AND
+# ONLY POINTS AT THE LAYER BELOW
 
 set -euo pipefail
 
@@ -50,6 +53,12 @@ trap 'rm -rf "$SCRATCH"' EXIT
 cp "$SCRATCH"/*.png "$SCRATCH"/icon.icns "$SCRATCH"/icon.ico "$ROOT/src-tauri/icons/"
 
 echo "icons: the desktop set is in src-tauri/icons"
+
+# AND THE ONE THE PAGE ITSELF SHOWS WHILE THE BUNDLE IS STILL COMING (index.html): vite COPIES public/
+# VERBATIM, SO THIS IS THE SAME FILE UNDER A URL
+cp "$SOURCE" "$ROOT/public/why2.svg"
+
+echo "icons: the boot mark is in public"
 
 python3 - "$SOURCE" "$ROOT/scripts/android/res" <<'ICONS'
 import os

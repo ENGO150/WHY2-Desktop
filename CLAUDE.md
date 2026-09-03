@@ -120,6 +120,14 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
 `servers.tsx`, `login.tsx`, `tofu.tsx`.
 
+**`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
+mark that stands on it until React mounts. Everything else arrives with the bundle, and on a phone that is
+several seconds of black to sit and look at — so the surface is painted from the first frame and
+`public/why2.svg` (the same icon, copied there by `npm run icons`) breathes in the middle of it. `main.tsx`
+removes `#boot` before the first render. On Android the same picture stands one layer further out as the
+activity's `windowBackground`, so the launcher, the system splash and the page are one continuous thing with
+nothing black in between — see **The name and the mark** and `scripts/android/res/drawable/why2_splash.xml`.
+
 **`src/index.css`** is the fonts and the Tailwind import and nothing else; the palette is in `theme.css`, the
 pieces the window is built from in `widgets.css`, and what only a phone needs in `mobile.css`.
 
@@ -182,13 +190,20 @@ it would dirty the tree every time. What it writes is committed, and it goes to 
 - **`src-tauri/icons/`** — the desktop set, which is where `bundle.icon` points. It is `tauri icon`'s own
   output, generated into a scratch directory and copied in, since left alone that command also writes an iOS
   set this project has no target for and reaches into `gen/android`.
+- **`public/why2.svg`** — the same file under a URL, which is what `index.html` shows while the bundle is
+  still on its way (see **Where things are**).
 - **`scripts/android/res/`** — the launcher, which is ours because **`tauri android init` writes Tauri's own
   template icons and knows nothing of `src-tauri/icons`**. `android-patch.sh` copies it over the generated
   `res/` after every init, and drops the template droid it replaces. It is the legacy icon, the round one,
   and the **adaptive** layers with the plate colour as `@color/ic_launcher_background` — an adaptive icon
   draws its own background, so `#050405` has to be said in `values/` as well as in the SVG. The foreground is
   the mark alone on the 108dp canvas at 58dp, and the same layer serves as the `monochrome` one 13 tints
-  itself. The mark-only SVG is **cut out of `why2.svg`** rather than kept beside it, so the foreground cannot
+  itself — and as the middle of `drawable/why2_splash.xml`, the **window background**, which is hand-written
+  rather than generated because all it does is point at the layers under it. `android-patch.sh` puts that
+  drawable into the generated theme (`android:windowBackground`, plus `windowSplashScreenBackground` for 12's
+  own splash, which cannot read a layer-list and needs the colour said again) — two lines inside the room the
+  template leaves for them, rather than a theme of our own, since the theme's name is derived from the
+  identifier and is not ours to write down. The mark-only SVG is **cut out of `why2.svg`** rather than kept beside it, so the foreground cannot
   drift from the icon it is the inside of.
 
 ### Sessions
@@ -215,6 +230,15 @@ commands — `get_servers`, `save_server`, `remove_server`. It is **ours and not
 shared with the terminal client, which has no list and no use for one. A file that is missing, empty or
 unreadable is an empty list, since the window's answer to all three is the same screen that asks for the first
 server.
+
+A row holds an address, a username, an optional password, the name the server last called itself, and an
+`id` — and **nothing else**. The `id` is the window's own and is the row's identity: `save_server` and
+`remove_server` both match on it, the rail keys on it, and it is what says which row is the one we are
+standing in, because the same address twice is two accounts on one server rather than one row written down
+twice. There is no `last_used` any more: the program opens on the list and dials nothing, so the timestamp
+that was there to open the newest one was a fact about somebody written into a file that nothing read back.
+An older list that still carries it is not an error — serde ignores what it does not know, and the next write
+leaves it out.
 
 **The password is kept in plain text in a file chmodded 0600** (and on Windows, in the user's own profile with
 its ACL). There is no key to encrypt it with that the program would not have to keep beside it, and asking for
@@ -417,6 +441,11 @@ not**: rows are edited locally, marked, and sent in one go by `save_server_setti
 the config *as it actually stands*, so a row the server refused snaps back instead of sitting there looking
 applied. Nothing on this side names a server key — the rows, the headings and the hints are all whatever
 `server.toml` turned out to hold, so a key added there needs no client change at all.
+
+On a phone the row turns: a 220px control and a 24px gap leave a setting's *name* about three letters and an
+ellipsis, so under `narrow` everything but a switch goes **under** the label and takes the width, and the
+label itself wraps rather than being cut — a setting's name is a phrase and not something measured in
+characters. A switch stays where every other settings screen puts it, on the right of the thing it turns off.
 
 `restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
 by the next, and is dead while there are unsaved rows in the box.
@@ -684,8 +713,9 @@ no idea the app records audio, still less that it goes on doing so behind the ho
 `POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
 with the `<service android:name=".SessionService">` element and its special-use subtype, writes
 `MainActivity.kt` and `SessionService.kt` from `scripts/android/`, keeping the package line the generated
-activity already had, and copies the launcher out of `scripts/android/res/` over the template icons `init`
-put there (see **The name and the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
+activity already had, copies the launcher out of `scripts/android/res/` over the template icons `init` put
+there, and points the theme's `windowBackground` at the splash drawable that came with it (see **The name and
+the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
 is an error and not a shrug** — Tauri changing its template should stop the build rather than quietly ship
 an APK whose microphone never opens.
 The service element is **rewritten and not skipped when present** (matched by class name, the old one

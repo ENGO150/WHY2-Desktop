@@ -133,6 +133,54 @@ fi
 
 cp -r "$LAUNCHER/." "$PROJECT/app/src/main/res/"
 
+# AND THE THEME IS TOLD WHAT TO DRAW BEFORE THE WEBVIEW HAS ANYTHING IN IT. THE GENERATED THEME LEAVES A
+# ROOM FOR EXACTLY THIS, SO WHAT GOES IN IS TWO LINES INSIDE IT RATHER THAN A THEME OF OUR OWN - THE NAME
+# IS DERIVED FROM THE IDENTIFIER AND IS NOT OURS TO WRITE DOWN
+python3 - "$PROJECT/app/src/main/res" <<'THEME'
+import os
+import sys
+
+root = sys.argv[1]
+
+ANCHOR = "<!-- Customize your theme here. -->"
+
+# windowBackground IS THE ACTIVITY'S OWN, WHICH IS WHAT STANDS BETWEEN THE LAUNCHER AND THE FIRST FRAME
+# OF THE PAGE; windowSplashScreenBackground IS 12's SYSTEM SPLASH IN FRONT OF THAT, WHICH FALLS BACK TO A
+# PLAIN COLOUR AND CANNOT READ A LAYER-LIST, SO IT IS SAID SEPARATELY
+ITEMS = (
+    '        <item name="android:windowBackground">@drawable/why2_splash</item>\n'
+    '        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/ic_launcher_background</item>'
+)
+
+patched = 0
+
+for folder in ("values", "values-night"):
+    path = os.path.join(root, folder, "themes.xml")
+
+    if not os.path.isfile(path):
+        continue
+
+    with open(path, encoding="utf-8") as themes:
+        text = themes.read()
+
+    if "why2_splash" in text:
+        patched += 1
+        continue
+
+    if ANCHOR not in text:
+        sys.exit("android-patch: %s has no room left in it for the splash" % path)
+
+    with open(path, "w", encoding="utf-8") as themes:
+        themes.write(text.replace(ANCHOR, ANCHOR + "\n" + ITEMS, 1))
+
+    patched += 1
+
+if patched == 0:
+    sys.exit("android-patch: the manifest template changed - no themes.xml to put the splash in")
+THEME
+
+echo "android-patch: the window opens on the mark and not on black"
+
 # AND TAURI'S TEMPLATE DROID GOES, WHICH NOTHING POINTS AT ONCE THE ADAPTIVE ICON ABOVE IS IN: A SECOND
 # ic_launcher_foreground SITTING IN ANOTHER RESOURCE TYPE IS ONLY THERE TO BE MISTAKEN FOR OURS
 rm -f "$PROJECT/app/src/main/res/drawable/ic_launcher_background.xml" \

@@ -30,7 +30,6 @@ export interface StoredServer
     username: string;
     password: string | null;
     name: string | null;
-    last_used: number;
 }
 
 export type MessageKind = "user" | "private" | "system" | "notice" | "ok" | "error";
