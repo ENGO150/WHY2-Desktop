@@ -166,7 +166,10 @@ pub(crate) struct VoiceUserInfo
     pub(crate) id: usize,
     pub(crate) username: String,
     pub(crate) speaking: bool,
-    pub(crate) latency: u128,
+
+    //THEIR PING, AND None WHILE WE ARE NOT RECEIVING THEM - A ROSTER ENTRY WE HAVE NO STREAM FOR IS IN
+    //VOICE ALL THE SAME, WE SIMPLY HAVE NO PING FOR THEM, AND 0ms WOULD BE A LIE RATHER THAN A BLANK
+    pub(crate) latency: Option<u128>,
     pub(crate) local: bool, //US - THE ONE ROW WITH NO LATENCY TO SHOW, AND THE ONE /mute TAKES NO ID FOR
     pub(crate) muted: bool,
 }

@@ -159,6 +159,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             say(app, ChatMessage::system(format!("{username} disconnected.")));
             emit(app, UiEvent::UserLeft { id });
+
+            //Leave IS BROADCAST TO EVERY CHANNEL AND NAMES THE ID, SO IT IS ALSO THE ONLY THING THAT
+            //RETIRES A VOICE ROW FOR SOMEBODY WHO DROPPED - THE SERVER SENDS NO VoiceLeave FOR ONE
+            let was_in_voice = state.voice_roster.lock().unwrap().remove(&id).is_some();
+
+            if was_in_voice { emit_voice(app); }
         },
 
         ClientEvent::List(users) =>
@@ -263,7 +269,16 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
 
         //SIDEBAR-ONLY - THE SERVER BROADCASTS THESE TO EVERYONE, WHICH IS ALREADY THE WHOLE TRUTH ABOUT
         //WHICH CHANNELS EXIST: ONE LIVES EXACTLY AS LONG AS SOMEBODY SITS IN IT
-        ClientEvent::ChannelChanged(channel) => emit(app, UiEvent::ChannelChanged { channel }),
+        ClientEvent::ChannelChanged(channel) =>
+        {
+            emit(app, UiEvent::ChannelChanged { channel });
+
+            //THE VOICE ROSTER IS PER CHANNEL, AND THE NEW ONE'S ARRIVES UNASKED RIGHT BEHIND THIS PACKET
+            state.voice_roster.lock().unwrap().clear();
+            state.voice_activity.lock().unwrap().clear();
+
+            emit_voice(app);
+        },
         ClientEvent::ChannelCreated(name) => emit(app, UiEvent::ChannelCreated { name }),
         ClientEvent::ChannelDestroyed(name) => emit(app, UiEvent::ChannelDestroyed { name }),
 
@@ -320,10 +335,34 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         ClientEvent::VoiceActivity(users) =>
         {
             #[cfg(voice)]
-            { *state.voice_users.lock().unwrap() = users.into_iter().map(voice_user).collect(); }
+            { *state.voice_activity.lock().unwrap() = users.into_iter().map(voice_user).collect(); }
 
             #[cfg(not(voice))]
             let _ = users;
+
+            emit_voice(app);
+        },
+
+        //THE CHANNEL'S WHOLE VOICE ROSTER, US EXCLUDED - IT ARRIVES AT LOGIN, ON A CHANNEL SWITCH AND ON
+        //JOINING THE CALL, SO THE PANEL SAYS WHO IS IN VOICE WHETHER OR NOT WE EVER JOIN IT OURSELVES.
+        //IT IS THE TRUTH AND NOT AN ADDITION: WHAT IT CARRIES REPLACES WHAT WE HELD
+        ClientEvent::VoiceRoster(clients) =>
+        {
+            *state.voice_roster.lock().unwrap() = clients.into_iter().collect();
+
+            emit_voice(app);
+        },
+
+        ClientEvent::VoiceJoin(id, username) =>
+        {
+            state.voice_roster.lock().unwrap().insert(id, username);
+
+            emit_voice(app);
+        },
+
+        ClientEvent::VoiceLeave(id) =>
+        {
+            state.voice_roster.lock().unwrap().remove(&id);
 
             emit_voice(app);
         },
@@ -339,7 +378,9 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         ClientEvent::VoiceDisabled =>
         {
             state.voice_enabled.store(false, Ordering::Relaxed);
-            state.voice_users.lock().unwrap().clear();
+
+            //ONLY OUR OWN HALF OF THE PANEL GOES - THE OTHERS ARE STILL IN VOICE, WE JUST STOPPED HEARING THEM
+            state.voice_activity.lock().unwrap().clear();
 
             say(app, ChatMessage::system("Voice disabled."));
             emit_voice(app);
@@ -425,6 +466,36 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             emit(app, UiEvent::Watching { username: None });
         },
 
+        //BROADCAST TO EVERYBODY, US INCLUDED - ClientEvent::Screen ALREADY SAID IT ON THIS END, WHICH IS
+        //WHY OUR OWN NAME IS THE ONE THING THESE TWO ARE FILTERED ON
+        ClientEvent::Screenshare(username) =>
+        {
+            if !is_us(&state, &username)
+            {
+                say(app, ChatMessage::notice(format!("{username} started screen sharing.")));
+            }
+        },
+
+        ClientEvent::ScreenshareEnd(username) =>
+        {
+            if !is_us(&state, &username)
+            {
+                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")));
+            }
+        },
+
+        //THE OTHER DIRECTION: SOMEBODY IS WATCHING WHAT WE ARE SHARING. THE SERVER SENDS THESE TO THE
+        //SHARER ALONE, SO THERE IS NOBODY TO FILTER OUT
+        ClientEvent::Attached(username) =>
+        {
+            say(app, ChatMessage::notice(format!("{username} is watching your screen.")));
+        },
+
+        ClientEvent::Deattached(username) =>
+        {
+            say(app, ChatMessage::system(format!("{username} stopped watching your screen.")));
+        },
+
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
         ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
         ClientEvent::DisabledFeature => popup(app, "Server has disabled the feature you requested."),
@@ -491,10 +562,19 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     state.tofu_reply.lock().unwrap().take();
     state.roster_queued.store(false, Ordering::Relaxed);
     state.voice_enabled.store(false, Ordering::Relaxed);
-    state.voice_users.lock().unwrap().clear();
+    state.voice_roster.lock().unwrap().clear();
+    state.voice_activity.lock().unwrap().clear();
     state.screen_channel.lock().unwrap().take();
 
     reset_session();
+}
+
+//WHETHER A NAME THE SERVER BROADCAST IS OUR OWN. THE SHARE NOTIFICATIONS GO TO THE WHOLE SERVER, AND
+//WHAT WE DID OURSELVES WAS ALREADY SAID BY THE EVENT THAT ANSWERED THE COMMAND - SO OUR OWN NAME IS
+//WHAT THEY ARE FILTERED ON, EXACTLY AS tui/event.rs FILTERS THEM
+fn is_us(state: &AppState, username: &str) -> bool
+{
+    *state.username.lock().unwrap() == username
 }
 
 //PUBLIC

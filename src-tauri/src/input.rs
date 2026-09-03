@@ -360,22 +360,8 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                                 id.map(|id| format!(" ID {id}")).unwrap_or_default())));
 
                             //THE PANEL AND THE MICROPHONE READING BOTH DRAW THIS, AND A SILENT CALL SENDS
-                            //NOTHING OF ITS OWN TO REDRAW THEM WITH
-                            {
-                                let mut users = state.voice_users.lock().unwrap();
-
-                                for user in users.iter_mut()
-                                {
-                                    let this = match id
-                                    {
-                                        Some(id) => !user.local && user.id == id,
-                                        None => user.local,
-                                    };
-
-                                    if this { user.muted = muted; }
-                                }
-                            }
-
+                            //NOTHING OF ITS OWN TO REDRAW THEM WITH - THE MUTED SET ITSELF IS READ WHERE
+                            //THE PANEL IS BUILT, SO THERE IS NOTHING HERE TO GO BACK AND PATCH
                             emit_voice(&app);
                         },
                     },
@@ -418,7 +404,14 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
     //WHAT THE LINE MEANS DEPENDS ENTIRELY ON WHAT THE SERVER LAST ASKED FOR
     let code = match options::get_login_state()
     {
-        LoginState::Username => PacketCode::Username { username: Some(input) },
+        //THE ONE PLACE ANYTHING EVER TELLS US OUR OWN NAME, WHICH THE VOICE PANEL AND THE SHARE
+        //NOTIFICATIONS BOTH NEED (tui/mod.rs::submit KEEPS IT IN THE SAME BREATH)
+        LoginState::Username =>
+        {
+            *state.username.lock().unwrap() = input.clone();
+
+            PacketCode::Username { username: Some(input) }
+        },
         LoginState::PasswordLogin => PacketCode::PasswordL { password: Some(input) },
         LoginState::PasswordRegister => PacketCode::PasswordR { password: Some(input) },
         LoginState::None => PacketCode::Message { text: input, colors: get_colors(), username: None, id: None },

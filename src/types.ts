@@ -200,7 +200,10 @@ export interface VoiceUser
     id: number;
     username: string;
     speaking: boolean;
-    latency: number;
+
+    //THEIR PING, AND null WHILE WE ARE NOT RECEIVING THEM - A ROW THE SERVER'S ROSTER PUT THERE IS IN
+    //VOICE ALL THE SAME, WE SIMPLY HAVE NO PING FOR THEM, AND 0ms WOULD BE A LIE RATHER THAN A BLANK
+    latency: number | null;
     local: boolean; //US - THE ONE ROW WITH NO LATENCY TO SHOW
     muted: boolean;
 }

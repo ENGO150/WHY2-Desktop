@@ -39,6 +39,7 @@ mod android;
 
 use std::
 {
+    collections::BTreeMap,
     time::Instant,
     sync::
     {
@@ -115,7 +116,9 @@ pub fn run()
             list_requested: AtomicBool::new(false),
             version_checked: AtomicBool::new(false),
             voice_enabled: AtomicBool::new(false),
-            voice_users: Mutex::new(Vec::new()),
+            username: Mutex::new(String::new()),
+            voice_roster: Mutex::new(BTreeMap::new()),
+            voice_activity: Mutex::new(Vec::new()),
             screen_channel: Mutex::new(None),
             screen_decode: AtomicBool::new(false),
         })

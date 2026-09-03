@@ -236,9 +236,11 @@ export function Sidebar(
                                     </>
                                 )}
 
-                                {/* THE CALL, WHILE THERE IS ONE AND SOMEBODY IS IN IT. CLICKING A ROW MUTES WHOEVER
-                                    IS ON IT - OUR OWN ROW IS THE MICROPHONE, AND IS THE ONE /mute TAKES NO ID FOR */}
-                                {voice.enabled && voice.users.length > 0 && (
+                                {/* WHO IS IN VOICE IN THIS CHANNEL, WHICH IS THE SERVER'S ANSWER AND NOT OUR OWN
+                                    CALL - SO IT IS DRAWN WHETHER OR NOT WE EVER JOINED IT. WHILE WE ARE IN, A ROW
+                                    IS A BUTTON THAT MUTES WHOEVER IS ON IT (OUR OWN IS THE MICROPHONE, AND IS THE
+                                    ONE /mute TAKES NO ID FOR); WHILE WE ARE NOT, THERE IS NOBODY TO STOP HEARING */}
+                                {voice.users.length > 0 && (
                                     <>
                                         <SectionLabel>Voice — {voice.users.length}</SectionLabel>
 
@@ -246,15 +248,19 @@ export function Sidebar(
                                             <button
                                                 key={user.id}
                                                 type="button"
+                                                disabled={!voice.enabled}
                                                 onClick={() => send(user.local ? "/mute" : `/mute ${user.id}`)}
-                                                title={user.muted ? "Unmute" : "Mute"}
-                                                className="flex w-full items-center gap-2 rounded-app px-2 py-1 text-left hover:bg-hover"
+                                                title={voice.enabled ? (user.muted ? "Unmute" : "Mute") : undefined}
+                                                className="flex w-full items-center gap-2 rounded-app px-2 py-1 text-left hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                                             >
                                                 <Avatar name={user.username} size={22} ring={user.speaking && !user.muted} />
                                                 <span className={`min-w-0 flex-1 truncate text-sm ${user.muted ? "text-faint line-through" : user.speaking ? "text-text" : "text-muted"}`}>
                                                     {user.username}
                                                 </span>
-                                                {!user.local && <span className="shrink-0 font-mono text-[10px] text-faint">{user.latency}ms</span>}
+
+                                                {/* NO PING FOR SOMEBODY WE ARE NOT RECEIVING - THE ROSTER SAYS THEY
+                                                    ARE IN VOICE, AND NOTHING MORE THAN THAT */}
+                                                {user.latency !== null && <span className="shrink-0 font-mono text-[10px] text-faint">{user.latency}ms</span>}
                                                 {user.muted && <Icon name="mic_off" className="h-3.5 w-3.5 shrink-0 text-error" />}
                                             </button>
                                         ))}

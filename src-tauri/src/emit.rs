@@ -19,10 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #[cfg(voice)]
 use std::sync::atomic::Ordering;
 
-use tauri::{ Emitter, AppHandle };
-
-#[cfg(voice)]
-use tauri::Manager;
+use tauri::{ Emitter, AppHandle, Manager };
 
 #[cfg(voice)]
 use why2_chat::options;
@@ -37,10 +34,7 @@ use why2_chat::network::
 };
 
 use crate::types::*;
-use crate::state::EVENT;
-
-#[cfg(voice)]
-use crate::state::AppState;
+use crate::state::{ AppState, EVENT };
 #[cfg(screen)]
 use why2_chat::network::screen::client::
 {
@@ -94,10 +88,74 @@ pub(crate) fn emit_voice(app: &AppHandle)
         {
             enabled,
             mic: !options::is_muted(None) && voice_options::get_input_volume() > 0,
-            users: state.voice_users.lock().unwrap().clone(),
+            users: voice_rows(&state, enabled),
             speaker: speaker(),
         },
     });
+}
+
+//THE PANEL AS IT STANDS: THE SERVER'S ROSTER, DRESSED WITH WHATEVER THE LOCAL CALL KNOWS ABOUT IT. THE
+//TWO ARE MERGED HERE AND NOWHERE ELSE, THE WAY tui/state.rs::rebuild_voice DOES IT - AN ACTIVITY THAT
+//REPLACED THE PANEL WHOLESALE, AS IT USED TO, WOULD DROP EVERY ROSTER ENTRY WE HAVE NO STREAM FOR
+fn voice_rows(state: &AppState, enabled: bool) -> Vec<VoiceUserInfo>
+{
+    let roster = state.voice_roster.lock().unwrap();
+    let activity = state.voice_activity.lock().unwrap();
+
+    let mut users = Vec::with_capacity(roster.len() + 1);
+
+    //US - THE ROSTER NEVER NAMES US, AND ONLY THE CALL ITSELF KNOWS WHETHER WE ARE SPEAKING
+    if enabled
+    {
+        let username = state.username.lock().unwrap().clone();
+
+        users.push(match activity.iter().find(|user| user.local)
+        {
+            Some(local) => VoiceUserInfo { username, muted: muted(None, enabled), ..local.clone() },
+
+            //THE FIRST ACTIVITY TICK IS UP TO 100 ms AWAY - DO NOT BLINK OUT OF OUR OWN PANEL UNTIL THEN
+            None => VoiceUserInfo
+            {
+                id: 0,
+                username,
+                speaking: false,
+                latency: None,
+                local: true,
+                muted: muted(None, enabled),
+            },
+        });
+    }
+
+    //EVERYBODY ELSE, IN ID ORDER (BTreeMap). A ROSTER ENTRY WE HAVE NO STREAM FOR IS STILL IN VOICE - IT
+    //IS US WHO CANNOT HEAR THEM, SO IT IS DRAWN WITHOUT A PING RATHER THAN LEFT OUT
+    for (id, username) in roster.iter()
+    {
+        let heard = activity.iter().find(|user| !user.local && user.id == *id);
+
+        users.push(VoiceUserInfo
+        {
+            id: *id,
+            username: username.clone(),
+            speaking: heard.is_some_and(|user| user.speaking),
+            latency: heard.and_then(|user| user.latency),
+            local: false,
+            muted: muted(Some(*id), enabled),
+        });
+    }
+
+    users
+}
+
+//A MUTE IS OURS AND NOT THE SERVER'S, AND IT ONLY MEANS ANYTHING WHILE WE ARE THE ONE LISTENING - A ROW
+//OF THE ROSTER WE ARE NOT IN IS SOMEBODY IN VOICE, NOT SOMEBODY WE ARE DROPPING (tui/draw.rs AGREES).
+//IT IS ANSWERED HERE, AT THE MOMENT THE PANEL IS BUILT, SO A /mute HAS NOTHING TO GO BACK AND PATCH
+fn muted(id: Option<usize>, enabled: bool) -> bool
+{
+    #[cfg(voice)]
+    { enabled && options::is_muted(id) }
+
+    #[cfg(not(voice))]
+    { let _ = (id, enabled); false }
 }
 
 //OUR SHARE AS IT STANDS. BOTH HALVES OF IT LIVE IN THE CRATE'S GLOBALS AND MOVE WITHOUT US - THE SERVER
@@ -125,7 +183,14 @@ pub(crate) fn emit_screen(app: &AppHandle)
 #[cfg(not(voice))]
 pub(crate) fn emit_voice(app: &AppHandle)
 {
-    emit(app, UiEvent::Voice { voice: VoiceState { enabled: false, mic: false, users: Vec::new(), speaker: None } });
+    //THERE IS NO CALL TO BE IN, BUT THE ROSTER IS THE SERVER'S AND ARRIVES REGARDLESS - SO THE PANEL STILL
+    //SAYS WHO IS IN VOICE, IT SIMPLY KNOWS NOTHING ABOUT SOUND
+    let state = app.state::<AppState>();
+
+    emit(app, UiEvent::Voice
+    {
+        voice: VoiceState { enabled: false, mic: false, users: voice_rows(&state, false), speaker: None },
+    });
 }
 
 //WHICH OF THE PHONE'S TWO SPEAKERS THE CALL IS ON, AND None EVERYWHERE THAT IS NOT A PHONE - A DESKTOP
@@ -145,14 +210,15 @@ pub(crate) fn emit_screen(app: &AppHandle)
     emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
 }
 
-//ONE USER OF THE CALL, WITH THE MUTE READ OFF THE CRATE'S GLOBALS THE WAY tui/draw.rs READS IT: OUR OWN
-//ROW ASKS ABOUT THE MICROPHONE, EVERYBODY ELSE'S ABOUT THEIR ID
+//ONE ROW OF THE ACTIVITY - WHO WE ARE HEARING, WHICH IS HALF OF WHAT THE PANEL IS BUILT FROM. THE MUTE
+//IS FILLED IN BY voice_rows AT THE MOMENT IT DRAWS, SINCE THAT IS THE ONE THAT KNOWS WHETHER WE ARE IN
+//THE CALL AT ALL - AND IT IS ALSO WHAT KEEPS A MUTE FROM HAVING TO REACH BACK INTO WHAT IS STORED HERE
 #[cfg(voice)]
 pub(crate) fn voice_user(user: VoiceUser) -> VoiceUserInfo
 {
     VoiceUserInfo
     {
-        muted: options::is_muted((!user.is_local).then_some(user.id)),
+        muted: false,
         id: user.id,
         username: user.username,
         speaking: user.is_speaking,

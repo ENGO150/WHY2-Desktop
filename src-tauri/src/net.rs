@@ -150,7 +150,9 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     //WHATEVER THE LAST CALL LEFT BEHIND IS NOT THIS ONE'S - A pump_events THAT OUTLIVED ITS SOCKET
     //DOES NOT CLEAN UP AFTER THE SESSION THAT REPLACED IT
     state.voice_enabled.store(false, Ordering::Relaxed);
-    state.voice_users.lock().unwrap().clear();
+    state.voice_roster.lock().unwrap().clear();
+    state.voice_activity.lock().unwrap().clear();
+    state.username.lock().unwrap().clear();
     state.screen_channel.lock().unwrap().take();
 
     //THE MUTED SET OUTLIVES A SESSION, AND THE WINDOW HAS NOTHING TO DRAW THE MICROPHONE FROM UNTIL THE

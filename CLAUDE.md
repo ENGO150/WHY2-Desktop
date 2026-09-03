@@ -325,8 +325,8 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
   it is the one we are standing in.
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
-  call: the voice roster while there is
-  one, the `Voice connected` strip with the button that hangs up — and, on a phone, the one that moves the
+  call: the voice roster whenever somebody is in voice in this channel — being in it ourselves is not the
+  question — the `Voice connected` strip with the button that hangs up — and, on a phone, the one that moves the
   call between the loud speaker and the earpiece — the `Sharing your screen` strip beside it,
   and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
@@ -492,15 +492,38 @@ panel drawn from half of them lies about the rest, so everything that touches an
 slid. `mic` is `!is_muted(None) && input_volume > 0`, because the capture callback treats 0% as off and the
 microphone button had better agree.
 
-`VoiceActivity` fires per voice packet, which means it stops entirely in a silent call — so the roster is
-kept in `AppState::voice_users` and sent again after a mute, rather than waiting for somebody to speak. The
-`connect_to_server` emits it once before anything else, because the muted set outlives a session and a call
-nobody has started sends nothing of its own: without that, the microphone button would start out drawn as
-muted, and the first press of it would look like it did nothing.
+**The panel is the channel's voice roster, not our own session**, so somebody who never typed `/voice` still
+sees who is in it. That is two sources, and they are kept apart in `AppState` and merged on the way out:
 
-The `muted` flag on a row is ours and not the server's, and the roster only exists while the call does and
-somebody is in it (`voice_visible` in the TUI) — the `Voice connected` strip stands on `enabled` alone, so a
-call nobody else has joined yet still says so.
+- `voice_roster` is the server's truth — who is in voice in our channel, us excluded, in id order. It
+  arrives whole as `ClientEvent::VoiceRoster` (at login, on a channel switch, and on joining the call) and
+  is moved by `VoiceJoin`/`VoiceLeave`, which the server broadcasts to the **whole** channel rather than to
+  its voice users. A `VoiceRoster` **replaces** what we held; it does not add to it.
+- `voice_activity` is the last `VoiceActivity` tick — who we are actually hearing, whether they are talking
+  and what their ping is. It is empty while we are not in the call.
+
+`emit_voice`'s `voice_rows` builds the panel out of both, which is why nothing writes the rows directly any
+more: an activity that replaced them wholesale, as it used to, would drop every roster entry we have no
+stream for. It is `tui/state.rs::rebuild_voice`, and it makes the same two decisions — our own row comes from
+the activity (the roster never names us) and is added only while `enabled`, with a placeholder standing in
+until the first tick, which is up to 100 ms away; and a roster entry we are not receiving is drawn **without
+a ping** rather than left out, which is why `latency` is an `Option` (`0ms` would be a lie, not a blank).
+
+A disconnect carries no `VoiceLeave` of its own — `Leave` is broadcast to every channel and names the id, so
+that arm drops the row itself — and a channel switch clears both halves, the new channel's roster arriving
+unasked right behind the `Channel` packet.
+
+`VoiceActivity` fires per voice packet, which means it stops entirely in a silent call — so the activity is
+kept rather than passed straight on, and the panel is built again after a mute rather than waiting for
+somebody to speak. The `connect_to_server` emits it once before anything else, because the muted set outlives
+a session and a call nobody has started sends nothing of its own: without that, the microphone button would
+start out drawn as muted, and the first press of it would look like it did nothing.
+
+The `muted` flag on a row is ours and not the server's, and it is answered where the panel is built rather
+than stored — so `/mute` has nothing to go back and patch. It also **only means anything while we are the one
+listening** (`tui/draw.rs` agrees): a row of a roster we are not in is somebody in voice, not somebody we are
+dropping, so those rows are drawn but not clickable. The `Voice connected` strip stands on `enabled` alone,
+so a call nobody else has joined yet still says so.
 
 `speaker` is the one part of that picture the crate knows nothing about: on a phone the call comes out of
 either the loud speaker on the back or the quiet one held to an ear, and which of the two is a button in the
@@ -598,8 +621,14 @@ bilinear tap averages exactly. It is never scaled *up* here: a pane bigger than 
 compositor handles perfectly well. Resizing any canvas resets its context, so the smoothing hints are asked
 for again on every one of them.
 
-`/screens` is poll-only — the server answers it and never says that somebody started — and it is **asked
-only when somebody wants to know**. There is no clock: a list that has to be kept fresh is a packet every
+The server does **say** when a share starts and stops (`Screenshare`/`ScreenshareEnd`, broadcast to
+everybody) and tells the sharer alone who attached and deattached (`Attached`/`Deattached`) — all four are
+lines in the pane and nothing else. Our own name is what the first two are filtered on, since `Screen`
+already said it on this end when the share was ours; `AppState::username`, taken off the line that answered
+the identity step the way `tui/mod.rs::submit` takes it, is where that name comes from.
+
+`/screens` is still poll-only — a notification names a person, and the window's rows need the id `/attach`
+takes — and it is **asked only when somebody wants to know**. There is no clock: a list that has to be kept fresh is a packet every
 few seconds for an answer that is almost always the same one, so the question is asked when the **Screens**
 window opens and when its `Refresh` is pressed, and the list is a photograph of that moment the way `/files`
 is. The **member list** therefore carries no watch button — there would be nothing keeping it honest — and
@@ -889,8 +918,9 @@ is not unread.
 The routing hangs on one field. `ClientEvent::PrivateMessageRecv` names the sender and
 `PrivateMessageSent` (the server's echo of one we sent) names the recipient, so **the id and name are the peer
 either way** — that is what `DirectPeer { id, username, outgoing }` carries. The echo names nobody but the
-recipient, so an outgoing line arrives with an empty `username` and `renderChat` puts ours in: this side of the
-bridge is the one place that never learns our own name.
+recipient, so an outgoing line arrives with an empty `username` and `renderChat` puts ours in — nothing the
+server sends ever names us. `AppState::username` is the one answer to that, and it comes from the only place
+there is: the line that answered the identity step, kept on its way through `send_input`.
 
 Everything else is the shape the window already has:
 

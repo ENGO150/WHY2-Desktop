@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::
 {
+    collections::BTreeMap,
     time::{ Duration, Instant },
     sync::
     {
@@ -82,9 +83,18 @@ pub(crate) struct AppState
     pub(crate) version_checked: AtomicBool,                                       //crates.io IS ASKED ONCE PER PROCESS
     pub(crate) voice_enabled: AtomicBool,                                         //THE SERVER LET US INTO THE CALL
 
-    //WHO WAS IN IT WHEN WE LAST HEARD. VoiceActivity ARRIVES ONLY WHILE THERE IS AUDIO TO ARRIVE WITH, SO
-    //A MUTE TOGGLED IN A SILENT CALL HAS NOTHING TO REDRAW IT - THE ROSTER IS KEPT HERE AND SENT AGAIN
-    pub(crate) voice_users: Mutex<Vec<VoiceUserInfo>>,
+    //OUR OWN NAME, OFF THE LINE THAT ANSWERED THE IDENTITY STEP - THE TUI'S App::username. NOTHING ELSE
+    //EVER TELLS US: THE PM ECHO NAMES ONLY THE RECIPIENT, AND THE VOICE ROSTER IS EVERYBODY BUT US
+    pub(crate) username: Mutex<String>,
+
+    //THE TWO HALVES OF THE VOICE PANEL, KEPT APART BECAUSE ONLY ONE OF THEM ARRIVES WHILE WE ARE NOT IN
+    //THE CALL OURSELVES: THE ROSTER IS THE SERVER'S TRUTH ABOUT WHO IS IN VOICE IN OUR CHANNEL (US
+    //EXCLUDED, IN ID ORDER), AND THE ACTIVITY IS WHO WE ARE ACTUALLY HEARING - WHETHER THEY ARE TALKING
+    //AND WHAT THEIR PING IS. emit_voice MERGES THEM, THE WAY tui/state.rs::rebuild_voice DOES.
+    //THE ACTIVITY IS KEPT RATHER THAN PASSED STRAIGHT ON BECAUSE VoiceActivity ARRIVES ONLY WHILE THERE
+    //IS AUDIO TO ARRIVE WITH, SO A MUTE TOGGLED IN A SILENT CALL HAS NOTHING TO REDRAW THE PANEL WITH
+    pub(crate) voice_roster: Mutex<BTreeMap<usize, String>>,
+    pub(crate) voice_activity: Mutex<Vec<VoiceUserInfo>>,
 
     //WHERE AN ATTACHED SHARE'S FRAMES GO. THE CRATE HANDS THEM OVER AS H.264 ACCESS UNITS AND THE PICTURE
     //LANDS IN THE CHAT WINDOW RATHER THAN IN A WINDOW OF THE CRATE'S OWN - EITHER DECODED BY THE WEBVIEW,
