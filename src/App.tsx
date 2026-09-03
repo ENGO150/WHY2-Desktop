@@ -57,7 +57,7 @@ import { isKeyFrame, h264Config } from "./video";
 import { PALETTE_ROWS, analyze, entryTyped, formatArg } from "./palette";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
-import { useNarrow, SWIPE, SWIPE_SLOPE } from "./narrow";
+import { useNarrow, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
 import { TofuDialog, CHALLENGE } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
@@ -818,18 +818,150 @@ function App()
         return () => { unlisten.then((stop) => stop()); };
     }, []);
 
-    //WHERE A DRAG STARTED, WHILE ONE IS RUNNING. THE DRAWERS ARE OPENED BY A SWIPE THE WAY EVERY PHONE
-    //CHAT PROGRAM OPENS THEM - AND A DRAG THAT IS MOSTLY VERTICAL IS SOMEBODY READING THE PANE, WHICH IS
-    //WHY IT TAKES BOTH A DISTANCE AND A DIRECTION BEFORE IT MEANS ANYTHING
-    const swipeRef = useRef<{ x: number; y: number } | null>(null);
+    //THE TWO COLUMNS AND THE SHEET UNDER THEM, WHICH ARE THE THREE THINGS A DRAG MOVES. THEY ARE WRITTEN
+    //TO DIRECTLY AND NOT DRAWN FROM STATE: A FINGER PUTS OUT SIXTY POSITIONS A SECOND, AND RE-RENDERING
+    //THE WHOLE WINDOW FOR EACH OF THEM WOULD MAKE THE ONE THING THAT HAS TO FEEL SMOOTH THE ONE THAT DOES
+    //NOT. REACT OWNS WHERE A DRAWER *IS* (THE CLASSES), AND THE DRAG BORROWS IT FOR THE LENGTH OF ITSELF
+    const leftPanel = useRef<HTMLElement | null>(null);
+    const rightPanel = useRef<HTMLElement | null>(null);
+    const scrimEl = useRef<HTMLDivElement | null>(null);
+
+    //WHERE A DRAG STARTED AND WHAT IT TURNED OUT TO BE ABOUT, WHILE ONE IS RUNNING. THE DRAWERS FOLLOW THE
+    //FINGER THE WAY EVERY PHONE CHAT PROGRAM MOVES THEM - AND A DRAG THAT IS MOSTLY VERTICAL IS SOMEBODY
+    //READING THE PANE, WHICH IS WHY IT TAKES BOTH A DISTANCE AND A DIRECTION BEFORE IT MEANS ANYTHING
+    const swipeRef = useRef<
+    {
+        x: number;
+        y: number;
+        side: "left" | "right" | null;
+        from: number;
+        width: number;
+    } | null>(null);
+
+    //THE INLINE POSITION IS GIVEN BACK TO THE CLASSES ONCE THE LAST STRETCH HAS PLAYED OUT, AND A DRAG
+    //THAT STARTS BEFORE THEN TAKES THE HAND-BACK WITH IT
+    const settleRef = useRef<number | null>(null);
+
+    const panelOf = (side: "left" | "right") => (side === "left" ? leftPanel.current : rightPanel.current);
+
+    //open IS 0 SHUT AND 1 OPEN, AND EVERYTHING BETWEEN IS WHERE THE FINGER IS. THE SHUT DRAWER HAS TO BE
+    //MADE VISIBLE BY HAND, SINCE .drawer-shut TAKES IT OUT OF REACH OF A TAP AND OF THE TAB KEY
+    const dragTo = (side: "left" | "right", open: number) =>
+    {
+        const panel = panelOf(side);
+
+        if (panel)
+        {
+            panel.style.transition = "none";
+            panel.style.visibility = "visible";
+            panel.style.transform = `translateX(${side === "left" ? (open - 1) * 100 : (1 - open) * 100}%)`;
+        }
+
+        if (scrimEl.current)
+        {
+            scrimEl.current.style.transition = "none";
+            scrimEl.current.style.opacity = String(open);
+        }
+    };
+
+    //THE FINGER IS OFF: THE REST OF THE WAY IS ANIMATED RATHER THAN DRAGGED, AND THE INLINE POSITION IS
+    //DROPPED ONLY ONCE IT HAS ARRIVED - CLEARING IT WHILE THE DRAWER IS STILL MOVING IS A JUMP
+    const settle = (side: "left" | "right", open: boolean) =>
+    {
+        const panel = panelOf(side);
+
+        if (panel)
+        {
+            panel.style.transition = "";
+            panel.style.transform = open ? "translateX(0%)" : `translateX(${side === "left" ? "-100%" : "100%"})`;
+        }
+
+        if (scrimEl.current)
+        {
+            scrimEl.current.style.transition = "";
+            scrimEl.current.style.opacity = open ? "1" : "0";
+        }
+
+        if (settleRef.current !== null) window.clearTimeout(settleRef.current);
+
+        settleRef.current = window.setTimeout(() =>
+        {
+            settleRef.current = null;
+
+            if (panel)
+            {
+                panel.style.transform = "";
+                panel.style.visibility = "";
+                panel.style.transition = "";
+            }
+
+            if (scrimEl.current)
+            {
+                scrimEl.current.style.opacity = "";
+                scrimEl.current.style.transition = "";
+            }
+        }, DRAWER_MS + 20);
+
+        setDrawer(open ? side : null);
+    };
 
     const onSwipeStart = (event: React.TouchEvent) =>
     {
         const touch = event.touches[0];
 
-        swipeRef.current = narrow && event.touches.length === 1 && touch
-            ? { x: touch.clientX, y: touch.clientY }
+        //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
+        swipeRef.current = narrow && event.touches.length === 1 && touch && connected
+            && !theater && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu
+            ? { x: touch.clientX, y: touch.clientY, side: null, from: 0, width: 1 }
             : null;
+    };
+
+    const onSwipeMove = (event: React.TouchEvent) =>
+    {
+        const start = swipeRef.current;
+
+        if (!start) return;
+
+        const touch = event.touches[0];
+
+        if (!touch) return;
+
+        const across = touch.clientX - start.x;
+        const along = touch.clientY - start.y;
+
+        //WHAT THE DRAG IS ABOUT IS DECIDED ONCE AND THEN KEPT: A FINGER THAT HAS BARELY MOVED IS NEITHER
+        //DIRECTION YET, AND ONE THAT WENT MOSTLY DOWN IS THE PANE'S RATHER THAN THE DRAWER'S
+        if (!start.side)
+        {
+            if (Math.abs(across) < SWIPE_SLOP && Math.abs(along) < SWIPE_SLOP) return;
+
+            if (Math.abs(across) < Math.abs(along) * SWIPE_SLOPE)
+            {
+                swipeRef.current = null;
+
+                return;
+            }
+
+            //A DRAWER THAT IS ALREADY OPEN IS THE ONE BEING MOVED, WHICHEVER WAY THE FINGER WENT -
+            //OTHERWISE THE DIRECTION PICKS ONE: RIGHT PULLS THE LEFT COLUMN IN, LEFT THE RIGHT ONE
+            start.side = drawer ?? (across > 0 ? "left" : "right");
+            start.from = drawer === start.side ? 1 : 0;
+
+            //HOW FAR THE COLUMN HAS TO TRAVEL IS THE COLUMN'S OWN WIDTH, AND IT IS A PROPORTION OF THE
+            //SCREEN - SO IT IS MEASURED RATHER THAN WRITTEN DOWN HERE A SECOND TIME
+            start.width = panelOf(start.side)?.offsetWidth || window.innerWidth;
+
+            //A HAND-BACK STILL PENDING FROM THE LAST DRAG WOULD WIPE THIS ONE HALFWAY THROUGH
+            if (settleRef.current !== null)
+            {
+                window.clearTimeout(settleRef.current);
+                settleRef.current = null;
+            }
+        }
+
+        const travel = start.side === "left" ? across : -across;
+
+        dragTo(start.side, Math.min(1, Math.max(0, start.from + travel / start.width)));
     };
 
     const onSwipeEnd = (event: React.TouchEvent) =>
@@ -837,22 +969,23 @@ function App()
         const start = swipeRef.current;
         swipeRef.current = null;
 
-        //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
-        if (!start || !connected || theater || settingsOpen || filesOpen || screensOpen || tofu) return;
+        if (!start || !start.side) return;
 
         const touch = event.changedTouches[0];
+        const across = touch ? touch.clientX - start.x : 0;
+        const travel = start.side === "left" ? across : -across;
 
-        if (!touch) return;
+        //A DRAG THAT WENT FAR ENOUGH MEANS THE DIRECTION IT WENT IN; ONE THAT DID NOT GOES BACK WHERE IT
+        //CAME FROM, WHICH IS ALSO WHAT A CANCELLED TOUCH IS
+        settle(start.side, Math.abs(travel) >= SWIPE ? travel > 0 : start.from === 1);
+    };
 
-        const across = touch.clientX - start.x;
-        const along = touch.clientY - start.y;
+    const onSwipeCancel = () =>
+    {
+        const start = swipeRef.current;
+        swipeRef.current = null;
 
-        if (Math.abs(across) < SWIPE || Math.abs(across) < Math.abs(along) * SWIPE_SLOPE) return;
-
-        //RIGHT PULLS THE LEFT COLUMN IN, OR PUTS THE RIGHT ONE AWAY - AND THE OTHER WAY ROUND
-        setDrawer(across > 0
-            ? (drawer === "right" ? null : "left")
-            : (drawer === "left" ? null : "right"));
+        if (start?.side) settle(start.side, start.from === 1);
     };
 
     const send = (input: string) =>
@@ -2123,7 +2256,9 @@ function App()
             //AND THE NEXT KEYSTROKE IN THE LINE BRINGS IT STRAIGHT BACK
             onMouseDown={() => setDismissed(true)}
             onTouchStart={onSwipeStart}
+            onTouchMove={onSwipeMove}
             onTouchEnd={onSwipeEnd}
+            onTouchCancel={onSwipeCancel}
 
             //h-dvh AND NOT h-screen: A PHONE'S VIEWPORT IS THE ONE THING THAT CHANGES HEIGHT WHILE THE
             //PAGE IS UP, AND WITH interactive-widget=resizes-content THE SOFT KEYBOARD IS EXACTLY THAT.
@@ -2132,13 +2267,17 @@ function App()
         >
             {connected && (
                 <>
-                    {/* THE SHEET UNDER AN OPEN DRAWER, WHICH IS ALSO THE WAY OUT OF ONE */}
-                    {narrow && drawer !== null && !theater && (
+                    {/* THE SHEET UNDER AN OPEN DRAWER, WHICH IS ALSO THE WAY OUT OF ONE. IT IS THERE
+                        WHENEVER A DRAWER COULD BE, ONLY FADED OUT AND OUT OF REACH WHILE THERE IS NONE:
+                        A DRAG DARKENS IT BY THE INCH, AND A SHEET MOUNTED AT THE END OF THE DRAG WOULD
+                        HAVE NOTHING TO DARKEN FROM */}
+                    {narrow && !theater && (
                         <div
+                            ref={scrimEl}
                             onMouseDown={() => setDrawer(null)}
                             //fixed AND NOT absolute, LIKE THE DRAWERS IT SITS UNDER: BOTH ARE AGAINST THE
                             //VIEWPORT, SO THE DARKNESS REACHES THE SAME EDGES OF THE GLASS THEY DO
-                            className="scrim fixed inset-0 z-30 bg-black/50"
+                            className={`scrim fixed inset-0 z-30 bg-black/50 ${drawer === null ? "pointer-events-none opacity-0" : "opacity-100"}`}
                         />
                     )}
 
@@ -2171,6 +2310,7 @@ function App()
                         closeDirect={closeDirect}
                         openScreens={openScreens}
                         rail={rail}
+                        panelRef={leftPanel}
                     />
 
                     {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}
@@ -2412,6 +2552,7 @@ function App()
                             drawer={drawer}
                             setDrawer={setDrawer}
                             showDirect={showDirect}
+                            panelRef={rightPanel}
                         />
                     )}
                 </>

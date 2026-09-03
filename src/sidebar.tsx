@@ -28,7 +28,7 @@ export function Sidebar(
 {
     serverName, address, role, username, users, channels, currentChannel, directs, openDm,
     voice, screen, creating, setCreating, canServerSettings, hasVoice, narrow, drawer, theater,
-    setDrawer, send, showDirect, closeDirect, openScreens, rail,
+    setDrawer, send, showDirect, closeDirect, openScreens, rail, panelRef,
 }: {
     serverName: string;
     address: string;
@@ -54,10 +54,13 @@ export function Sidebar(
     closeDirect: (id: number) => void;
     openScreens: () => void;
     rail: React.ReactNode;
+
+    //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
+    panelRef: React.Ref<HTMLElement>;
 })
 {
     return (
-                    <aside className={`${narrow
+                    <aside ref={panelRef} className={`${narrow
                         ? `drawer safe-top safe-bottom fixed inset-y-0 left-0 z-40 w-[86%] max-w-[368px] shadow-2xl ${drawer === "left" ? "translate-x-0" : "drawer-shut -translate-x-full"}`
                         : "w-[308px] shrink-0"} border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
                         {/* THE SERVER RAIL BELONGS TO THIS COLUMN RATHER THAN BESIDE IT: ON A PHONE THE

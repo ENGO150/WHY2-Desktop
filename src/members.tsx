@@ -23,7 +23,7 @@ import { Avatar, SectionLabel } from "./components";
 //IT OPENS THE CONVERSATION WITH THAT PERSON - OURS IS NOT ONE, SINCE THE SERVER REFUSES A PM TO OURSELVES
 export function MemberColumn(
 {
-    users, username, config, narrow, drawer, setDrawer, showDirect,
+    users, username, config, narrow, drawer, setDrawer, showDirect, panelRef,
 }: {
     users: OnlineUser[];
     username: string;
@@ -32,10 +32,13 @@ export function MemberColumn(
     drawer: "left" | "right" | null;
     setDrawer: (drawer: "left" | "right" | null) => void;
     showDirect: (peer: { id: number; username: string } | null) => void;
+
+    //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
+    panelRef: React.Ref<HTMLElement>;
 })
 {
     return (
-                        <aside className={narrow
+                        <aside ref={panelRef} className={narrow
                             ? `drawer safe-top safe-bottom fixed inset-y-0 right-0 z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
                             : "flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar"}>
                             <div className="scroller scroller-quiet flex-1 px-2 pb-3">

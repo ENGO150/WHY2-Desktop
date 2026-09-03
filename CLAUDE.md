@@ -632,8 +632,17 @@ chat app has settled on:
   reach of a tap and of the tab key.
 - The channel header gains the hamburger, and its members button toggles the right drawer instead of the
   column. Picking a channel, a conversation or a member closes the drawer it was picked in.
-- A **sideways swipe** on the window opens and closes them (`onSwipeStart`/`onSwipeEnd`). It takes both a
-  distance and a direction (`SWIPE`, `SWIPE_SLOPE`): a drag that is mostly vertical is somebody reading.
+- A **sideways swipe** on the window opens and closes them, and the drawer follows the finger rather than
+  appearing at the end of it (`onSwipeStart`/`onSwipeMove`/`onSwipeEnd`/`onSwipeCancel`). What the drag is
+  about is decided once, after `SWIPE_SLOP`, and then kept: a drawer already open is the one being moved,
+  otherwise the direction picks one — and a drag that is mostly vertical is somebody reading (`SWIPE_SLOPE`).
+  Letting go commits the direction if it travelled `SWIPE`, and otherwise puts the drawer back where it came
+  from. The position is written **straight onto the elements** (`panelRef` on both columns, `scrimEl` on the
+  sheet) with the transition off, because a finger puts out sixty positions a second and React owns where a
+  drawer *is* rather than where it is being dragged to; `settle` animates the last stretch and hands the
+  inline styles back to the classes `DRAWER_MS` later, once the drawer has arrived. The scrim is therefore
+  mounted whenever a drawer could be — faded out and `pointer-events-none` while there is none — since a
+  sheet mounted at the end of the drag would have nothing to darken from.
 - The **back gesture** closes whatever is in front rather than the program. Everything that covers the
   conversation parks one history entry and the gesture spends it — with nothing in front, back means what it
   always did.
