@@ -17,9 +17,13 @@
 [package]
 name = "why2-desktop"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Chat, voice calls and screen sharing over the WHY2 protocol"
+authors = ["Václav Šmejkal <engo@satan.red>"]
+license = "GPL-3.0-only"
+homepage = "https://why2.satan.red"
+repository = "https://git.satan.red/ENGO150/WHY2-Desktop"
 edition = "2021"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

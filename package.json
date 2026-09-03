@@ -2,6 +2,11 @@
   "name": "why2-desktop",
   "private": true,
   "version": "0.1.0",
+  "description": "Chat, voice calls and screen sharing over the WHY2 protocol",
+  "author": "Václav Šmejkal <engo@satan.red>",
+  "license": "GPL-3.0-only",
+  "homepage": "https://why2.satan.red",
+  "repository": "https://git.satan.red/ENGO150/WHY2-Desktop",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +15,8 @@
     "tauri": "tauri",
     "android": "bash scripts/android-env.sh tauri android dev",
     "android:init": "bash scripts/android-init.sh",
-    "android:build": "bash scripts/android-env.sh tauri android build"
+    "android:build": "bash scripts/android-env.sh tauri android build",
+    "icons": "bash scripts/icons.sh"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

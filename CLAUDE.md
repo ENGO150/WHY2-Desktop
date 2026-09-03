@@ -61,6 +61,8 @@ npm run dev            # frontend only in a browser — Tauri `invoke`/`listen` 
                        # nothing past the server-select screen works. Rarely useful.
 npm run build          # tsc typecheck + vite build (this is the only "lint": tsconfig has
                        # strict, noUnusedLocals, noUnusedParameters)
+npm run icons          # every icon in the project, out of src-tauri/icons/why2.svg - by hand, when the
+                       # mark changes, and what it writes is committed (see **The name and the mark**)
 cargo check --manifest-path src-tauri/Cargo.toml   # fast Rust-only feedback
 ```
 
@@ -156,6 +158,38 @@ typing it out would have. It takes the keyboard while it is up and closes on esc
 it; the header's folder toggles it rather than asking twice. An **empty** answer opens it anyway, saying so
 — where the TUI prints a line, a window that refused to open would look like a button that does nothing.
 Nothing else carries a download, so `BlockRow` no longer has that field.
+
+### The name and the mark
+
+The product is **WHY2** and the project is WHY2 Desktop — `productName` in `tauri.conf.json` is the first,
+because that is the string a launcher, a dock and a title bar print, and "Desktop" on a phone is a lie.
+`mainBinaryName` is `why2-desktop`, which keeps the file out of the way of the terminal client's own `why2`
+on a `PATH` that has both. Everything else a bundle carries — publisher, homepage, copyright, licence,
+category, the two descriptions — is in `bundle`, and the same facts are in `src-tauri/Cargo.toml`'s
+`[package]` and in `package.json`, because three different tools read three different files and none of them
+reads the others.
+
+The mark is the terminal client's own: `chat/assets/why2.ico`, a white wolf's head on nothing, traced to a
+path and kept as `src-tauri/icons/why2.svg`. What this app adds to it is the **plate** — a rounded square in
+`--deep` (`#050405`, `src/theme.css`), the window's own deepest surface — because the mark is white on
+transparency, and an icon that is white on transparency is an icon that vanishes on half the home screens it
+lands on. The mark is the middle 66% of it, which is what survives every launcher's mask.
+
+`npm run icons` is the whole pipeline and it is **run by hand**, not by a build: it wants `rsvg-convert` and
+Pillow, which nothing else here does, and `tauri icon` puts a timestamp in the `.icns`, so a build that ran
+it would dirty the tree every time. What it writes is committed, and it goes to two places:
+
+- **`src-tauri/icons/`** — the desktop set, which is where `bundle.icon` points. It is `tauri icon`'s own
+  output, generated into a scratch directory and copied in, since left alone that command also writes an iOS
+  set this project has no target for and reaches into `gen/android`.
+- **`scripts/android/res/`** — the launcher, which is ours because **`tauri android init` writes Tauri's own
+  template icons and knows nothing of `src-tauri/icons`**. `android-patch.sh` copies it over the generated
+  `res/` after every init, and drops the template droid it replaces. It is the legacy icon, the round one,
+  and the **adaptive** layers with the plate colour as `@color/ic_launcher_background` — an adaptive icon
+  draws its own background, so `#050405` has to be said in `values/` as well as in the SVG. The foreground is
+  the mark alone on the 108dp canvas at 58dp, and the same layer serves as the `monochrome` one 13 tints
+  itself. The mark-only SVG is **cut out of `why2.svg`** rather than kept beside it, so the foreground cannot
+  drift from the icon it is the inside of.
 
 ### Sessions
 
@@ -648,9 +682,10 @@ no idea the app records audio, still less that it goes on doing so behind the ho
 `scripts/android-patch.sh` is what tells it: it inserts `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
 `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE` and
 `POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
-with the `<service android:name=".SessionService">` element and its special-use subtype, and writes
+with the `<service android:name=".SessionService">` element and its special-use subtype, writes
 `MainActivity.kt` and `SessionService.kt` from `scripts/android/`, keeping the package line the generated
-activity already had. It runs after every `init` and again in front of every build, and a **missing anchor
+activity already had, and copies the launcher out of `scripts/android/res/` over the template icons `init`
+put there (see **The name and the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
 is an error and not a shrug** — Tauri changing its template should stop the build rather than quietly ship
 an APK whose microphone never opens.
 The service element is **rewritten and not skipped when present** (matched by class name, the old one
