@@ -32,7 +32,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         <!-- THE FIRST PAINT, AND THE ONLY STYLING IN THIS PROJECT THAT IS NOT IN index.css: EVERYTHING
              ELSE ARRIVES WITH THE BUNDLE, AND ON A PHONE THAT IS A FEW SECONDS OF SOMETHING TO LOOK AT.
              SO THE PAGE IS THE WINDOW'S OWN SURFACE FROM THE VERY FIRST FRAME - NOT THE WEBVIEW'S
-             DEFAULT - AND THE MARK STANDS ON IT, BREATHING, UNTIL createRoot CLEARS #root OVER IT -->
+             DEFAULT - AND THE MARK STANDS ON IT, BREATHING, UNTIL main.tsx TAKES IT DOWN.
+             IT STANDS *OVER* #root AND NOT INSIDE IT, BECAUSE A DESKTOP LOADS THE BUNDLE IN A FEW
+             MILLISECONDS: LEFT IN THE CONTAINER IT WAS SWEPT AWAY BY THE FIRST RENDER TOO QUICKLY TO BE
+             ANYTHING BUT A FLICKER, AND THE PROGRAM OPENED ON NOTHING IN PARTICULAR -->
         <style>
             html, body { margin: 0; height: 100%; background: #050405; }
 
@@ -40,9 +43,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
             {
                 position: fixed;
                 inset: 0;
+                z-index: 100;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                background: #050405;
+                transition: opacity 250ms ease;
+            }
+
+            /* THE WINDOW BEHIND IT IS ALREADY DRAWN BY THE TIME THIS IS SET, SO GOING IS A FADE AND NOT
+               A CUT - AND THE MARK STOPS TAKING THE POINTER THE MOMENT IT STARTS LEAVING */
+            #boot.gone
+            {
+                opacity: 0;
+                pointer-events: none;
             }
 
             #boot img
@@ -61,7 +75,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     </head>
 
     <body>
-        <div id="root"><div id="boot"><img src="/why2.svg" alt="WHY2" /></div></div>
+        <div id="root"></div>
+        <div id="boot"><img src="/why2.svg" alt="WHY2" /></div>
         <script type="module" src="/src/main.tsx"></script>
     </body>
 </html>

@@ -121,10 +121,14 @@ and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `
 `servers.tsx`, `login.tsx`, `tofu.tsx`.
 
 **`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
-mark that stands on it until React mounts. Everything else arrives with the bundle, and on a phone that is
-several seconds of black to sit and look at — so the surface is painted from the first frame and
-`public/why2.svg` (the same icon, copied there by `npm run icons`) breathes in the middle of it. `main.tsx`
-removes `#boot` before the first render. On Android the same picture stands one layer further out as the
+mark that stands on it until the window is ready. Everything else arrives with the bundle, and on a phone that
+is several seconds of black to sit and look at — so the surface is painted from the first frame and
+`public/why2.svg` (the same icon, copied there by `npm run icons`) breathes in the middle of it. `#boot` is a
+sibling of `#root` and stands **over** it rather than inside it, because a desktop has the bundle in a few
+milliseconds: left in the container it was cleared by the first render too quickly to be anything but a
+flicker. `main.tsx` takes it down itself, no earlier than `BOOT_MS` after the page's own start
+(`performance.now()` is measured from exactly that) and by the fade `#boot.gone` names — a floor a phone has
+already passed and pays nothing for, and the whole of what makes a desktop open on the mark at all. On Android the same picture stands one layer further out as the
 activity's `windowBackground`, so the launcher, the system splash and the page are one continuous thing with
 nothing black in between — see **The name and the mark** and `scripts/android/res/drawable/why2_splash.xml`.
 
