@@ -226,6 +226,27 @@ pub(crate) fn set_client_device(key: String, id: String) -> Result<(), String>
     }
 }
 
+//WHICH OF THE PHONE'S TWO SPEAKERS THE CALL COMES OUT OF. IT IS NOT A SETTING AND IT IS NOT A COMMAND -
+//THERE IS NOTHING IN THE PROTOCOL ABOUT IT, AND NOTHING TO KEEP EITHER, SINCE A ROUTE IS ABOUT THE CALL
+//THAT IS RUNNING - BUT IT ENDS UP IN THE SAME PLACE A DEVICE ROW DOES, BECAUSE POINTING THE PLAYBACK
+//STREAM SOMEWHERE ELSE IS THE ONLY WAY ANDROID WILL ACTUALLY MOVE IT (SEE android.rs::apply_route).
+//THE PANEL REDRAWS FROM THE ANSWER, THE WAY IT DOES FOR EVERY OTHER HALF OF THE CALL
+#[tauri::command]
+pub(crate) fn set_voice_speaker(on: bool, app: AppHandle) -> Result<(), String>
+{
+    #[cfg(not(target_os = "android"))]
+    { let _ = (on, app); return Err(String::from("There is nothing to route on this platform.")) }
+
+    #[cfg(target_os = "android")]
+    {
+        crate::android::set_speaker(on);
+
+        emit_voice(&app);
+
+        Ok(())
+    }
+}
+
 //THE EDITED SERVER ROWS, IN ONE GO. THE BOX HOLDS THEM UNTIL THIS IS CALLED BECAUSE server.toml IS NOT
 //OURS TO WRITE - THE ANSWER IS THE CONFIG AS IT ACTUALLY STANDS, WHICH IS WHAT REDRAWS THE ROWS
 #[tauri::command]

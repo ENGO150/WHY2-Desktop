@@ -121,7 +121,7 @@ function App()
     const [settings, setSettings] = useState<SettingsBox | null>(null);
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
-    const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [] });
+    const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [], speaker: null });
     const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null });
 
     //THE SCREEN WINDOW: WHICH OF OURS TO SHARE, AND WHOSE TO WATCH. THE MONITORS ARE ENUMERATED WHEN IT
@@ -389,7 +389,7 @@ function App()
         setUsername("");
         setRole("user");
         setUnread(0);
-        setVoice({ enabled: false, mic: false, users: [] });
+        setVoice({ enabled: false, mic: false, users: [], speaker: null });
         setScreen({ sharing: false, monitor: null });
         setScreensOpen(false);
         setMonitors([]);
@@ -993,6 +993,14 @@ function App()
     const send = (input: string) =>
     {
         invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //WHERE THE CALL COMES OUT, WHICH IS THE ONE THING ABOUT IT THAT IS NOT A COMMAND: THERE IS NOTHING IN
+    //THE PROTOCOL ABOUT WHICH OF A PHONE'S SPEAKERS WE ARE HOLDING TO AN EAR. THE PANEL COMES BACK AS A
+    //voice EVENT LIKE EVERY OTHER HALF OF THE CALL, SO NOTHING IS SET HERE
+    const setSpeaker = (on: boolean) =>
+    {
+        invoke("set_voice_speaker", { on }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
     //GOING TO A SERVER IS THE SAME THING WHEREVER IT WAS ASKED FOR - A TILE, A ROW OF THE LIST, OR A
@@ -2305,6 +2313,7 @@ function App()
                         theater={theater}
                         setDrawer={setDrawer}
                         send={send}
+                        setSpeaker={setSpeaker}
                         showDirect={showDirect}
                         closeDirect={closeDirect}
                         openScreens={openScreens}

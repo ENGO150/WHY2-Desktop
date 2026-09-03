@@ -39,6 +39,7 @@ export const ICONS: Record<string, string[]> =
     lock: ["M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4"],
     arrow_down: ["M12 5v14", "M6 13l6 6 6-6"],
     speaker: ["M11 5 6 9H3v6h3l5 4V5z", "M15.5 9.5a3.5 3.5 0 0 1 0 5", "M18.5 6.5a7.5 7.5 0 0 1 0 11"],
+    earpiece: ["M6 3h3l1.5 4-2 1.5a11 11 0 0 0 5 5L15 11.5l4 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4 5a2 2 0 0 1 2-2z"],
     speaker_off: ["M11 5 6 9H3v6h3l5 4V5z", "M17 9.5l4 5", "M21 9.5l-4 5"],
     check: ["M20 6 9 17l-5-5"],
     info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 8h.01", "M11.25 12h.75v4.5h.75"],

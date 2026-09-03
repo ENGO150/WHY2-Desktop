@@ -81,6 +81,7 @@ use settings::
     set_client_setting,
     set_client_volume,
     set_client_device,
+    set_voice_speaker,
     save_server_settings,
     restart_server,
 };
@@ -144,6 +145,12 @@ pub fn run()
 
             config::init_config();
 
+            //AND THE AUDIO DEVICES A PHONE WROTE DOWN LAST TIME GO, WHICH IS THE FIRST THING THERE IS A
+            //CONFIG TO ASK: AN AAudio DEVICE ID BELONGS TO THE BOOT THAT HANDED IT OUT, AND ONE THAT
+            //MATCHES NOTHING IS A CALL WITH NO STREAMS RATHER THAN A CALL ON THE DEFAULT DEVICE
+            #[cfg(target_os = "android")]
+            android::forget_devices();
+
             //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
             if config::read_config("socks5_enabled") { options::enable_socks5(); }
 
@@ -172,6 +179,7 @@ pub fn run()
             set_client_setting,
             set_client_volume,
             set_client_device,
+            set_voice_speaker,
             save_server_settings,
             restart_server,
             answer_tofu,

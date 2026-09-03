@@ -79,9 +79,14 @@ pub(crate) fn emit_voice(app: &AppHandle)
     let enabled = state.voice_enabled.load(Ordering::Relaxed);
 
     //A PHONE ALSO HAS TO BE TOLD, BECAUSE A CALL IS THE ONE THING HERE THAT HAS TO GO ON WHILE THE
-    //WINDOW IS AWAY - AND THIS IS THE ONE PLACE THAT ALWAYS KNOWS WHETHER THERE IS ONE
+    //WINDOW IS AWAY - AND THIS IS THE ONE PLACE THAT ALWAYS KNOWS WHETHER THERE IS ONE. WHERE THE SOUND
+    //COMES OUT IS THE SAME QUESTION ASKED OF THE SAME ANSWER: THE ROUTE AND THE AUDIO MODE ARE TAKEN FOR
+    //EXACTLY AS LONG AS THE CALL LASTS
     #[cfg(target_os = "android")]
-    crate::android::hold_call(enabled);
+    {
+        crate::android::hold_call(enabled);
+        crate::android::route_call(enabled);
+    }
 
     emit(app, UiEvent::Voice
     {
@@ -90,6 +95,7 @@ pub(crate) fn emit_voice(app: &AppHandle)
             enabled,
             mic: !options::is_muted(None) && voice_options::get_input_volume() > 0,
             users: state.voice_users.lock().unwrap().clone(),
+            speaker: speaker(),
         },
     });
 }
@@ -119,7 +125,18 @@ pub(crate) fn emit_screen(app: &AppHandle)
 #[cfg(not(voice))]
 pub(crate) fn emit_voice(app: &AppHandle)
 {
-    emit(app, UiEvent::Voice { voice: VoiceState { enabled: false, mic: false, users: Vec::new() } });
+    emit(app, UiEvent::Voice { voice: VoiceState { enabled: false, mic: false, users: Vec::new(), speaker: None } });
+}
+
+//WHICH OF THE PHONE'S TWO SPEAKERS THE CALL IS ON, AND None EVERYWHERE THAT IS NOT A PHONE - A DESKTOP
+//HAS ONE PAIR AND THE SETTINGS DIALOG'S DEVICE ROW FOR ANYTHING ELSE, SO THERE IS NO BUTTON TO DRAW
+pub(crate) fn speaker() -> Option<bool>
+{
+    #[cfg(target_os = "android")]
+    { Some(crate::android::speaker()) }
+
+    #[cfg(not(target_os = "android"))]
+    { None }
 }
 
 #[cfg(not(screen))]

@@ -179,6 +179,10 @@ pub(crate) struct VoiceState
     pub(crate) enabled: bool,
     pub(crate) mic: bool, //THE CAPTURE CALLBACK TREATS 0% AS OFF, SO THE STATUS ROW HAD BETTER AGREE
     pub(crate) users: Vec<VoiceUserInfo>,
+
+    //WHETHER THE CALL IS ON THE LOUD SPEAKER OR ON THE QUIET ONE, AND None WHERE THERE IS NO SUCH
+    //QUESTION - A MACHINE WITH ONE PAIR OF SPEAKERS HAS NOTHING TO PICK BETWEEN, AND DRAWS NO BUTTON
+    pub(crate) speaker: Option<bool>,
 }
 
 //ONE DEVICE AS THE PICKER SHOWS IT. THE id IS WHAT client.toml HOLDS AND WHAT THE VOICE CLIENT OPENS -

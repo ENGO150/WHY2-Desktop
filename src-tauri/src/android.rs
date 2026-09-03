@@ -16,15 +16,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-//THE TWO THINGS A CALL NEEDS FROM THE PLATFORM ITSELF, AND THE ONLY PLACE IN THIS APP THAT SPEAKS JNI.
-//THE DESKTOP HAS NEITHER PROBLEM: A DEVICE IS A DEVICE, AND NOBODY IS ASKED FOR PERMISSION TO OPEN IT
+//THE THREE THINGS A CALL NEEDS FROM THE PLATFORM ITSELF, AND THE ONLY PLACE IN THIS APP THAT SPEAKS JNI.
+//THE DESKTOP HAS NONE OF THE THREE PROBLEMS: A DEVICE IS A DEVICE, NOBODY IS ASKED FOR PERMISSION TO OPEN
+//ONE, AND A WINDOW THAT IS NOT ON SCREEN IS STILL A PROGRAM THAT IS RUNNING
 
 use std::
 {
     ffi::c_void,
     sync::
     {
-        Once, OnceLock,
+        Mutex, Once, OnceLock,
         atomic::{ AtomicBool, AtomicU8, Ordering },
     },
     time::Duration,
@@ -42,18 +43,27 @@ use jni::
 
 use tauri::AppHandle;
 
+use why2_chat::
+{
+    config,
+    network::voice::client::options as voice_options,
+};
+
 use crate::types::ChatMessage;
 use crate::emit::say;
 
-//THE TWO CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
+//THE THREE CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
 //tauri.conf.json - build.rs READS IT THERE SO THEY CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
 //NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS THE
-//SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE
+//SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE; AND THE ROUTE IS WHICH OF THE PHONE'S
+//TWO SPEAKERS THE CALL COMES OUT OF
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 const SERVICE: &str = env!("ANDROID_SERVICE_CLASS");
+const ROUTE: &str = env!("ANDROID_ROUTE_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static SERVICE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
+static ROUTE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
 static CONTEXT: Once = Once::new();
@@ -140,7 +150,7 @@ fn ready() -> Option<()>
         let loader = env.call_method(&**application, JNIString::new("getClassLoader"),
             jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
 
-        for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS)]
+        for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS), (ROUTE, &ROUTE_CLASS)]
         {
             let name = env.new_string(name)?;
 
@@ -357,4 +367,203 @@ pub(crate) fn release()
     CALL.store(false, Ordering::Relaxed);
 
     apply();
+
+    //THE ROUTE GOES WITH THEM. IT IS NORMALLY GIVEN BACK BY emit_voice THE MOMENT THE CALL ENDS, BUT A
+    //SESSION CAN END WITHOUT ONE - AND AN AUDIO MODE LEFT IN COMMUNICATION IS THE WHOLE PHONE'S PROBLEM
+    route_call(false);
+}
+
+//WHERE THE CALL COMES OUT, WHICH ON A PHONE IS A QUESTION AND NOT A FACT: THERE IS THE LOUD SPEAKER ON
+//THE BACK AND THE QUIET ONE HELD TO AN EAR, AND A CALL IS SOMETIMES ONE AND SOMETIMES THE OTHER. IT IS
+//THE SPEAKER TO BEGIN WITH, WHICH IS WHERE A PHONE PUTS EVERYTHING NOBODY HAS SAID OTHERWISE ABOUT - AND
+//ALSO THE ONE ANSWER THAT NEEDS NOTHING DONE, SO A CALL NOBODY TOUCHES IS THE CALL AS IT ALWAYS WAS
+static SPEAKER: AtomicBool = AtomicBool::new(true);
+
+//WHETHER THE BUTTON HAS EVER BEEN PRESSED. UNTIL IT HAS, NOTHING HERE TOUCHES THE CALL AT ALL: A PHONE
+//WITH A HEADSET ON IT IS ALREADY PLAYING WHERE IT SHOULD, AND A DEFAULT THAT FORCED THE BUILT-IN SPEAKER
+//WOULD BE THIS APP TAKING THE CALL OFF THE HEADSET FOR NOBODY. ONCE IT IS PRESSED IT IS A PREFERENCE, AND
+//THE NEXT CALL OPENS ON IT
+static PICKED: AtomicBool = AtomicBool::new(false);
+
+//WHETHER ANDROID IS CURRENTLY HOLDING A ROUTE OF OURS. THE AUDIO MODE IS THE WHOLE PHONE'S AND NOT OURS,
+//SO IT IS TAKEN FOR EXACTLY AS LONG AS THERE IS A CALL TO HOLD IT FOR AND GIVEN BACK WITH THE CALL
+static ROUTED: AtomicBool = AtomicBool::new(false);
+
+//AND WHETHER THERE IS A CALL AT ALL, SINCE THE BUTTON ANSWERS BETWEEN CALLS TOO AND THERE IS NOTHING TO
+//MOVE THEN - THE PICK SIMPLY WAITS FOR THE NEXT ONE
+static IN_CALL: AtomicBool = AtomicBool::new(false);
+
+//WHAT THE OUTPUT DEVICE KEY HELD BEFORE THE CALL TOOK IT OVER, AND WHAT THE CALL PUT THERE. BOTH, BECAUSE
+//PUTTING THE FIRST BACK IS ONLY RIGHT WHILE THE SECOND IS STILL STANDING - THE CRATE POINTS THE KEY AT
+//WHATEVER IS ACTUALLY PLAYING WHEN A DEVICE REFUSES TO OPEN, AND THAT ANSWER IS BETTER THAN OURS
+static OUTPUT: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+const INPUT_DEVICE: &str = "input_device";
+const OUTPUT_DEVICE: &str = "output_device";
+
+//WHAT A cpal DEVICE ID LOOKS LIKE ON A PHONE: THE HOST, AND THEN THE NUMBER AAudio HANDED OUT FOR THIS
+//BOOT - WHICH IS THE WHOLE OF WHY forget_devices() EXISTS
+const AAUDIO: &str = "aaudio:";
+
+pub(crate) fn speaker() -> bool
+{
+    SPEAKER.load(Ordering::Relaxed)
+}
+
+//THE BUTTON IN THE CALL STRIP. IT IS ANSWERED WHETHER OR NOT THERE IS A CALL TO MOVE, SINCE THE PANEL
+//DRAWS ITSELF FROM THIS AND NOT FROM ANDROID - AND A ROUTE PICKED BETWEEN CALLS IS THE ONE THE NEXT CALL
+//OPENS ON
+pub(crate) fn set_speaker(on: bool)
+{
+    SPEAKER.store(on, Ordering::Relaxed);
+    PICKED.store(true, Ordering::Relaxed);
+
+    if IN_CALL.load(Ordering::Relaxed) { apply_route(); }
+}
+
+//THE CALL COMING AND GOING, OUT OF emit_voice LIKE hold_call - THE ONE PLACE THAT ALWAYS KNOWS WHETHER
+//THERE IS ONE. IT RUNS ON EVERY VOICE PACKET, SO NOTHING IS ASKED OF ANDROID WHERE NOTHING CHANGED
+pub(crate) fn route_call(on: bool)
+{
+    if on == IN_CALL.swap(on, Ordering::Relaxed) { return }
+
+    //A CALL NOBODY HAS EVER MOVED IS THE CALL AS IT ALWAYS WAS - NOT AN AUDIO MODE TAKEN, NOT A DEVICE
+    //NAMED, NOTHING TO GIVE BACK AFTERWARDS
+    if on
+    {
+        if PICKED.load(Ordering::Relaxed) { apply_route(); }
+
+        return;
+    }
+
+    if !ROUTED.swap(false, Ordering::Relaxed) { return }
+
+    //THE CONFIG GOES BACK FIRST AND THE PHONE SECOND: THE KEY IS WHAT THE NEXT CALL READS, AND THE MODE
+    //IS WHAT EVERY OTHER APP ON THE PHONE IS WAITING FOR
+    restore_output();
+
+    if route_class("clear") != Some(true) { warn("the audio mode would not go back to normal"); }
+}
+
+//A DEVICE THE VOICE CLIENT COULD NOT OPEN, WHICH ON A PHONE IS ALMOST ALWAYS THE EARPIECE REFUSING A
+//STREAM THAT IS NOT A CALL AS FAR AS ANDROID IS CONCERNED. THE CRATE HAS ALREADY PUT THE SOUND BACK ON
+//WHAT WAS PLAYING AND POINTED THE KEY AT IT, SO THE ONLY THING LEFT WRONG IS OURS: THE FLAG SAYS ONE
+//SPEAKER AND THE CALL IS COMING OUT OF THE OTHER
+pub(crate) fn route_failed()
+{
+    if !ROUTED.load(Ordering::Relaxed) { return }
+
+    let back = !SPEAKER.load(Ordering::Relaxed);
+
+    SPEAKER.store(back, Ordering::Relaxed);
+
+    //THE PHONE IS TOLD AS WELL, SINCE ITS OWN ROUTING IS STILL POINTED WHERE THE STREAM COULD NOT GO -
+    //BUT THE CONFIG IS LEFT ALONE, BECAUSE WHAT IS IN IT NOW IS THE DEVICE THAT IS ACTUALLY PLAYING
+    route_class_id("route", back);
+}
+
+//AND WHAT IS LEFT OF A ROUTE BY A PROCESS THAT DIED IN THE MIDDLE OF A CALL. AN AAudio DEVICE ID IS
+//HANDED OUT FOR ONE BOOT AND MEANS NOTHING IN THE NEXT, AND A DEVICE KEY THAT MATCHES NOTHING IS NOT A
+//CALL ON THE DEFAULT DEVICE - IT IS A CALL WITH NO STREAMS AT ALL, SINCE THE VOICE CLIENT OPENS WHAT THE
+//CONFIG NAMES OR NOTHING. SO THE PAIR IS FORGOTTEN AT EVERY LAUNCH, WHICH IS ALSO ALL A DEVICE PICKED IN
+///settings COULD HONESTLY BE WORTH ON A PHONE
+pub(crate) fn forget_devices()
+{
+    for key in [INPUT_DEVICE, OUTPUT_DEVICE]
+    {
+        if config::read_config::<String>(key).starts_with(AAUDIO) { config::client_write(key, ""); }
+    }
+}
+
+//PUT THE ROUTE TO ANDROID, AND THEN TO THE STREAM ITSELF. THE SECOND HALF IS NOT BELT AND BRACES: cpal
+//OPENS A PLAYBACK STREAM AS MEDIA AND HAS NO WAY TO ASK FOR ANYTHING ELSE, AND ANDROID MOVES MEDIA TO AN
+//EARPIECE FOR NOBODY - WHAT IT DOES HONOUR IS A STREAM THAT NAMES THE DEVICE IT WANTS, WHICH IS WHAT THE
+//ID COMING BACK FROM route() IS FOR
+fn apply_route()
+{
+    ROUTED.store(true, Ordering::Relaxed);
+
+    let device = route_class_id("route", SPEAKER.load(Ordering::Relaxed));
+
+    if device.is_none() { warn("the call could not be routed - it stays where the system put it"); }
+
+    point_output_at(device);
+}
+
+//POINT THE VOICE CLIENT'S OUTPUT AT ONE DEVICE, THROUGH THE SAME KEY AND THE SAME GENERATION BUMP
+///settings USES - A RUNNING CALL REBUILDS ITS STREAMS ON IT WITHOUT BEING DROPPED. NO ID IS "WHATEVER
+//THE SYSTEM PICKS", WHICH IS THE ONLY HONEST ANSWER WHERE ANDROID NAMED NO DEVICE
+fn point_output_at(device: Option<i32>)
+{
+    let wanted = match device
+    {
+        Some(id) => format!("{AAUDIO}{id}"),
+        None => String::new(),
+    };
+
+    let current = config::read_config::<String>(OUTPUT_DEVICE);
+
+    {
+        let mut output = OUTPUT.lock().unwrap();
+
+        match output.as_mut()
+        {
+            //A SECOND TOGGLE INSIDE ONE CALL MOVES WHAT WE WROTE, NOT WHAT WAS THERE BEFORE US
+            Some(kept) => kept.1 = wanted.clone(),
+            None => *output = Some((current.clone(), wanted.clone())),
+        }
+    }
+
+    if current == wanted { return }
+
+    config::client_write(OUTPUT_DEVICE, &wanted);
+    voice_options::mark_devices_changed();
+}
+
+fn restore_output()
+{
+    let Some((previous, written)) = OUTPUT.lock().unwrap().take() else { return };
+
+    if previous == written { return }
+
+    //ONLY WHERE THE KEY IS STILL WHAT THE CALL PUT THERE. A ROW MOVED IN /settings SINCE, OR A DEVICE THE
+    //CRATE FELL BACK TO, IS A NEWER ANSWER THAN THE ONE WE ARE HOLDING
+    if config::read_config::<String>(OUTPUT_DEVICE) != written { return }
+
+    config::client_write(OUTPUT_DEVICE, &previous);
+    voice_options::mark_devices_changed();
+}
+
+//ONE STATIC CALL INTO THE ROUTE CLASS, WHICH TAKES THE APPLICATION FOR THE SAME REASON THE SERVICE DOES:
+//IT IS THE CONTEXT STILL STANDING WHEN THE WINDOW IS NOT, AND A CALL OUTLIVES THE WINDOW
+fn route_class(method: &str) -> Option<bool>
+{
+    prepare();
+
+    let vm = VM.get()?;
+    let class = ROUTE_CLASS.get()?;
+    let application = APPLICATION.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<bool>
+    {
+        env.call_static_method(&**class, JNIString::new(method),
+            jni_sig!("(Landroid/content/Context;)Z"), &[JValue::Object(&**application)])?.z()
+    }).ok()
+}
+
+//THE SAME, FOR THE ONE THAT ANSWERS WITH A DEVICE RATHER THAN WITH WHETHER IT WORKED. A NEGATIVE ID IS
+//ANDROID SAYING IT HAS NO SUCH DEVICE, WHICH FOR US IS THE SAME ANSWER AS NOT HAVING BEEN REACHED AT ALL
+fn route_class_id(method: &str, speaker: bool) -> Option<i32>
+{
+    prepare();
+
+    let vm = VM.get()?;
+    let class = ROUTE_CLASS.get()?;
+    let application = APPLICATION.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<i32>
+    {
+        env.call_static_method(&**class, JNIString::new(method), jni_sig!("(Landroid/content/Context;Z)I"),
+            &[JValue::Object(&**application), JValue::Bool(speaker.into())])?.i()
+    }).ok().filter(|id| *id >= 0)
 }

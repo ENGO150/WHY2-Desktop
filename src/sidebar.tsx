@@ -28,7 +28,7 @@ export function Sidebar(
 {
     serverName, address, role, username, users, channels, currentChannel, directs, openDm,
     voice, screen, creating, setCreating, canServerSettings, hasVoice, narrow, drawer, theater,
-    setDrawer, send, showDirect, closeDirect, openScreens, rail, panelRef,
+    setDrawer, send, setSpeaker, showDirect, closeDirect, openScreens, rail, panelRef,
 }: {
     serverName: string;
     address: string;
@@ -50,6 +50,7 @@ export function Sidebar(
     theater: boolean;
     setDrawer: (drawer: "left" | "right" | null) => void;
     send: (input: string) => void;
+    setSpeaker: (on: boolean) => void;
     showDirect: (peer: { id: number; username: string } | null) => void;
     closeDirect: (id: number) => void;
     openScreens: () => void;
@@ -290,6 +291,18 @@ export function Sidebar(
                                         <div className="text-xs font-semibold text-online">Voice connected</div>
                                         <div className="truncate text-[11px] text-faint">{serverName || address}</div>
                                     </div>
+                                    {/* WHERE THE CALL IS COMING OUT, WHICH IS A QUESTION ONLY A PHONE HAS
+                                        TO ANSWER - A MACHINE WITH ONE PAIR OF SPEAKERS SENDS null AND
+                                        DRAWS NOTHING HERE */}
+                                    {voice.speaker !== null && (
+                                        <IconButton
+                                            icon={voice.speaker ? "speaker" : "earpiece"}
+                                            label={voice.speaker ? "Play through the earpiece" : "Play through the speaker"}
+                                            active={voice.speaker}
+                                            onClick={() => setSpeaker(!voice.speaker)}
+                                        />
+                                    )}
+
                                     <IconButton icon="hangup" label="Disconnect" tone="error" onClick={() => send("/voice")} />
                                 </div>
                             )}

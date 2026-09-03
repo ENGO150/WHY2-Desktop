@@ -326,7 +326,8 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 - **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
   *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
   call: the voice roster while there is
-  one, the `Voice connected` strip with the button that hangs up, the `Sharing your screen` strip beside it,
+  one, the `Voice connected` strip with the button that hangs up — and, on a phone, the one that moves the
+  call between the loud speaker and the earpiece — the `Sharing your screen` strip beside it,
   and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
 - **Middle** — the channel header (`#name`, how many are online, and the buttons for files, screen sharing,
@@ -478,7 +479,7 @@ writes `client.toml` or puts a packet on the wire would do it twice.
 ### Voice
 
 `client_voice` is on **in both builds** — a phone calls too, and everything below is the same there (see
-**Android** for the two things it needs of the platform) — so the crate owns the whole call — the UDP
+**Android** for the three things it needs of the platform) — so the crate owns the whole call — the UDP
 handshake, the `cpal` streams, the Opus
 codec, the denoiser, the mixing — and there is nothing left on this side but to draw it. `/voice` is a plain
 packet the crate answers by spawning `listen_server_voice`; `/mute` never reaches the server at all, because
@@ -500,6 +501,12 @@ muted, and the first press of it would look like it did nothing.
 The `muted` flag on a row is ours and not the server's, and the roster only exists while the call does and
 somebody is in it (`voice_visible` in the TUI) — the `Voice connected` strip stands on `enabled` alone, so a
 call nobody else has joined yet still says so.
+
+`speaker` is the one part of that picture the crate knows nothing about: on a phone the call comes out of
+either the loud speaker on the back or the quiet one held to an ear, and which of the two is a button in the
+`Voice connected` strip. It is `None` everywhere that is not a phone — a machine with one pair of speakers has
+nothing to pick between, so no button is drawn — and the whole of how it is answered is in **Android**, under
+**Where the call comes out**.
 
 `reset_session` clears `voice_options::set_use_voice(false)`: the voice client follows that flag, so a lost
 session takes its streams with it.
@@ -644,7 +651,7 @@ be one library rather than a wall:
   to the x86 one. `LIBOPUS_STATIC` is set with it, since `audiopus_sys` decides static-or-shared from the
   machine it is *compiled on* and would otherwise link the phone against a `libopus.so` that is not there.
 
-Three things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
+Four things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
 this app that speaks JNI:
 
 - **A context.** `cpal` asks `ndk_context` for one whenever it enumerates devices and **panics** where
@@ -695,6 +702,31 @@ this app that speaks JNI:
   vendor battery managers — MIUI's among them — can still kill a held process; that is a setting on the
   phone and not something the app can ask for.
 
+- **Where the call comes out.** A phone has two speakers, and every call screen ever made has a button for
+  which one it is using. Android is asked for it twice over, because neither half is enough on its own.
+  `scripts/android/AudioRoute.kt` is the platform half: the audio mode goes to `MODE_IN_COMMUNICATION` for as
+  long as the call lasts — which is also what makes the volume keys move the call's own volume — and then the
+  route is either **named** (12+, `setCommunicationDevice` out of `availableCommunicationDevices`) or
+  **described** (below that, the `isSpeakerphoneOn` flag, which means nothing outside communication mode).
+  Turning the speakerphone *off* prefers a headset — wired, USB, SCO, a hearing aid — over the earpiece,
+  since a headset is already private and moving the call off one is not what anybody means by the button.
+  The other half is that **none of that moves the sound by itself**: `cpal` opens its playback stream as
+  media, having no way to ask for anything else, and Android moves media to an earpiece for nobody. What it
+  does honour is a stream that names the device it wants — so `route()` hands back the id of the device it
+  picked and `apply_route` points `output_device` at it (`aaudio:<id>`), through the same key and the same
+  `mark_devices_changed` a `/settings` row uses, which a running call rebuilds its streams on without being
+  dropped. If that device will not open, the crate puts the call back on what was playing and emits
+  `VoiceDeviceFailed`; `route_failed` takes the button back to the speaker it is actually coming out of.
+  The route is the call's and not a setting: `emit_voice` takes it when the call starts and gives it back —
+  the config key and the audio mode both — when the call ends, `release()` doing it again for a session that
+  ended without one. And **nothing is taken until the button is pressed** (`PICKED`): a phone with a headset
+  on it is already playing where it should, and a default that forced the built-in speaker would be this app
+  taking the call off the headset for nobody — so a call nobody moves is the call as it always was, and one
+  that was moved once opens on that route from then on. And because an **AAudio device id belongs to the boot that handed it out**, a stored one
+  that matches nothing is not a call on the default device but a call with no streams at all — so
+  `forget_devices()` drops both `aaudio:` device keys at every launch, which is also all a device picked in
+  `/settings` could honestly be worth on a phone.
+
 The class names come from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
 wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because
 that is where AAudio starts.
@@ -720,10 +752,10 @@ no idea the app records audio, still less that it goes on doing so behind the ho
 `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE` and
 `POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
 with the `<service android:name=".SessionService">` element and its special-use subtype, writes
-`MainActivity.kt` and `SessionService.kt` from `scripts/android/`, keeping the package line the generated
-activity already had, copies the launcher out of `scripts/android/res/` over the template icons `init` put
-there, and points the theme's `windowBackground` at the splash drawable that came with it (see **The name and
-the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
+`MainActivity.kt`, `SessionService.kt` and `AudioRoute.kt` from `scripts/android/`, keeping the package line
+the generated activity already had, copies the launcher out of `scripts/android/res/` over the template icons
+`init` put there, and points the theme's `windowBackground` at the splash drawable that came with it (see
+**The name and the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
 is an error and not a shrug** — Tauri changing its template should stop the build rather than quietly ship
 an APK whose microphone never opens.
 The service element is **rewritten and not skipped when present** (matched by class name, the old one

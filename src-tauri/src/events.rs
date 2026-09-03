@@ -351,7 +351,15 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             say(app, ChatMessage::error("Switching the audio device failed - the previous one is still in use."));
 
+            //ON A PHONE THE DEVICE THAT REFUSED IS USUALLY THE ONE THE ROUTE BUTTON JUST ASKED FOR, AND
+            //THE CALL IS STILL COMING OUT OF THE OTHER SPEAKER - SO THE BUTTON GOES BACK TO SAYING SO
+            #[cfg(target_os = "android")]
+            crate::android::route_failed();
+
             emit(app, UiEvent::ClientSettings { settings: client_settings() });
+
+            //AND THE STRIP REDRAWS WITH IT, SINCE WHERE THE CALL IS PLAYING IS PART OF THAT PICTURE
+            emit_voice(app);
         },
 
         ClientEvent::VoiceHandshakeFailed =>

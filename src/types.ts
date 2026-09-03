@@ -212,6 +212,10 @@ export interface VoiceState
     enabled: boolean;
     mic: boolean;
     users: VoiceUser[];
+
+    //WHICH OF A PHONE'S TWO SPEAKERS THE CALL IS ON, AND null WHERE THERE IS NO SUCH QUESTION TO ASK -
+    //A MACHINE WITH ONE PAIR OF SPEAKERS DRAWS NO BUTTON FOR IT
+    speaker: boolean | null;
 }
 
 //ONE ROW OF server.toml, BOTH WAYS - WHAT THE SERVER SENT, AND WHAT A SAVE SENDS BACK
