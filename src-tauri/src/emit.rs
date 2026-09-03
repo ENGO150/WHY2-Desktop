@@ -76,11 +76,18 @@ pub(crate) fn emit_voice(app: &AppHandle)
 {
     let state = app.state::<AppState>();
 
+    let enabled = state.voice_enabled.load(Ordering::Relaxed);
+
+    //A PHONE ALSO HAS TO BE TOLD, BECAUSE A CALL IS THE ONE THING HERE THAT HAS TO GO ON WHILE THE
+    //WINDOW IS AWAY - AND THIS IS THE ONE PLACE THAT ALWAYS KNOWS WHETHER THERE IS ONE
+    #[cfg(target_os = "android")]
+    crate::android::hold_call(enabled);
+
     emit(app, UiEvent::Voice
     {
         voice: VoiceState
         {
-            enabled: state.voice_enabled.load(Ordering::Relaxed),
+            enabled,
             mic: !options::is_muted(None) && voice_options::get_input_volume() > 0,
             users: state.voice_users.lock().unwrap().clone(),
         },

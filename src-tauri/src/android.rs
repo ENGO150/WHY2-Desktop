@@ -22,7 +22,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use std::
 {
     ffi::c_void,
-    sync::{ Once, OnceLock },
+    sync::
+    {
+        Once, OnceLock,
+        atomic::{ AtomicBool, Ordering },
+    },
     time::Duration,
 };
 
@@ -41,16 +45,23 @@ use tauri::AppHandle;
 use crate::types::ChatMessage;
 use crate::emit::say;
 
-//THE CLASS THE KOTLIN HALF LIVES IN, AS A BINARY NAME (DOTS), WHICH IS THE IDENTIFIER FROM
-//tauri.conf.json - build.rs READS IT THERE SO THE TWO CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
-//NOTHING RATHER THAN A BUILD ERROR
+//THE TWO CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
+//tauri.conf.json - build.rs READS IT THERE SO THEY CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
+//NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS IT
+//OPEN ONCE THE WINDOW IS GONE
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
+const SERVICE: &str = env!("ANDROID_SERVICE_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
+static SERVICE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
 static CONTEXT: Once = Once::new();
 static PREPARED: OnceLock<()> = OnceLock::new();
+
+//WHETHER THE SERVICE IS UP, WHICH IS WHAT ANDROID DID AND NOT WHAT WE ASKED FOR - hold_call IS CALLED
+//OFF EVERY VOICE EVENT, AND IN A LIVE CALL THAT IS EVERY PACKET
+static HELD: AtomicBool = AtomicBool::new(false);
 
 //THE PERMISSION ITSELF, WHICH IS ASKED ABOUT FROM BOTH SIDES: THE ACTIVITY ASKS FOR IT, AND THE
 //APPLICATION IS ENOUGH TO SEE WHETHER IT IS ALREADY THERE
@@ -116,19 +127,22 @@ fn ready() -> Option<()>
             unsafe { ndk_context::initialize_android_context(vm.get_raw().cast(), application.as_raw().cast()) };
         });
 
-        //AND THE ACTIVITY THROUGH THE APP'S OWN CLASS LOADER RATHER THAN THROUGH FindClass: A TOKIO
+        //AND OUR OWN CLASSES THROUGH THE APP'S OWN CLASS LOADER RATHER THAN THROUGH FindClass: A TOKIO
         //WORKER IS ATTACHED WITH THE SYSTEM LOADER, WHICH KNOWS NOTHING THIS APP WROTE
         let loader = env.call_method(&**application, JNIString::new("getClassLoader"),
             jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
 
-        let name = env.new_string(ACTIVITY)?;
+        for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS)]
+        {
+            let name = env.new_string(name)?;
 
-        let activity = env.call_method(&loader, JNIString::new("loadClass"),
-            jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"), &[JValue::Object(&name)])?.l()?;
+            let class = env.call_method(&loader, JNIString::new("loadClass"),
+                jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"), &[JValue::Object(&name)])?.l()?;
 
-        let activity = unsafe { JClass::from_raw(env, activity.into_raw()) };
+            let class = unsafe { JClass::from_raw(env, class.into_raw()) };
 
-        let _ = ACTIVITY_CLASS.set(env.new_global_ref(&activity)?);
+            let _ = cell.set(env.new_global_ref(&class)?);
+        }
 
         Ok(())
     }).ok()
@@ -255,4 +269,43 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
     say(app, ChatMessage::error("The call needs the microphone."));
 
     false
+}
+
+//ONE STATIC CALL INTO THE SERVICE, WHICH TAKES THE CONTEXT RATHER THAN HOLDING ONE: THE APPLICATION IS
+//WHAT WE HAVE, AND IT IS ALSO THE CONTEXT THAT IS STILL STANDING WHEN THE ACTIVITY IS NOT - WHICH IS
+//EXACTLY THE MOMENT THE SERVICE MATTERS
+fn service(method: &str) -> Option<bool>
+{
+    prepare();
+
+    let vm = VM.get()?;
+    let class = SERVICE_CLASS.get()?;
+    let application = APPLICATION.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<bool>
+    {
+        env.call_static_method(&**class, JNIString::new(method),
+            jni_sig!("(Landroid/content/Context;)Z"), &[JValue::Object(&**application)])?.z()
+    }).ok()
+}
+
+//THE CALL, HELD OPEN BEHIND THE HOME BUTTON. AN APP THAT IS NOT ON SCREEN IS A PROCESS ANDROID FREEZES
+//AND THEN KILLS - AND SINCE 9 IT IS ALSO ONE THE MICROPHONE IS SIMPLY CUT OFF FROM, SO A CALL THAT
+//SURVIVES BEING MINIMISED IS A FOREGROUND SERVICE AND NOTHING ELSE WILL DO. THE SOCKET COMES WITH IT:
+//WHAT ENDED THE SESSION WAS THE PROCESS BEING PUT TO SLEEP, AND A HELD PROCESS IS NOT.
+//IT IS DRIVEN FROM emit_voice, WHICH IS THE ONE PLACE THAT ALREADY KNOWS WHETHER THERE IS A CALL
+pub(crate) fn hold_call(on: bool)
+{
+    if HELD.load(Ordering::Relaxed) == on { return }
+
+    //THE FLAG FOLLOWS ANDROID AND NOT US, SO A START THAT DID NOT TAKE IS ASKED FOR AGAIN AT THE NEXT
+    //VOICE EVENT RATHER THAN BEING REMEMBERED AS DONE
+    if service(if on { "start" } else { "stop" }) == Some(true)
+    {
+        HELD.store(on, Ordering::Relaxed);
+    }
+    else
+    {
+        warn(if on { "the call service would not start" } else { "the call service would not stop" });
+    }
 }

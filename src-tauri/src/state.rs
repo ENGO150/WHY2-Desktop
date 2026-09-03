@@ -113,6 +113,11 @@ pub(crate) fn reset_session()
     #[cfg(voice)]
     voice_options::set_use_voice(false);
 
+    //AND ON A PHONE, WHAT WAS HOLDING THE PROCESS OPEN FOR IT - THE NOTIFICATION IS THE ONLY THING THE
+    //USER CAN SEE OF THE SERVICE, AND ONE LEFT STANDING OVER A DEAD SESSION IS A LIE
+    #[cfg(target_os = "android")]
+    crate::android::hold_call(false);
+
     //THE SHARE THE SAME WAY, AND THE MONITOR WITH IT - THE PICK LASTS EXACTLY AS LONG AS THE SHARE DOES,
     //SO THE NEXT SESSION'S FIRST BARE /screen STARTS ON THE DEFAULT MONITOR (tui/state.rs DOES THE SAME)
     #[cfg(screen)]

@@ -573,8 +573,8 @@ be one library rather than a wall:
   to the x86 one. `LIBOPUS_STATIC` is set with it, since `audiopus_sys` decides static-or-shared from the
   machine it is *compiled on* and would otherwise link the phone against a `libopus.so` that is not there.
 
-Two things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in this
-app that speaks JNI:
+Three things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
+this app that speaks JNI:
 
 - **A context.** `cpal` asks `ndk_context` for one whenever it enumerates devices and **panics** where
   nobody set one — Tauri's Android side is Kotlin and has no use for it, so nothing does. `JNI_OnLoad` is
@@ -597,8 +597,26 @@ app that speaks JNI:
   since the second is a bug here rather than something to send somebody to Settings for, and `warn` puts it
   in logcat under `WHY2` beside the line in the pane. `prepare()` is retried until it works for the same
   reason: one lookup that failed early used to be a microphone that never opened again.
+- **The call, once the window is gone.** An app that is not on screen is a process Android is free to
+  freeze and then kill, and since 9 it is also one the microphone is simply cut off from — so a call that
+  survives being minimised is a **foreground service** and nothing else will do. `scripts/android/CallService.kt`
+  is that service: a `microphone`-typed `startForeground` with an ongoing low-importance notification whose
+  tap comes back to the app, `START_NOT_STICKY` because a call belongs to a session and a service Android
+  brought back by itself would have no socket under it. Its two statics take a `Context` rather than holding
+  one — the application, which is the context still standing when the activity is not, and that is exactly
+  the moment the service matters. **The socket comes with it**: what used to end a session in the background
+  was the process being put to sleep, and a held process is not.
+  `hold_call` is driven from **`emit_voice`**, which is the one place that already knows whether there is a
+  call — so nothing else has a lifetime to get wrong, and `reset_session` takes it down with the session. It
+  is guarded by a `HELD` flag because `emit_voice` runs on every voice packet, and that flag follows what
+  Android *did* rather than what was asked: a start that did not take is asked for again at the next voice
+  event, which in a live call is the next packet.
+  A **refused notification** (`POST_NOTIFICATIONS`, 13+) costs the line in the shade and not the call, which
+  is why it is asked for in the same dialog as the microphone rather than gating anything. Aggressive
+  vendor battery managers — MIUI's among them — can still kill a held process; that is a setting on the
+  phone and not something the app can ask for.
 
-The class name comes from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
+The class names come from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
 wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because
 that is where AAudio starts.
 
@@ -618,12 +636,14 @@ The gating is arranged so that call sites do not move:
   where the cfg is off: `generate_handler!` is one list and not a place for a cfg.
 
 **What the generated project does not know.** `gen/android` is made on every machine and in CI, and it has
-no idea the app records audio. `scripts/android-patch.sh` is what tells it: it inserts `RECORD_AUDIO` and
-`MODIFY_AUDIO_SETTINGS` into the manifest (only where they are missing) and writes `MainActivity.kt` from
-`scripts/android/MainActivity.kt`, keeping the package line the generated file already had. It runs after
-every `init` and again in front of every build, and a **missing anchor is an error and not a shrug** —
-Tauri changing its template should stop the build rather than quietly ship an APK whose microphone never
-opens.
+no idea the app records audio, still less that it goes on recording behind the home button.
+`scripts/android-patch.sh` is what tells it: it inserts `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
+`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE` and `POST_NOTIFICATIONS` into the manifest along with
+the `<service android:name=".CallService" android:foregroundServiceType="microphone">` element (each only
+where it is missing, and in the order written there), and writes `MainActivity.kt` and `CallService.kt` from
+`scripts/android/`, keeping the package line the generated activity already had. It runs after every `init`
+and again in front of every build, and a **missing anchor is an error and not a shrug** — Tauri changing its
+template should stop the build rather than quietly ship an APK whose microphone never opens.
 
 **What the window knows about it.** Nothing on the frontend is told which platform it is on. The palette is
 already `get_commands`, which is `COMMAND_LIST` filtered by role — and `/voice` and `/screens` are in
@@ -693,8 +713,9 @@ Not yet done on Android: **screen sharing**, which wants a `MediaProjection` cap
 Watching one wants a decoder here as well — the JPEG fallback is `openh264`, which is desktop-only for the
 same build reasons `client_screen` is.
 
-The call **stops when the app is backgrounded**, which is the same disconnect every other feature has there:
-the socket ends while the process is frozen, and nothing reconnects on resume yet.
+A session with **no call in it** still stops when the app is backgrounded: nothing holds the process then,
+the socket ends while it is frozen, and nothing reconnects on resume yet. A call holds it (see
+**The call, once the window is gone**), and the chat rides along for as long as one is up.
 
 ### Input history
 
