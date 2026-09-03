@@ -15,7 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // THE GENERATED ACTIVITY, PLUS THE ONE THING THAT CANNOT BE DONE FROM RUST: ASKING FOR A PERMISSION.
-// KEEPING THE CALL ALIVE BEHIND THE HOME BUTTON IS THE OTHER HALF OF THAT, AND IT IS CallService.kt.
+// KEEPING THE SESSION ALIVE BEHIND THE HOME BUTTON IS THE OTHER HALF OF THAT, AND IT IS
+// SessionService.kt. THE BACK GESTURE IS THE THIRD THING THE PLATFORM WILL NOT LET RUST HAVE.
 // android.rs CALLS THE THREE STATICS BELOW THROUGH JNI, AND scripts/android-patch.sh PUTS THIS FILE IN
 // PLACE OF THE GENERATED ONE AFTER EVERY `tauri android init` - gen/android IS NOT TRACKED, SO THIS IS
 // WHERE THE FILE ACTUALLY LIVES. THE PACKAGE LINE IS WRITTEN BY THAT SCRIPT FROM THE GENERATED FILE'S OWN
@@ -26,6 +27,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
@@ -48,7 +51,7 @@ class MainActivity : TauriActivity() {
 
     // false IS NO ACTIVITY TO ASK FROM, WHICH IS THE ONE ANSWER THE CALL CANNOT WAIT ON.
     // THE NOTIFICATION IS ASKED FOR IN THE SAME BREATH: A CALL THAT OUTLIVES THE WINDOW IS A FOREGROUND
-    // SERVICE (CallService), AND FROM 13 ONWARDS SHOWING ITS NOTIFICATION IS A PERMISSION OF ITS OWN -
+    // SERVICE (SessionService), AND FROM 13 ONWARDS SHOWING ITS NOTIFICATION IS A PERMISSION OF ITS OWN -
     // BUT ONLY THE NOTIFICATION, SO A REFUSAL COSTS THE LINE IN THE SHADE AND NOT THE CALL
     @JvmStatic
     fun requestMicrophone(): Boolean {
@@ -70,6 +73,43 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  // THE BACK GESTURE, WHICH IS THE ONE NAVIGATION CONTROL THE PHONE ALREADY HAS AND WHICH EVERYBODY
+  // EXPECTS TO CLOSE WHAT IS IN FRONT RATHER THAN THE PROGRAM. TauriActivity TURNS WryActivity'S OWN
+  // HANDLING OFF, SO WITHOUT THIS THE PRESS GOES STRAIGHT TO THE DEFAULT ONE AND FINISHES THE ACTIVITY
+  // WITH A DRAWER STILL OVER THE CHAT.
+  // THE PAGE IS ASKED RATHER THAN THE WEBVIEW'S HISTORY: WHAT IS IN FRONT IS REACT STATE AND NOT A
+  // NAVIGATION, AND A HISTORY ENTRY PARKED FOR IT IS A GUESS ABOUT WHAT canGoBack() COUNTS. THE ANSWER
+  // COMES BACK ON THE UI THREAD A MOMENT LATER, WHICH IS WHY LEAVING IS DONE IN THE CALLBACK AND NOT
+  // AFTER IT
+  private var web: WebView? = null
+
+  override fun onWebViewCreate(webView: WebView) {
+    web = webView
+
+    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        val view = web
+
+        if (view == null) {
+          leave()
+          return
+        }
+
+        view.evaluateJavascript("(window.__why2Back && window.__why2Back()) ? 1 : 0") { answer ->
+          if (answer != "1") leave()
+        }
+      }
+
+      // THE ONLY WAY OUT IS THE HANDLING THIS CALLBACK IS STANDING IN FRONT OF, SO IT STANDS ASIDE FOR
+      // ONE PRESS RATHER THAN CALLING finish() AND TAKING THE ACTIVITY'S OWN SAY OUT OF IT
+      private fun leave() {
+        isEnabled = false
+        onBackPressedDispatcher.onBackPressed()
+        isEnabled = true
+      }
+    })
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     current = this
@@ -78,6 +118,7 @@ class MainActivity : TauriActivity() {
 
   override fun onDestroy() {
     if (current === this) current = null
+    web = null
     super.onDestroy()
   }
 

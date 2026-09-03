@@ -1556,19 +1556,21 @@ function App()
         if (!narrow) chatInputRef.current?.focus();
     };
 
-    //THE PHONE ALREADY HAS ONE NAVIGATION CONTROL, AND EVERYBODY EXPECTS IT TO CLOSE WHATEVER IS IN FRONT
-    //RATHER THAN THE PROGRAM. EACH THING THAT COVERS THE CONVERSATION PARKS ONE ENTRY IN THE HISTORY, AND
-    //THE BACK GESTURE SPENDS IT - WITH NOTHING IN FRONT, BACK STILL MEANS WHAT IT ALWAYS DID
+    //THE PHONE ALREADY HAS ONE NAVIGATION CONTROL, AND EVERYBODY EXPECTS IT TO CLOSE WHATEVER IS IN
+    //FRONT RATHER THAN THE PROGRAM. THE ACTIVITY ASKS THIS FUNCTION BEFORE IT LETS A BACK PRESS THROUGH,
+    //AND true IS "IT WAS SPENT HERE" - WITH NOTHING IN FRONT IT ANSWERS false AND BACK MEANS WHAT IT
+    //ALWAYS DID. IT IS HUNG ON THE WINDOW AND NOT PARKED IN THE HISTORY BECAUSE WHAT COVERS THE
+    //CONVERSATION IS STATE AND NOT A NAVIGATION: TauriActivity TURNS THE WEBVIEW'S OWN BACK HANDLING OFF,
+    //SO AN ENTRY PUSHED FOR A DRAWER WAS NEVER SPENT BY ANYTHING.
+    //IT IS WRITTEN ON EVERY RENDER, SINCE IT READS THIS RENDER'S STATE AND HAS TO CLOSE WHAT IS ACTUALLY
+    //THERE - A LIST OF DEPENDENCIES WOULD BE THE SAME LIST TWICE, AND THE STALE ONE WOULD CLOSE NOTHING
     const addOpen = connected && adding;
-    const covering = drawer !== null || settingsOpen || filesOpen || screensOpen || addOpen || theater;
 
     useEffect(() =>
     {
-        if (!covering) return;
+        const host = window as Window & { __why2Back?: () => boolean };
 
-        window.history.pushState({ why2: true }, "");
-
-        const onPop = () =>
+        host.__why2Back = () =>
         {
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
             if (theater) setView("chat");
@@ -1576,19 +1578,14 @@ function App()
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
-            else setDrawer(null);
+            else if (drawer !== null) setDrawer(null);
+            else return false;
+
+            return true;
         };
 
-        window.addEventListener("popstate", onPop);
-
-        return () =>
-        {
-            window.removeEventListener("popstate", onPop);
-
-            //CLOSED BY A BUTTON RATHER THAN BY THE GESTURE, SO THE ENTRY IS STILL OURS TO SPEND
-            if (window.history.state?.why2) window.history.back();
-        };
-    }, [covering]);
+        return () => { delete host.__why2Back; };
+    });
 
     //WRITE ONE ROW BACK INTO THE BOX
     const withRow = (box: SettingsBox, index: number, change: (item: SettingsItem) => SettingsItem): SettingsBox =>

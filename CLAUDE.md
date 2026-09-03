@@ -291,7 +291,7 @@ The rail is **not** drawn on this screen: the selection screen already is the li
 than one letter each. It keeps its `+` for the other side of that — while there is a session, the selection
 screen is not up, so the `+` is the way to the form from in there. `AddServerDialog` is that form as a window
 over the chat (`addBox`), and `AddServerFields` is the three fields written once for both homes. It closes
-the way every other menu here does — esc, the X, a press outside, the back gesture (it is in `covering`) —
+the way every other menu here does — esc, the X, a press outside, the back gesture (it is in `__why2Back`) —
 and submitting it is a switch like any other, so the session in front is left first.
 
 A stored answer is not a question, which is what keeps the identity steps from **flashing**: `request_username`
@@ -758,9 +758,13 @@ chat app has settled on:
   watches a property that never changes, which is a drawer that snaps instead of sliding. The scrim is therefore
   mounted whenever a drawer could be — faded out and `pointer-events-none` while there is none — since a
   sheet mounted at the end of the drag would have nothing to darken from.
-- The **back gesture** closes whatever is in front rather than the program. Everything that covers the
-  conversation parks one history entry and the gesture spends it — with nothing in front, back means what it
-  always did.
+- The **back gesture** closes whatever is in front rather than the program. It is a press the *activity*
+  gets, and `TauriActivity` overrides `WryActivity`'s handling of it to `false` — so nothing in the page ever
+  sees one, and a history entry parked for a drawer is spent by nobody. `MainActivity` registers its own
+  `OnBackPressedCallback` and asks the page: `window.__why2Back`, written by `App.tsx` on **every** render
+  (it reads that render's state, so a dependency list would be the same list twice and the stale one would
+  close nothing), closes whatever is on top and answers `true`. With nothing in front it answers `false`, the
+  callback stands aside for one press, and back means what it always did.
 - Every dialog is the whole screen rather than a card in a darkened room (`dialogWrap`/`dialogCard`), the
   composer is a pill, and the composer does not take the focus on its own: a soft keyboard is half the screen,
   and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
