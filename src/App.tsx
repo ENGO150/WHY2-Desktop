@@ -818,7 +818,10 @@ function App()
         return () => { unlisten.then((stop) => stop()); };
     }, []);
 
-    //THE TWO COLUMNS AND THE SHEET UNDER THEM, WHICH ARE THE THREE THINGS A DRAG MOVES. THEY ARE WRITTEN
+    //THE TWO COLUMNS AND THE SHEET UNDER THEM, WHICH ARE THE THREE THINGS A DRAG MOVES. WHAT IS WRITTEN
+    //IS THE translate PROPERTY AND NOT transform: THAT IS THE ONE TAILWIND'S OWN -translate-x-full SETS,
+    //AND THE TWO COMPOSE RATHER THAN REPLACE EACH OTHER - A transform ON A SHUT DRAWER MOVES IT RELATIVE
+    //TO THE 100% THE CLASS HAS ALREADY TAKEN IT OFF BY, WHICH IS A DRAG NOBODY CAN SEE. THEY ARE WRITTEN
     //TO DIRECTLY AND NOT DRAWN FROM STATE: A FINGER PUTS OUT SIXTY POSITIONS A SECOND, AND RE-RENDERING
     //THE WHOLE WINDOW FOR EACH OF THEM WOULD MAKE THE ONE THING THAT HAS TO FEEL SMOOTH THE ONE THAT DOES
     //NOT. REACT OWNS WHERE A DRAWER *IS* (THE CLASSES), AND THE DRAG BORROWS IT FOR THE LENGTH OF ITSELF
@@ -854,7 +857,7 @@ function App()
         {
             panel.style.transition = "none";
             panel.style.visibility = "visible";
-            panel.style.transform = `translateX(${side === "left" ? (open - 1) * 100 : (1 - open) * 100}%)`;
+            panel.style.translate = `${side === "left" ? (open - 1) * 100 : (1 - open) * 100}%`;
         }
 
         if (scrimEl.current)
@@ -873,7 +876,7 @@ function App()
         if (panel)
         {
             panel.style.transition = "";
-            panel.style.transform = open ? "translateX(0%)" : `translateX(${side === "left" ? "-100%" : "100%"})`;
+            panel.style.translate = open ? "0%" : (side === "left" ? "-100%" : "100%");
         }
 
         if (scrimEl.current)
@@ -890,7 +893,7 @@ function App()
 
             if (panel)
             {
-                panel.style.transform = "";
+                panel.style.translate = "";
                 panel.style.visibility = "";
                 panel.style.transition = "";
             }

@@ -649,7 +649,11 @@ chat app has settled on:
   from. The position is written **straight onto the elements** (`panelRef` on both columns, `scrimEl` on the
   sheet) with the transition off, because a finger puts out sixty positions a second and React owns where a
   drawer *is* rather than where it is being dragged to; `settle` animates the last stretch and hands the
-  inline styles back to the classes `DRAWER_MS` later, once the drawer has arrived. The scrim is therefore
+  inline styles back to the classes `DRAWER_MS` later, once the drawer has arrived. **What is written is
+  `translate` and not `transform`** — that is the property Tailwind v4's `-translate-x-full` sets, and the
+  two compose rather than replace each other: a `transform` on a shut drawer moves it relative to the 100%
+  the class has already taken it off by, which is a drag nobody can see, and a transition naming `transform`
+  watches a property that never changes, which is a drawer that snaps instead of sliding. The scrim is therefore
   mounted whenever a drawer could be — faded out and `pointer-events-none` while there is none — since a
   sheet mounted at the end of the drag would have nothing to darken from.
 - The **back gesture** closes whatever is in front rather than the program. Everything that covers the
