@@ -167,8 +167,20 @@ that enum — **adding an event means adding a variant on both sides**, and the 
 case visible.
 
 Chat lines all arrive as one `message` event carrying a `ChatMessage` whose `kind` (`user`, `private`,
-`system`, `notice`, `ok`, `error`) is what the frontend styles on — joins, uploads and server notices are not a
-separate channel, they are messages nobody said. A `private` line is the one kind that is not for the pane it
+`plain`, `system`, `notice`, `ok`, `error`, `title`) is what the frontend styles on — joins, uploads and
+server notices are not a separate channel, they are messages nobody said. **The six that are not somebody
+talking are `tui/theme.rs`'s styles, one for one**, and a line here is written in whichever one the TUI
+writes it in: `plain` is `push_text`, the base foreground, for a line the client wrote about something it
+was told alone (an upload starting, somebody attaching our screen); `system` is `DIM`, for something going
+quietly away (a disconnect, a call ending, an empty answer); `notice` is `NOTICE`, `ok` is `OK` — which is
+also **a join**, since somebody arriving is good news and somebody leaving is dim — `error` is `ERROR`, and
+`title` is `TITLE`, the accent heading over what follows it. A mismatch here is not cosmetic drift: it is
+the two clients disagreeing about how much a line matters.
+
+The `[server]` stamp is a **second, independent** question, and it is `from_server()` — asked for at the
+line rather than baked into a kind, because the TUI puts it on what the server told the *whole room* (a
+join, a leave, `ServerSay`, an upload, a share starting or stopping) and on nothing it was told alone.
+`ChatMessage::system` used to call it itself, which silently stamped every dim line in the app. A `private` line is the one kind that is not for the pane it
 landed in: it carries `direct` — the **other** person's id and name, plus which way it went — and the window
 files it into that conversation instead (see **Direct messages**). `/list` and the ban list arrive as a `block` event (a flat
 `Vec<BlockRow>` carrying a `depth`) and are appended to the same scrollback, because that is where the TUI
@@ -678,10 +690,8 @@ the identity step the way `tui/mod.rs::submit` takes it, is where that name come
 screen sharing.` beside `{name} attached`/`deattached your screen sharing.` for the two directions of
 watching. **The `[server]` prefix is on the two broadcast lines and on nothing else**: those are the server
 telling the whole room, the way `ServerSay` is, while an attach is the server telling the sharer alone.
-The prefix is not written into the text — `ChatMessage::from_server()` sets it, and **`ChatMessage::system`
-calls that itself**, which is the trap: a line that must not carry the stamp is `ChatMessage::plain`, the
-same kind without it (the TUI's `push_text`), and `notice`/`ok`/`error` take `.from_server()` where they
-want one.
+The prefix is not written into the text — every constructor leaves it off and `.from_server()` puts it on
+(see **The event bridge**).
 They are the same sentences about the same packets, so they read the same in both clients; the monitor a
 share is pointed at is said by `/screen <name>`'s own line (`Sharing {monitor} now.`, also the TUI's) and
 badged in the **Screens** window, not repeated in the line that starts one.

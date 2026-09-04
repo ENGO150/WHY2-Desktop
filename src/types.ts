@@ -32,7 +32,7 @@ export interface StoredServer
     name: string | null;
 }
 
-export type MessageKind = "user" | "private" | "system" | "notice" | "ok" | "error";
+export type MessageKind = "user" | "private" | "plain" | "system" | "notice" | "ok" | "error" | "title";
 
 export interface ChatMessage
 {

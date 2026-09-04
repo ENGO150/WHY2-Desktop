@@ -60,10 +60,12 @@ export function renderNotice(message: ChatMessage, key: number)
     {
         const { tone, icon } =
         {
+            plain: { tone: "text-text", icon: "info" },
             system: { tone: "text-muted", icon: "info" },
             notice: { tone: "text-notice", icon: "info" },
             ok: { tone: "text-ok", icon: "check" },
             error: { tone: "text-error", icon: "alert" },
+            title: { tone: "text-accent", icon: "info" },
             user: { tone: "", icon: "info" },
             private: { tone: "", icon: "info" },
         }[message.kind];

@@ -135,18 +135,18 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                 ChatMessage::new(MessageKind::User, username, text).colored(colors)
             }).collect::<Vec<ChatMessage>>();
 
-            say(app, ChatMessage::notice(format!("Message history ({}):", messages.len())));
+            say(app, ChatMessage::title(format!("Message history ({}):", messages.len())));
             emit(app, UiEvent::History { messages });
         },
 
         ClientEvent::ServerSay(message) =>
         {
-            say(app, ChatMessage::notice(format!("[{}] {message}", options::get_server_username())));
+            say(app, ChatMessage::notice(message).from_server());
         },
 
         ClientEvent::Join(username) =>
         {
-            say(app, ChatMessage::system(format!("{username} connected.")));
+            say(app, ChatMessage::ok(format!("{username} connected.")).from_server());
 
             //A NEW USER MEANS A NEW ROW, AND POSSIBLY A CHANNEL NOBODY WAS IN BEFORE
             refresh_online(app, session);
@@ -156,7 +156,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //SpamWarning. THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
         ClientEvent::Leave(username, id) =>
         {
-            say(app, ChatMessage::system(format!("{username} disconnected.")));
+            say(app, ChatMessage::system(format!("{username} disconnected.")).from_server());
             emit(app, UiEvent::UserLeft { id });
 
             //Leave IS BROADCAST TO EVERY CHANNEL AND NAMES THE ID, SO IT IS ALSO THE ONLY THING THAT
@@ -211,7 +211,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //LIFTED, SO THE ANSWER TO A PARDON IS THE NEW LIST RATHER THAN AN 'OK' OVER A STALE ONE
         ClientEvent::ServerBans(users, ips) =>
         {
-            if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::notice("No bans.")) }
+            if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::system("No bans.")) }
 
             let total = users.len() + ips.len();
             let mut rows = Vec::new();
@@ -322,7 +322,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
 
         ClientEvent::Uploaded(username, filename) =>
         {
-            say(app, ChatMessage::system(format!("{username} uploaded file \"{filename}\".")));
+            say(app, ChatMessage::plain(format!("{username} uploaded file \"{filename}\".")).from_server());
         },
 
         ClientEvent::Muted => say(app, ChatMessage::notice("You have been muted by a moderator.")),
@@ -476,7 +476,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")));
+                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")).from_server());
             }
         },
 

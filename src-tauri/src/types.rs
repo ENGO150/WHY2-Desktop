@@ -263,10 +263,12 @@ pub(crate) enum MessageKind
 {
     User,    //SOMEBODY SAID SOMETHING
     Private, //A PRIVATE MESSAGE, EITHER WAY
-    System,  //THE SERVER NARRATING ITSELF (JOINS, LEAVES, UPLOADS)
+    Plain,   //A LINE THE CLIENT WROTE FOR ITSELF - THE TUI'S push_text, IN THE BASE FOREGROUND
+    System,  //SOMETHING GOING QUIETLY AWAY: A LEAVE, A CALL ENDING - theme::DIM
     Notice,  //SOMETHING WORTH READING TWICE
     Ok,      //SOMETHING WENT RIGHT
     Error,   //SOMETHING WENT WRONG
+    Title,   //A HEADING OVER WHAT FOLLOWS IT
 }
 
 //WHAT THE BRIDGE TELLS THE WEBVIEW. SERDE TAGS IT ADJACENTLY, SO EVERY PAYLOAD ARRIVES AS
@@ -328,21 +330,20 @@ impl ChatMessage
         }
     }
 
-    //A LINE NOBODY SAID - THE SERVER NARRATING, OR US NARRATING THE SERVER
-    pub(crate) fn system(text: impl Into<String>) -> Self
-    {
-        Self::new(MessageKind::System, "", text).from_server()
-    }
+    //THE FIVE LINES NOBODY SAID, ONE PER STYLE THE TUI HAS - AND NONE OF THEM STAMPS ITSELF. WHAT IS
+    //LIGHT AND WHAT IS DIM IS ONE QUESTION AND THE [server] IN FRONT IS ANOTHER, SO THE STAMP IS ASKED
+    //FOR WHERE THE LINE IS WRITTEN: IT IS ON WHAT THE SERVER TOLD THE WHOLE ROOM AND ON NOTHING ELSE
+    pub(crate) fn plain(text: impl Into<String>) -> Self { Self::new(MessageKind::Plain, "", text) }
 
-    //A LINE THE CLIENT WROTE ABOUT SOMETHING THE SERVER TOLD US ALONE - THE TUI'S push_text, WHICH PUTS
-    //NOTHING IN FRONT OF IT: THE [SERVER] STAMP IS FOR WHAT THE SERVER SAID TO THE WHOLE ROOM
-    pub(crate) fn plain(text: impl Into<String>) -> Self { Self::new(MessageKind::System, "", text) }
+    pub(crate) fn system(text: impl Into<String>) -> Self { Self::new(MessageKind::System, "", text) }
 
     pub(crate) fn notice(text: impl Into<String>) -> Self { Self::new(MessageKind::Notice, "", text) }
 
     pub(crate) fn ok(text: impl Into<String>) -> Self { Self::new(MessageKind::Ok, "", text) }
 
     pub(crate) fn error(text: impl Into<String>) -> Self { Self::new(MessageKind::Error, "", text) }
+
+    pub(crate) fn title(text: impl Into<String>) -> Self { Self::new(MessageKind::Title, "", text) }
 
     //THE SERVER'S OWN NAME IN FRONT OF THE LINE, THE WAY THE TUI STAMPS EVERYTHING IT SAYS FOR ITSELF
     pub(crate) fn from_server(mut self) -> Self
