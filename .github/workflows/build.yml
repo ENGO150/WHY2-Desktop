@@ -37,11 +37,6 @@ jobs:
             name: Linux (x86_64)
           - os: macos-latest
             name: macOS (aarch64)
-          # THE INTEL MAC IS macos-15-intel AND NOT macos-13: THAT IMAGE WAS RETIRED IN DECEMBER 2025, AND A
-          # LABEL NOTHING ANSWERS TO DOES NOT FAIL - THE JOB SITS IN THE QUEUE WAITING FOR A RUNNER FOREVER.
-          # IT IS THE LAST x86_64 IMAGE ACTIONS WILL HAVE, AND GOES THE SAME WAY IN AUGUST 2027
-          - os: macos-15-intel
-            name: macOS (x86_64)
           - os: windows-latest
             name: Windows (x86_64)
 
