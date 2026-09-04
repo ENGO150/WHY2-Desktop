@@ -462,12 +462,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         },
 
         //BROADCAST TO EVERYBODY, US INCLUDED - ClientEvent::Screen ALREADY SAID IT ON THIS END, WHICH IS
-        //WHY OUR OWN NAME IS THE ONE THING THESE TWO ARE FILTERED ON
+        //WHY OUR OWN NAME IS THE ONE THING THESE TWO ARE FILTERED ON. THEY ARE THE SERVER TALKING TO THE
+        //WHOLE ROOM, SO THEY CARRY ITS NAME IN FRONT THE WAY THE TUI'S DO
         ClientEvent::Screenshare(username) =>
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::notice(format!("{username} started screen sharing.")));
+                say(app, ChatMessage::notice(format!("[{}] {username} started screen sharing.",
+                    options::get_server_username())));
             }
         },
 
@@ -475,12 +477,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")));
+                say(app, ChatMessage::system(format!("[{}] {username} stopped screen sharing.",
+                    options::get_server_username())));
             }
         },
 
         //THE OTHER DIRECTION: SOMEBODY IS WATCHING WHAT WE ARE SHARING. THE SERVER SENDS THESE TO THE
-        //SHARER ALONE, SO THERE IS NOBODY TO FILTER OUT
+        //SHARER ALONE AND TO NOBODY ELSE, SO THERE IS NOBODY TO FILTER OUT - AND NO [SERVER] IN FRONT,
+        //SINCE THIS IS NOT AN ANNOUNCEMENT TO A ROOM
         ClientEvent::Attached(username) =>
         {
             say(app, ChatMessage::system(format!("{username} attached your screen sharing.")));
