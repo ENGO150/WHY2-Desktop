@@ -18,7 +18,7 @@ name: Build WHY2 Desktop
 
 on:
   push:
-    branches: [ master ]
+    branches: [ development, stable, release ]
   workflow_dispatch:
 
 permissions:
