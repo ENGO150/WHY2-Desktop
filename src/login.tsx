@@ -16,11 +16,27 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { useEffect, useState } from "react";
+
 import type { UIState, StoredServer } from "./types";
 import { Icon } from "./icons";
 import { avatarColor } from "./theme";
 import type { ServerForm } from "./servers";
 import { serverLabel, AddServerFields, ForgetMenu, useHoldMenu } from "./servers";
+
+//THE OPENING. index.html's OWN MARK STANDS WHILE THE BUNDLE IS STILL ON ITS WAY, AND THIS IS WHAT IT
+//HANDS OVER TO: THE SAME MARK AT THE SAME SIZE, ALONE IN THE MIDDLE OF THE WINDOW, WHICH THEN RISES AS
+//THE LIST OPENS UNDER IT. IT RISES BECAUSE THE BLOCK IS CENTRED AND GROWS DOWNWARDS - NOTHING IS
+//MEASURED AND NOTHING IS PLACED BY HAND, WHICH IS THE WHOLE OF WHY A PHONE AND A DESKTOP ARE THE SAME
+//ANIMATION HERE
+const OPEN_AT = 1500;   //WHEN THE LIST OPENS, MEASURED FROM THE PAGE'S OWN START THE WAY main.tsx's BOOT_MS IS
+const HOLD_MS = 450;    //...AND AT THE LEAST THIS LONG AFTER THIS SCREEN ARRIVED, SINCE A PHONE IS PAST
+                        //OPEN_AT BEFORE THE BUNDLE HAS EVEN RUN AND WOULD OTHERWISE OPEN ON NOTHING
+const OPEN_MS = 560;    //THE SLIDE ITSELF, WHICH IS widgets.css's .intro-body
+
+//IT IS THE PROGRAM OPENING AND NOT THIS SCREEN BEING DRAWN. A DISCONNECT PUTS THE LIST BACK, AND A LOGO
+//THAT PLAYED AGAIN THERE WOULD BE THE WINDOW PRETENDING IT HAD JUST STARTED
+let introPlayed = false;
 
 //THE SCREEN THAT STANDS WHILE THERE IS NO SESSION. IT IS THREE SCREENS IN ONE PLACE, BECAUSE THEY ARE
 //THREE ANSWERS TO THE SAME QUESTION - WHICH SERVER, AND WHO ARE WE THERE:
@@ -58,6 +74,35 @@ export function LoginScreen(
     //RAIL ASKS FOR, AND THE SAME MENU
     const { menu, close, bind, held } = useHoldMenu();
 
+    //TWO STEPS AND NOT ONE: `holding` IS THE MARK STANDING ALONE, AND `settled` IS THE SLIDE BEING OVER -
+    //THE GRID THAT CLIPS ITS OWN ROW IS WHAT MAKES THE MOVEMENT AND IS NOTHING TO KEEP AFTERWARDS,
+    //SINCE EVERYTHING UNDER IT WOULD GO ON BEING CLIPPED BY IT
+    const [holding, setHolding] = useState(!introPlayed);
+    const [settled, setSettled] = useState(introPlayed);
+
+    useEffect(() =>
+    {
+        if (!holding) return;
+
+        const timer = setTimeout(() =>
+        {
+            introPlayed = true;
+
+            setHolding(false);
+        }, Math.max(HOLD_MS, OPEN_AT - performance.now()));
+
+        return () => clearTimeout(timer);
+    }, [holding]);
+
+    useEffect(() =>
+    {
+        if (holding || settled) return;
+
+        const timer = setTimeout(() => setSettled(true), OPEN_MS);
+
+        return () => clearTimeout(timer);
+    }, [holding, settled]);
+
     const title = mode === "add"
         ? "Add a server"
         : { server_select: servers.length ? "Servers" : "Connect to a server", username_prompt: "Who are you?", password_prompt: registering ? "Create your account" : "Welcome back", connected: "" }[uiState];
@@ -89,137 +134,147 @@ export function LoginScreen(
         <div className="safe-top safe-bottom absolute inset-0 z-40 flex bg-deep">
             <div className="flex min-w-0 flex-1 items-center justify-center px-4">
                 <div className="rise relative w-full max-w-[420px]">
-                    <div className="mb-6 text-center">
-                        <div className="text-2xl font-bold tracking-tight">WHY2</div>
-                        <div className="mt-1 text-sm text-muted">{title}</div>
-
-                        {/* WHICH SERVER THIS IS ABOUT, WHILE IT IS ABOUT ONE - EVERY PROMPT PAST THE
-                            ADDRESS BELONGS TO A SERVER, AND WITH A LIST THERE IS MORE THAN ONE TO MEAN */}
-                        {target && mode !== "add" && (
-                            <div className="mt-1 truncate font-mono text-[11px] text-faint">
-                                {serverLabel(target)}{target.name ? ` · ${target.address}` : ""}
-                            </div>
-                        )}
+                    {/* THE MARK THE PAGE OPENED ON, IN THE PLACE IT OPENED IN. IT IS THE ONLY THING HERE
+                        WHILE THE OPENING IS HELD, WHICH IS WHAT PUTS IT IN THE MIDDLE OF THE WINDOW */}
+                    <div className="flex justify-center">
+                        <img src="/why2.svg" alt="" draggable={false} className={`intro-mark${holding ? "" : " intro-mark-settled"}`} />
                     </div>
 
-                    {/* NOTHING IS ASKED IN THE LIST ITSELF, SO THERE IS NO FORM IN FRONT OF IT - ONLY THE
-                        TWO MODES THAT HAVE A QUESTION DRAW ONE */}
-                    {mode !== "idle" && (
-                        <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
-                            {mode === "add" ? (
-                                <>
-                                    <AddServerFields form={form} setForm={setForm} connecting={connecting} inputRef={inputRef} autoFocus={!narrow} />
+                    <div className={settled ? "" : `intro-body${holding ? "" : " intro-open"}`}>
+                        <div>
+                            <div className="mb-6 mt-5 text-center">
+                                <div className="text-2xl font-bold tracking-tight">WHY2</div>
+                                <div className="mt-1 text-sm text-muted">{title}</div>
 
-                                    {status}
-                                </>
-                            ) : (
-                                <>
-                                    <label htmlFor="login-input" className={caption}>{label}</label>
-
-                                    <input
-                                        id="login-input"
-                                        ref={inputRef}
-                                        type={uiState === "password_prompt" ? "password" : "text"}
-                                        value={value}
-                                        onChange={(event) => setValue(event.currentTarget.value)}
-                                        className={field}
-                                        disabled={connecting}
-                                        autoFocus={!narrow}
-                                        spellCheck={false}
-                                    />
-
-                                    {status}
-                                </>
-                            )}
-
-                            <button
-                                type="submit"
-                                disabled={connecting || (mode === "add" ? !form.address : !value)}
-                                className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                {mode === "add" ? "Add and connect" : button}
-                            </button>
-
-                            {/* THE WAY BACK OUT OF THE FORM, WHICH ONLY EXISTS WHERE THERE IS SOMETHING TO
-                                GO BACK TO: THE FIRST SERVER EVER ADDED HAS NO LIST BEHIND IT */}
-                            {mode === "add" && servers.length > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={onCancel}
-                                    disabled={connecting}
-                                    className="mt-2 w-full rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
-                                >
-                                    Cancel
-                                </button>
-                            )}
-                        </form>
-                    )}
-
-                    {/* THE LIST ITSELF: THE WHOLE SCREEN WHILE NOTHING IS BEING ASKED, AND UNDER THE
-                        QUESTION WHILE SOMETHING IS. IT IS WHERE A SERVER IS PICKED AND WHERE ONE IS ADDED */}
-                    {mode !== "add" && servers.length > 0 && (
-                        <div className={mode === "idle" ? "" : "mt-6"}>
-                            {/* THE LIST HAS NO FORM TO CARRY THE STATUS LINE, SO IT CARRIES ITS OWN - AND
-                                AS A BOX, SINCE A BARE SENTENCE BETWEEN A HEADING AND A LIST READS AS
-                                NEITHER. IT IS DRAWN ONLY WHEN IT SAYS SOMETHING */}
-                            {mode === "idle" && (connecting || errorMsg || hint) && (
-                                <div className={`mb-3 flex items-start gap-2 rounded-app border px-3 py-2.5 text-xs ${!connecting && errorMsg
-                                    ? "border-error/40 bg-error/10 text-error"
-                                    : "border-border bg-overlay text-muted"}`}>
-                                    <Icon name={!connecting && errorMsg ? "alert" : "info"} className="mt-px h-3.5 w-3.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 break-words">{connecting ? "Connecting…" : errorMsg || hint}</span>
-                                </div>
-                            )}
-
-                            <div className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Your servers</div>
-
-                            <div className="scroller scroller-quiet max-h-[240px] rounded-xl border border-border bg-overlay p-1">
-                                {servers.map((server) => (
-                                    <button
-                                        key={server.id}
-                                        type="button"
-                                        onClick={() => { if (held()) return; close(); onPick(server); }}
-                                        {...bind(server.id)}
-                                        disabled={connecting}
-                                        className={`flex w-full select-none items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover disabled:opacity-40 ${target?.id === server.id ? "bg-selected" : ""}`}
-                                    >
-                                        <span
-                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white/90"
-                                            style={{ background: avatarColor(server.name || server.address) }}
-                                        >
-                                            {(serverLabel(server).trim()[0] ?? "?").toUpperCase()}
-                                        </span>
-
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-sm">{serverLabel(server)}</span>
-                                            <span className="block truncate font-mono text-[11px] text-faint">
-                                                {server.address}{server.username ? ` · ${server.username}` : ""}
-                                            </span>
-                                        </span>
-                                    </button>
-                                ))}
+                                {/* WHICH SERVER THIS IS ABOUT, WHILE IT IS ABOUT ONE - EVERY PROMPT PAST THE
+                                    ADDRESS BELONGS TO A SERVER, AND WITH A LIST THERE IS MORE THAN ONE TO MEAN */}
+                                {target && mode !== "add" && (
+                                    <div className="mt-1 truncate font-mono text-[11px] text-faint">
+                                        {serverLabel(target)}{target.name ? ` · ${target.address}` : ""}
+                                    </div>
+                                )}
                             </div>
 
-                            {menu && servers.some((server) => server.id === menu.id) && (
-                                <ForgetMenu
-                                    server={servers.find((server) => server.id === menu.id)!}
-                                    at={menu}
-                                    onForget={onForget}
-                                    close={close}
-                                />
+                            {/* NOTHING IS ASKED IN THE LIST ITSELF, SO THERE IS NO FORM IN FRONT OF IT - ONLY THE
+                                TWO MODES THAT HAVE A QUESTION DRAW ONE */}
+                            {mode !== "idle" && (
+                                <form onSubmit={onSubmit} className="rounded-xl border border-border bg-overlay p-5 shadow-2xl">
+                                    {mode === "add" ? (
+                                        <>
+                                            <AddServerFields form={form} setForm={setForm} connecting={connecting} inputRef={inputRef} autoFocus={!narrow} />
+
+                                            {status}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <label htmlFor="login-input" className={caption}>{label}</label>
+
+                                            <input
+                                                id="login-input"
+                                                ref={inputRef}
+                                                type={uiState === "password_prompt" ? "password" : "text"}
+                                                value={value}
+                                                onChange={(event) => setValue(event.currentTarget.value)}
+                                                className={field}
+                                                disabled={connecting}
+                                                autoFocus={!narrow}
+                                                spellCheck={false}
+                                            />
+
+                                            {status}
+                                        </>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={connecting || (mode === "add" ? !form.address : !value)}
+                                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        {mode === "add" ? "Add and connect" : button}
+                                    </button>
+
+                                    {/* THE WAY BACK OUT OF THE FORM, WHICH ONLY EXISTS WHERE THERE IS SOMETHING TO
+                                        GO BACK TO: THE FIRST SERVER EVER ADDED HAS NO LIST BEHIND IT */}
+                                    {mode === "add" && servers.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={onCancel}
+                                            disabled={connecting}
+                                            className="mt-2 w-full rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                </form>
                             )}
 
-                            <button
-                                type="button"
-                                onClick={onAdd}
-                                disabled={connecting}
-                                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
-                            >
-                                <Icon name="plus" className="h-4 w-4" />
-                                Add another server
-                            </button>
+                            {/* THE LIST ITSELF: THE WHOLE SCREEN WHILE NOTHING IS BEING ASKED, AND UNDER THE
+                                QUESTION WHILE SOMETHING IS. IT IS WHERE A SERVER IS PICKED AND WHERE ONE IS ADDED */}
+                            {mode !== "add" && servers.length > 0 && (
+                                <div className={mode === "idle" ? "" : "mt-6"}>
+                                    {/* THE LIST HAS NO FORM TO CARRY THE STATUS LINE, SO IT CARRIES ITS OWN - AND
+                                        AS A BOX, SINCE A BARE SENTENCE BETWEEN A HEADING AND A LIST READS AS
+                                        NEITHER. IT IS DRAWN ONLY WHEN IT SAYS SOMETHING */}
+                                    {mode === "idle" && (connecting || errorMsg || hint) && (
+                                        <div className={`mb-3 flex items-start gap-2 rounded-app border px-3 py-2.5 text-xs ${!connecting && errorMsg
+                                            ? "border-error/40 bg-error/10 text-error"
+                                            : "border-border bg-overlay text-muted"}`}>
+                                            <Icon name={!connecting && errorMsg ? "alert" : "info"} className="mt-px h-3.5 w-3.5 shrink-0" />
+                                            <span className="min-w-0 flex-1 break-words">{connecting ? "Connecting…" : errorMsg || hint}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Your servers</div>
+
+                                    <div className="scroller scroller-quiet max-h-[240px] rounded-xl border border-border bg-overlay p-1">
+                                        {servers.map((server) => (
+                                            <button
+                                                key={server.id}
+                                                type="button"
+                                                onClick={() => { if (held()) return; close(); onPick(server); }}
+                                                {...bind(server.id)}
+                                                disabled={connecting}
+                                                className={`flex w-full select-none items-center gap-2.5 rounded-app px-2 py-2 text-left transition-colors hover:bg-hover disabled:opacity-40 ${target?.id === server.id ? "bg-selected" : ""}`}
+                                            >
+                                                <span
+                                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white/90"
+                                                    style={{ background: avatarColor(server.name || server.address) }}
+                                                >
+                                                    {(serverLabel(server).trim()[0] ?? "?").toUpperCase()}
+                                                </span>
+
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block truncate text-sm">{serverLabel(server)}</span>
+                                                    <span className="block truncate font-mono text-[11px] text-faint">
+                                                        {server.address}{server.username ? ` · ${server.username}` : ""}
+                                                    </span>
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {menu && servers.some((server) => server.id === menu.id) && (
+                                        <ForgetMenu
+                                            server={servers.find((server) => server.id === menu.id)!}
+                                            at={menu}
+                                            onForget={onForget}
+                                            close={close}
+                                        />
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={onAdd}
+                                        disabled={connecting}
+                                        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-app py-2 text-sm text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                                    >
+                                        <Icon name="plus" className="h-4 w-4" />
+                                        Add another server
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
         </div>

@@ -141,3 +141,53 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 {
     animation: fall 120ms ease-out;
 }
+
+/* THE OPENING (login.tsx). THE MARK IS THE SIZE index.html'S OWN IS, SO THE PAGE'S SPLASH FADING OVER
+   IT IS A HANDOVER RATHER THAN A CUT; IT SETTLES SMALLER ONCE THERE IS SOMETHING UNDER IT FOR IT TO BE
+   THE HEADING OF */
+.intro-mark
+{
+    width: 96px;
+    height: 96px;
+    transition: width 560ms cubic-bezier(0.22, 1, 0.36, 1), height 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.intro-mark-settled
+{
+    width: 64px;
+    height: 64px;
+}
+
+/* AND WHAT OPENS UNDER IT. A GRID ROW GOING 0fr -> 1fr IS THE ONE WAY TO ANIMATE SOMETHING TO WHATEVER
+   HEIGHT IT HAPPENS TO HAVE - AND SINCE THE WHOLE BLOCK IS CENTRED IN THE WINDOW, GROWING DOWNWARDS IS
+   EXACTLY WHAT CARRIES THE MARK UP. THE WRAPPER IS DROPPED WHEN THE SLIDE IS OVER, SINCE A ROW THAT
+   CLIPS ITS OWN CONTENT IS NOT SOMETHING TO LEAVE STANDING OVER A LIST THAT SCROLLS */
+.intro-body
+{
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease 220ms;
+}
+
+.intro-body > *
+{
+    min-height: 0;
+    overflow: hidden;
+}
+
+.intro-open
+{
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+/* SOMEBODY WHO ASKED FOR NO MOTION STILL GETS THE MARK AND THEN THE LIST, JUST NOT THE TRAVEL */
+@media (prefers-reduced-motion: reduce)
+{
+    .intro-mark,
+    .intro-body
+    {
+        transition-duration: 1ms;
+    }
+}
