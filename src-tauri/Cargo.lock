@@ -8007,7 +8007,7 @@ dependencies = [
 
 [[package]]
 name = "why2-desktop"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "jni 0.22.4",
  "jpeg-encoder",
