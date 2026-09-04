@@ -85,6 +85,28 @@ jobs:
       - name: Build app
         run: npm run tauri build
 
+      # THE BUNDLE SHIPS UBUNTU'S libwayland, AND THE HOST'S MESA libEGL IS LINKED AGAINST THE HOST'S COPY -
+      # TWO IN ONE PROCESS MEANS THE wl_display GTK MADE IS A POINTER EGL DOES NOT RECOGNISE, SO
+      # eglGetPlatformDisplay ANSWERS EGL_BAD_PARAMETER, WEBKIT'S WEB PROCESS ABORTS AND THE WINDOW STAYS GREY.
+      # THESE FOUR ARE ON APPIMAGE'S OWN EXCLUDELIST FOR EXACTLY THAT REASON: THEY BELONG TO THE HOST
+      - name: Unbundle libwayland from the AppImage (Linux)
+        if: runner.os == 'Linux'
+        env:
+          ARCH: x86_64
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          set -eu
+          appimage=$(find src-tauri/target/release/bundle/appimage -name '*.AppImage' -print -quit)
+          [ -n "$appimage" ] || { echo "no AppImage was built"; exit 1; }
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          "$appimage" --appimage-extract >/dev/null
+          rm -f squashfs-root/usr/lib/libwayland-*.so.*
+          rm -f "$appimage"
+          ./appimagetool squashfs-root "$appimage"
+          rm -rf squashfs-root appimagetool
+
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
