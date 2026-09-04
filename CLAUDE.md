@@ -678,6 +678,10 @@ the identity step the way `tui/mod.rs::submit` takes it, is where that name come
 screen sharing.` beside `{name} attached`/`deattached your screen sharing.` for the two directions of
 watching. **The `[server]` prefix is on the two broadcast lines and on nothing else**: those are the server
 telling the whole room, the way `ServerSay` is, while an attach is the server telling the sharer alone.
+The prefix is not written into the text — `ChatMessage::from_server()` sets it, and **`ChatMessage::system`
+calls that itself**, which is the trap: a line that must not carry the stamp is `ChatMessage::plain`, the
+same kind without it (the TUI's `push_text`), and `notice`/`ok`/`error` take `.from_server()` where they
+want one.
 They are the same sentences about the same packets, so they read the same in both clients; the monitor a
 share is pointed at is said by `/screen <name>`'s own line (`Sharing {monitor} now.`, also the TUI's) and
 badged in the **Screens** window, not repeated in the line that starts one.

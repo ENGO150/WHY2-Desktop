@@ -446,7 +446,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //PICTURE IT IS ABOUT TO BE DRAWING, SO IT CAN ASK FOR THE FRAMES AND MAKE ROOM FOR THEM
         ClientEvent::Attach(username) =>
         {
-            say(app, ChatMessage::system(format!("Attached {username}'s screen sharing.")));
+            say(app, ChatMessage::plain(format!("Attached {username}'s screen sharing.")));
 
             emit(app, UiEvent::Watching { username: Some(username) });
         },
@@ -456,7 +456,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             state.screen_channel.lock().unwrap().take();
 
-            say(app, ChatMessage::system(format!("Deattached {username}'s screen sharing.")));
+            say(app, ChatMessage::plain(format!("Deattached {username}'s screen sharing.")));
 
             emit(app, UiEvent::Watching { username: None });
         },
@@ -468,8 +468,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::notice(format!("[{}] {username} started screen sharing.",
-                    options::get_server_username())));
+                say(app, ChatMessage::notice(format!("{username} started screen sharing.")).from_server());
             }
         },
 
@@ -477,8 +476,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::system(format!("[{}] {username} stopped screen sharing.",
-                    options::get_server_username())));
+                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")));
             }
         },
 
@@ -487,12 +485,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //SINCE THIS IS NOT AN ANNOUNCEMENT TO A ROOM
         ClientEvent::Attached(username) =>
         {
-            say(app, ChatMessage::system(format!("{username} attached your screen sharing.")));
+            say(app, ChatMessage::plain(format!("{username} attached your screen sharing.")));
         },
 
         ClientEvent::Deattached(username) =>
         {
-            say(app, ChatMessage::system(format!("{username} deattached your screen sharing.")));
+            say(app, ChatMessage::plain(format!("{username} deattached your screen sharing.")));
         },
 
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),

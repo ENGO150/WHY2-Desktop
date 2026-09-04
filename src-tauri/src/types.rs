@@ -334,6 +334,10 @@ impl ChatMessage
         Self::new(MessageKind::System, "", text).from_server()
     }
 
+    //A LINE THE CLIENT WROTE ABOUT SOMETHING THE SERVER TOLD US ALONE - THE TUI'S push_text, WHICH PUTS
+    //NOTHING IN FRONT OF IT: THE [SERVER] STAMP IS FOR WHAT THE SERVER SAID TO THE WHOLE ROOM
+    pub(crate) fn plain(text: impl Into<String>) -> Self { Self::new(MessageKind::System, "", text) }
+
     pub(crate) fn notice(text: impl Into<String>) -> Self { Self::new(MessageKind::Notice, "", text) }
 
     pub(crate) fn ok(text: impl Into<String>) -> Self { Self::new(MessageKind::Ok, "", text) }
