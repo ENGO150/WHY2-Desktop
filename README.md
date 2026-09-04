@@ -1,14 +1,5 @@
 # WHY2 Desktop
 
-```
-   WHY2 Desktop
-===================
-  (_    ,_,    _)
-  / `'--) (--'` \
- /  _,-'\_/'-,_  \
-/.-'     "     '-.\
-```
-
 **A window on the WHY2 chat protocol — chat, voice calls and screen sharing, on Linux, macOS, Windows
 and Android from one source tree.**
 
