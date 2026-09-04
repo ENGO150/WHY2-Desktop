@@ -49,7 +49,6 @@ use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
 use crate::net::refresh_online;
-use crate::screen::current_monitor;
 use crate::settings::client_settings;
 
 pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
@@ -413,19 +412,15 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             say(app, ChatMessage::error("Voice chat cannot be enabled while using SOCKS5."));
         },
         //THE SHARE ITSELF IS THE CRATE'S: IT CAPTURES, ENCODES AND SENDS, AND THE SERVER ANSWERS THE
-        //TOGGLE. ALL THAT IS LEFT HERE IS TO SAY WHETHER IT IS RUNNING AND WHAT IT IS POINTED AT
+        //TOGGLE. ALL THAT IS LEFT HERE IS TO SAY WHETHER IT IS RUNNING - WHICH MONITOR IT IS POINTED AT
+        //IS THE Screens WINDOW'S TO BADGE, AND THE TUI SAYS NO MORE THAN THIS EITHER
         ClientEvent::Screen(enabled) =>
         {
-            match enabled
+            say(app, ChatMessage::ok(format!("{} screen sharing.", match enabled
             {
-                true => say(app, ChatMessage::ok(match current_monitor()
-                {
-                    Some(monitor) => format!("Sharing {monitor}."),
-                    None => String::from("Started screen sharing."),
-                })),
-
-                false => say(app, ChatMessage::system("Stopped screen sharing.")),
-            }
+                true => "Started",
+                false => "Stopped",
+            })));
 
             emit_screen(app);
         },
@@ -451,7 +446,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //PICTURE IT IS ABOUT TO BE DRAWING, SO IT CAN ASK FOR THE FRAMES AND MAKE ROOM FOR THEM
         ClientEvent::Attach(username) =>
         {
-            say(app, ChatMessage::system(format!("Watching {username}'s screen.")));
+            say(app, ChatMessage::system(format!("Attached {username}'s screen sharing.")));
 
             emit(app, UiEvent::Watching { username: Some(username) });
         },
@@ -461,7 +456,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         {
             state.screen_channel.lock().unwrap().take();
 
-            say(app, ChatMessage::system(format!("Stopped watching {username}'s screen.")));
+            say(app, ChatMessage::system(format!("Deattached {username}'s screen sharing.")));
 
             emit(app, UiEvent::Watching { username: None });
         },
@@ -488,12 +483,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //SHARER ALONE, SO THERE IS NOBODY TO FILTER OUT
         ClientEvent::Attached(username) =>
         {
-            say(app, ChatMessage::notice(format!("{username} is watching your screen.")));
+            say(app, ChatMessage::system(format!("{username} attached your screen sharing.")));
         },
 
         ClientEvent::Deattached(username) =>
         {
-            say(app, ChatMessage::system(format!("{username} stopped watching your screen.")));
+            say(app, ChatMessage::system(format!("{username} deattached your screen sharing.")));
         },
 
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),

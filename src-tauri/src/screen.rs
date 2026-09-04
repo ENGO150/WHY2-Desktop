@@ -32,11 +32,6 @@ use openh264::{ decoder::Decoder, formats::YUVSource };
 #[cfg(screen)]
 use jpeg_encoder::{ Encoder as JpegEncoder, ColorType, SamplingFactor };
 
-//THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
-//THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
-#[cfg(screen)]
-use why2_chat::network::screen::client::capture as screen_capture;
-
 use crate::state::AppState;
 
 #[cfg(screen)]
@@ -57,14 +52,6 @@ pub(crate) const JPEG_WIDTH: usize = 1920;
 
 //LOGGING IN BRINGS Accept AND OUR OWN Join BACK TO BACK, AND A BURST OF JOINS ARRIVES THE SAME WAY.
 //ONE ROSTER ANSWERS ALL OF THEM, SO THE FIRST REQUEST WAITS THIS LONG FOR THE REST TO CATCH UP
-
-//WHAT THE CAPTURE IS POINTED AT, WHERE THERE IS A CAPTURE TO POINT - THE NAME NEVER LEAVES THIS MACHINE
-#[cfg(screen)]
-pub(crate) fn current_monitor() -> Option<String> { screen_capture::current_monitor() }
-
-#[cfg(not(screen))]
-pub(crate) fn current_monitor() -> Option<String> { None }
-
 
 //I420 TO RGB, step PIXELS AT A TIME. THE BLOCK IS *AVERAGED* AND NOT SAMPLED: PICKING EVERY step-TH PIXEL
 //IS THE ALIASING THE TUI NEVER SHOWS, BECAUSE IT HANDS THE PLANES TO THE GPU AND LETS A LINEAR SAMPLER
