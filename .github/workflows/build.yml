@@ -200,3 +200,106 @@ jobs:
           name: why2-desktop-android
           if-no-files-found: error
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+  # UPLOADS THE BUNDLES TO THE OIDC ENDPOINT AS why2_desktop-<BRANCH>-<VARIANT>. THE BRANCH IS NOT SENT:
+  # IT COMES OUT OF THE TOKEN THE ENDPOINT HAS JUST VERIFIED, SO A RUN CANNOT PUBLISH AS ANOTHER BRANCH
+  publish:
+    needs: [ build-desktop, build-android ]
+    runs-on: ubuntu-latest
+    # SKIPS SILENTLY IN A FORK, OR BEFORE THE ENDPOINT IS CONFIGURED
+    if: vars.DL_ENDPOINT != ''
+
+    permissions:
+      contents: read
+      id-token: write        # LETS THE RUN MINT ITS OWN OIDC TOKEN
+
+    steps:
+      - name: Download bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish
+        env:
+          ENDPOINT: ${{ vars.DL_ENDPOINT }}
+          AUDIENCE: why2-dl
+        run: |
+          set -euo pipefail
+
+          # ACTIONS_ID_TOKEN_REQUEST_{URL,TOKEN} ARE INJECTED BY `id-token: write`.
+          # A FRESH TOKEN PER FILE: THE ENDPOINT ACCEPTS EACH `jti` EXACTLY ONCE.
+          mint() {
+            curl -sS \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${AUDIENCE}" | jq -r .value
+          }
+
+          # RETRIED BY HAND RATHER THAN WITH --retry: THE ENDPOINT SPENDS A TOKEN'S
+          # `jti` THE FIRST TIME IT SEES IT, SO curl'S OWN RETRY WOULD RESEND A SPENT
+          # ONE AND REPORT THE RESULTING 401 INSTEAD OF THE REAL ERROR
+          publish() {
+            local file="$1" variant="$2" sum token attempt=1
+            sum="$(sha256sum "$file" | cut -d' ' -f1)"
+
+            while true; do
+              token="$(mint)"
+              echo "::add-mask::$token"
+
+              # --fail-with-body, NOT -f: THE ENDPOINT'S REJECTION REASON IS IN THE
+              # BODY, AND -f DISCARDS IT
+              if curl -sS --fail-with-body \
+                   -X PUT "$ENDPOINT/$variant" \
+                   -H "Authorization: Bearer $token" \
+                   -H "X-Content-SHA256: $sum" \
+                   --data-binary "@$file"; then
+                echo "published $variant <- ${file##*/} ($sum)"
+                return 0
+              fi
+
+              if [ "$attempt" -ge 3 ]; then
+                echo "giving up on $variant after $attempt attempts" >&2
+                return 1
+              fi
+
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+
+          # THE BUNDLE FILENAMES CARRY THE VERSION AND THE ARCH, SO THEY ARE FOUND BY
+          # EXTENSION RATHER THAN NAMED - EACH ONE IS UNIQUE WITHIN ITS ARTIFACT
+          pick() {
+            find "dist/$1" -type f -name "$2" 2>/dev/null | sort | head -n1
+          }
+
+          publish_one() {
+            local artifact="$1" pattern="$2" variant="$3" file
+
+            file="$(pick "$artifact" "$pattern")"
+
+            if [ -z "$file" ]; then
+              echo "no $pattern in $artifact" >&2
+              return 1
+            fi
+
+            publish "$file" "$variant"
+          }
+
+          publish_one why2-desktop-ubuntu-latest   '*.AppImage'   linux.AppImage
+          publish_one why2-desktop-ubuntu-latest   '*.deb'        linux.deb
+          publish_one why2-desktop-ubuntu-latest   '*.rpm'        linux.rpm
+          publish_one why2-desktop-macos-latest    '*.dmg'        macos.dmg
+          publish_one why2-desktop-windows-latest  '*.msi'        windows.msi
+          publish_one why2-desktop-windows-latest  '*-setup.exe'  windows-setup.exe
+
+          # THE APK JOB CAN EMIT PER-ABI SPLITS ALONGSIDE THE UNIVERSAL ONE, AND THE
+          # UNIVERSAL ONE IS THE ONLY BUILD THAT INSTALLS ANYWHERE
+          apk="$(pick why2-desktop-android '*universal*.apk')"
+          [ -n "$apk" ] || apk="$(pick why2-desktop-android '*.apk')"
+
+          if [ -z "$apk" ]; then
+            echo "no apk in why2-desktop-android" >&2
+            exit 1
+          fi
+
+          publish "$apk" android.apk
