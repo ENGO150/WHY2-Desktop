@@ -16,7 +16,7 @@
 
 [package]
 name = "why2-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "Chat, voice calls and screen sharing over the WHY2 protocol"
 authors = ["Václav Šmejkal <engo@satan.red>"]
 license = "GPL-3.0-only"
