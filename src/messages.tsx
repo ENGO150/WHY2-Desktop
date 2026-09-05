@@ -16,12 +16,20 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { ChatMessage, BlockRow, ClientConfig } from "./types";
+import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus } from "./types";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+//WHAT A PICTURE IN THE PANE CAN BE ASKED TO DO. NEITHER OF THEM IS THE MESSAGE'S OWN BUSINESS - ONE PUTS
+//A PACKET ON THE WIRE AND THE OTHER OPENS A WINDOW, AND BOTH BELONG TO THE COMPONENT THAT HOLDS THE STATE
+export interface Pictures
+{
+    show: (hash: string) => void;
+    open: (image: MessageImage) => void;
+}
 
 //A LINE AS IT IS READ: THE TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE. IT OPENS IN THE
 //SYSTEM BROWSER RATHER THAN IN HERE - THIS WINDOW IS A CHAT CLIENT AND NOT A BROWSER, AND A PAGE THAT
@@ -83,9 +91,56 @@ export function renderNotice(message: ChatMessage, key: number)
         );
 }
 
+//THE PICTURE UNDER A LINE THAT IS ONE. WHAT ARRIVED WITH ITS OWN BYTES IS SIMPLY DRAWN; WHAT THE HISTORY
+//ONLY NAMED IS A CAPTION OFFERING TO FETCH IT, WHICH IS THE TUI'S [ show ] AND THE ONLY THING THAT EVER
+//PUTS A STORED PICTURE ON THE WIRE - REPLAYING THEM WOULD MAKE EVERY LOGIN CARRY EVERY IMAGE EVER POSTED
+export function renderPicture(image: MessageImage, status: PictureStatus, pictures: Pictures)
+{
+    if (image.source)
+    {
+        return (
+            <button
+                type="button"
+                title={image.filename}
+                onClick={() => pictures.open(image)}
+                className="mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
+            >
+                <img
+                    src={image.source}
+                    alt={image.filename}
+                    width={image.width || undefined}
+                    height={image.height || undefined}
+                    className="block max-h-[340px] w-auto max-w-full object-contain"
+                />
+            </button>
+        );
+    }
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-[15px] leading-relaxed text-muted">
+            <Icon name="image" className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 break-all">{image.filename}</span>
+
+            {status === "waiting" && <span className="text-faint">loading...</span>}
+            {status === "gone" && <span className="text-error">unavailable</span>}
+
+            {status !== "waiting" && image.hash && (
+                <button
+                    type="button"
+                    onClick={() => pictures.show(image.hash!)}
+                    className="rounded-app border border-border px-2 py-px text-xs font-semibold text-accent transition hover:border-accent"
+                >
+                    {status === "gone" ? "Try again" : "Show"}
+                </button>
+            )}
+        </div>
+    );
+}
+
     //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
-export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean)
+export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
+    picture: PictureStatus, pictures: Pictures)
     {
         //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
         const author = message.direct?.outgoing ? username : message.username;
@@ -133,7 +188,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         style={{ color: messageColor(config, message.message_color) }}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {linked(message.text)}
+                        {message.image ? renderPicture(message.image, picture, pictures) : linked(message.text)}
                     </div>
                 </div>
             </div>

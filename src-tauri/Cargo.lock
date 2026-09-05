@@ -8297,6 +8297,8 @@ dependencies = [
 name = "why2-desktop"
 version = "1.0.0"
 dependencies = [
+ "base64 0.23.1",
+ "image",
  "jni 0.22.4",
  "jpeg-encoder",
  "ndk-context",

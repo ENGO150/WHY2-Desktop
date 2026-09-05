@@ -44,7 +44,24 @@ export interface ChatMessage
     username_color: number | null;
     message_color: number | null;
     direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
+    image: MessageImage | null; //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
 }
+
+//A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
+//PICTURE WHERE THE TEXT WOULD BE. ONE THAT ARRIVED WITH ITS OWN BYTES CARRIES source; ONE THE HISTORY
+//ONLY NAMED CARRIES hash, AND NOTHING IS FETCHED UNTIL SOMEBODY ASKS TO SEE IT
+export interface MessageImage
+{
+    filename: string;
+    hash: string | null;   //THE CONTENT HASH, WHICH IS WHAT THE SERVER IS ASKED FOR THE PICTURE WITH
+    source: string | null; //THE PICTURE ITSELF, AS A data: URL
+    width: number;
+    height: number;
+}
+
+//WHAT THERE IS TO DRAW UNDER A CAPTION - AND, WHILE THERE IS NOTHING, WHAT THE CAPTION OFFERS INSTEAD.
+//THE TUI'S Picture, MINUS THE READY ARM: A PICTURE THAT IS HERE IS THE MESSAGE'S OWN source
+export type PictureStatus = "absent" | "waiting" | "gone";
 
 //WHO A PRIVATE MESSAGE IS WITH - THE OTHER PERSON WHICHEVER WAY IT WENT. THE ECHO OF ONE WE SENT NAMES
 //THE RECIPIENT AND CARRIES NO AUTHOR, SO outgoing IS WHICH SIDE OF THE CONVERSATION THE LINE IS ON
@@ -107,7 +124,7 @@ export interface FileOwner
 //ONE THING IN THE PANE. A LIST (/files, /list, THE BAN LIST) IS AN ENTRY IN THE SCROLLBACK RATHER THAN A
 //WINDOW THAT COVERS IT - IT IS AN ANSWER TO SOMETHING THAT WAS ASKED, AND IT BELONGS WHERE IT WAS ASKED
 export type PaneEntry =
-    | { entry: "message"; message: ChatMessage }
+    | { entry: "message"; message: ChatMessage; picture?: PictureStatus }
     | { entry: "block"; title: string; rows: BlockRow[] };
 
 export interface OnlineUser
@@ -318,6 +335,7 @@ export type BridgeEvent =
     | { event: "role"; data: { role: string; username: string | null } }
     | { event: "message"; data: { message: ChatMessage } }
     | { event: "history"; data: { messages: ChatMessage[] } }
+    | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
     | { event: "popup"; data: { text: string } }
     | { event: "tofu_prompt"; data: TofuPrompt }
     | { event: "users"; data: { users: OnlineUser[] } }

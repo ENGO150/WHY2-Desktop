@@ -45,6 +45,12 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
 sha2 = "0.11"
 
+# A PICTURE ARRIVES DECODED - THE CRATE HANDS OVER A DynamicImage AND NOT THE BYTES IT CAME AS, SO THE
+# WINDOW'S COPY HAS TO BE ENCODED AGAIN. THE VERSION IS why2-chat'S OWN, SO THE TWO SHARE ONE image AND
+# THE TYPE IN THE EVENT IS THE TYPE THIS ENCODES; base64 IS WHAT CARRIES IT ACROSS THE BRIDGE
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
+base64 = "0.23"
+
 # THE SERVER LIST IS OURS AND LIVES BESIDE THE CRATE'S OWN CONFIG, IN THE SAME LANGUAGE AS IT
 toml = "1"
 

@@ -49,6 +49,7 @@ use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
 use crate::net::refresh_online;
+use crate::picture;
 use crate::settings::client_settings;
 
 pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
@@ -109,6 +110,41 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             say(app, ChatMessage::new(MessageKind::User, username, text).with_id(id).colored(colors));
         },
 
+        //A PICTURE SOMEBODY SENT, DECODED BY THE CRATE AND READY TO DRAW. IT IS A LINE THEY SAID LIKE ANY
+        //OTHER - THEIR NAME AND THEIR FACE OVER IT - WITH THE PICTURE WHERE THE TEXT WOULD BE
+        ClientEvent::ImageDisplay(username, filename, image) =>
+        {
+            match picture::encode(*image, filename.clone(), None).await
+            {
+                Some(image) => say(app, ChatMessage::new(MessageKind::User, username, filename.clone()).picture(image)),
+
+                //IT DECODED AND STILL WOULD NOT ENCODE, WHICH IS THE SAME NEWS TO EVERYBODY LOOKING AT IT
+                None => say(app, ChatMessage::error(
+                    format!("{username} sent an image that could not be displayed ({filename})."))),
+            }
+        },
+
+        //IT PASSED THE SERVER'S HEADER CHECK AND STILL WOULD NOT DECODE, SO SAY SO WHERE IT WOULD HAVE BEEN
+        ClientEvent::ImageFailed(username, filename) =>
+        {
+            say(app, ChatMessage::error(format!("{username} sent an image that could not be displayed ({filename}).")));
+        },
+
+        //THE ANSWER TO A CAPTION SOMEBODY ASKED TO SEE - OR THE LACK OF ONE, WHICH THE CAPTION THEN SAYS.
+        //THE FILENAME IS NOT IN IT: THE LINE IT BELONGS TO HAS CARRIED THAT SINCE THE HISTORY ARRIVED
+        ClientEvent::ImageData(hash, image) =>
+        {
+            let hex = picture::hex(&hash);
+
+            let image = match image
+            {
+                Some(image) => picture::encode(*image, String::new(), Some(hash)).await,
+                None => None,
+            };
+
+            emit(app, UiEvent::ImageData { hash: hex, image });
+        },
+
         //THE LINE CARRIES WHO IT IS WITH RATHER THAN SAYING SO IN ITS OWN TEXT: THE WINDOW FILES IT INTO
         //THAT PERSON'S CONVERSATION, WHERE "TO" AND "FROM" ARE WHICH SIDE THE LINE IS ON
         ClientEvent::PrivateMessageRecv(from, id, text) =>
@@ -130,9 +166,24 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN
         ClientEvent::History(messages) =>
         {
-            let messages = messages.into_iter().map(|StoredMessage { username, text, colors }|
+            let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }|
             {
-                ChatMessage::new(MessageKind::User, username, text).colored(colors)
+                //A PICTURE IS NAMED HERE AND NOT REPLAYED - THE HISTORY CARRIES ITS HASH, AND NOTHING GOES
+                //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME
+                match image
+                {
+                    Some(hash) => ChatMessage::new(MessageKind::User, username, text.clone())
+                        .picture(MessageImage
+                        {
+                            filename: text,
+                            hash: Some(picture::hex(&hash)),
+                            source: None,
+                            width: 0,
+                            height: 0,
+                        }),
+
+                    None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
+                }
             }).collect::<Vec<ChatMessage>>();
 
             say(app, ChatMessage::title(format!("Message history ({}):", messages.len())));
@@ -315,6 +366,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         },
 
         ClientEvent::Upload(filename) => popup(app, format!("Uploading {filename}...")),
+        ClientEvent::Image(filename) => popup(app, format!("Uploading image {filename}...")),
         ClientEvent::Download(filename) => popup(app, format!("Downloading {filename}...")),
         ClientEvent::Downloaded(filename) => popup(app, format!("Downloaded {filename} successfully!")),
         ClientEvent::DownloadFailed(filename) => popup(app, format!("Downloading {filename} failed!")),

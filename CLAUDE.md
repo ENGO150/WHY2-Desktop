@@ -118,15 +118,17 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `reset_session`), `emit.rs` (everything that pushes at the window — `say`, `block`, `emit_voice`,
 `emit_screen`), then the paths that do something: `net.rs` (the socket, the roster clock, `connect_to_server`),
 `input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
-`pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), plus `settings.rs`,
-`palette.rs`, `color.rs` and `servers.rs` for the four things that are their own vocabulary.
+`pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), `picture.rs` (a decoded
+image on its way to the webview, and the hash it is asked for by), plus `settings.rs`, `palette.rs`,
+`color.rs` and `servers.rs` for the four things that are their own vocabulary.
 
 **`src/`** — `App.tsx` still owns all the state, every effect and every handler, and that is deliberate: the
 event listener, the channel routing and the palette all read each other, and prop-drilling them apart would
 buy nothing. What moved out is what does not need the state: `types.ts` (the mirror of `UiEvent`, and
 `LOBBY`), `theme.ts` (the two ANSI tables), `format.ts`, `icons.tsx`, `components.tsx` (`Avatar`, `Switch`,
 `SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
-`palette::update`), `settings.ts` (the row model), `history.ts`, `narrow.ts` — and the views that take props
+`palette::update`), `settings.ts` (the row model), `history.ts`, `pictures.ts` (which caption an arriving
+picture belongs to), `narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
 `servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`.
 
@@ -455,8 +457,8 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   identity step the server is waiting on** — `options::get_login_state()` decides whether it becomes a
   `Username`, `PasswordL` or `PasswordR` packet. Commands do not exist yet.
 - After it, a line starting with `/` goes to `command::get_command`, then `command::send_command_code`, which
-  returns `Some(true)` (sent), `Some(false)` (invalid usage) or `None` (ours to run: `/upload`, `/server`,
-  `/ucolor`, `/color`, `/mute`).
+  returns `Some(true)` (sent), `Some(false)` (invalid usage) or `None` (ours to run: `/upload`, `/image`,
+  `/server`, `/ucolor`, `/color`, `/mute`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
 `send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
@@ -464,7 +466,8 @@ header gear sends `/server settings` (drawn only when `get_commands` says our ro
 gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
 and its headset `/voice`; the monitor button opens the Screens window, whose rows send `/screen <name>`, `/attach <id>` and
 `/deattach`;
-the microphone button sends `/mute`; a row of the file list sends
+the microphone button sends `/mute`; the composer's two upload buttons are `/upload` and `/image`
+by way of `upload_file_from_path`, which is the picker's answer put back on that same path; a row of the file list sends
 `/download <user_id> <file_id>`, and a row of the voice roster sends `/mute <id>` — or `/mute` on our own
 row, the one the command takes no ID for. Prefer extending the command path over adding a
 `#[tauri::command]`.
@@ -533,6 +536,54 @@ our rows again, which the dialog adopts if it is showing ours — the TUI calls 
 
 Side effects belong outside the state updaters: React runs them twice under `StrictMode`, and an updater that
 writes `client.toml` or puts a packet on the wire would do it twice.
+
+### Images
+
+`/image <PATH>` is `/upload` with the other code on it. **The path is checked and the file hashed
+identically** — `upload_file` in `input.rs` is one function taking a flag, exactly as the TUI's `submit`
+handles `Command::Upload | Command::Image` in one arm — and the only difference is that the server is asked
+with `PacketCode::Image` rather than `PacketCode::Upload`, which is what makes the picture something it
+keeps, puts in the channel, and names in the history for everybody who logs in afterwards. Two things are
+answered on this side before anything goes on the wire: the file is **over `MAX_IMAGE_SIZE`** (the server
+turns that down as invalid usage, which says nothing about why, and the size is known here), or its first
+`IMAGE_HEADER_SIZE` bytes are **not an image** (`misc::is_image`, the same check the server runs again on
+the bytes it receives — nothing makes a client run it first). The composer has both: the `+` is a file and
+the picture beside it is an image, which is the same picker with the formats `is_image` knows filtered in.
+
+A picture arrives **decoded**. The crate reads the bytes off the wire under explicit limits and hands over a
+`DynamicImage` rather than the file it came as, so there is nothing to forward and `picture.rs` encodes the
+window's copy again: **PNG where there is an alpha channel to keep and JPEG everywhere else** — a photograph
+as PNG is several times the bytes of one nobody can tell apart, and a picture with a hole in it as JPEG is a
+black rectangle. It travels as a `data:` URL on the message itself (`MessageImage`), which is why `image` is
+a dependency here at all and why its version is why2-chat's own: the two share one `image` crate, so the
+type in the event is the type this encodes. Encoding is unbroken CPU over the whole picture, so it is in
+`spawn_blocking` like every hash here.
+
+A line that is a picture is **a line somebody said** — `MessageKind::User`, their name and their face over
+it, with the picture where the text would be and the filename as the text. The three events behind it are
+the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
+server's header check and still would not decode (an error line, word for word with `tui/event.rs`), and
+`ImageData` is the answer to a caption somebody asked to see.
+
+**The history replays a hash and not the picture**, which is what keeps every login from carrying every
+image ever posted. So a history entry with an `image` becomes a caption — the filename, and a `Show` that
+sends `request_image`, the one thing in this app that ever puts a stored picture on the wire. The state of
+that caption is the **frontend's**, since the pane is: `PaneEntry` carries a `PictureStatus` (`absent`,
+`waiting`, `gone`) beside the message, which is `tui/state.rs`'s `Picture` minus its ready arm — a picture
+that is here is the message's own `source`. `pictures.ts` is the two things that move it, and
+`deliverPicture` makes the same decision `deliver_image` does: **the answer fills the oldest line still
+waiting for that hash**, because the same picture can be in the pane twice and the second one asked for
+itself. A `gone` caption is askable again (`Try again`) — the picture may have left the history, and the
+answer may also be the one that went missing.
+
+The server holds one client to one `ImageData` per `IMAGE_REQUEST_DELAY` and **serves it late rather than
+refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it. The ask
+still goes through `send_packet` like everything else, so the roster clock stays honest.
+
+The pane draws a picture at a size somebody can read around it, and the **lightbox** is where it is actually
+looked at: the picture on a darkened room, closed by esc, the ×, a press anywhere, or the back gesture (it is
+first in `__why2Back`, above the theater — a picture opened while watching a screen is what the key is
+about). It is not a dialog, because there is nothing to answer.
 
 ### Voice
 

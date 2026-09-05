@@ -20,7 +20,7 @@ use std::
 {
     fs::File,
     time::Instant,
-    io::Read,
+    io::{ Read, Seek },
     path::Path,
     sync::{ Arc, atomic::Ordering },
 };
@@ -33,6 +33,7 @@ use tauri::{ AppHandle, State };
 
 use why2_chat::
 {
+    misc,
     consts,
     role::Role,
     options::{ self, LoginState },
@@ -45,6 +46,7 @@ use crate::state::*;
 use crate::emit::*;
 use crate::color::{ color_handler, get_colors };
 use crate::net::send_packet;
+use crate::picture::unhex;
 
 #[cfg(screen)]
 use why2_chat::network::screen::client::capture as screen_capture;
@@ -143,7 +145,11 @@ fn percent_decode(text: &str) -> String
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, path: &str)
+//ONE REQUEST, TWO CODES: A PERSISTENT IMAGE IS ASKED FOR EXACTLY THE WAY A FILESHARE IS - THE PATH IS
+//CHECKED AND THE FILE HASHED IDENTICALLY, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE
+//TWO IT BECOMES. THIS IS tui/mod.rs::submit'S Command::Upload | Command::Image, ARM FOR ARM
+pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
+    path: &str, image: bool)
 {
     //COPYING THE WHOLE FILE IS BLOCKING I/O - KEEP IT OFF THE RUNTIME, THE WAY THE HASH BELOW IS
     #[cfg(target_os = "android")]
@@ -174,6 +180,32 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
 
     let Ok(path) = path.canonicalize() else { return popup(app, "File not found!") };
 
+    //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
+    //THE REQUEST ITSELF - THE SERVER MAY ALREADY HOLD THE PICTURE AND ANSWER WITHOUT AN UPLOAD AT ALL
+    let filename = path.file_name().and_then(|name| name.to_str()).unwrap_or("unnamed_file").to_owned();
+
+    if image
+    {
+        //THE SERVER TURNS AN OVERSIZED IMAGE DOWN AS INVALID USAGE, WHICH SAYS NOTHING ABOUT WHY - THE
+        //SIZE IS KNOWN HERE, SO IT IS SAID HERE
+        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_IMAGE_SIZE as u64
+        {
+            return popup(app, format!("Image is too large! (limit is {}MB)",
+                consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
+        }
+
+        //THE HEADER IS READ BEFORE THE SERVER IS ASKED FOR ANYTHING, SO A FILE THAT IS NOT AN IMAGE COSTS
+        //NO CONNECTION AND NO HASH. THE SERVER STILL CHECKS THE BYTES IT RECEIVES - NOTHING MAKES A
+        //CLIENT RUN THIS. THE HASH IS TAKEN FROM THE SAME HANDLE, SO GIVE BACK WHAT WAS READ
+        let mut header = Vec::new();
+
+        file.by_ref().take(consts::IMAGE_HEADER_SIZE as u64).read_to_end(&mut header).ok();
+
+        if file.rewind().is_err() { return popup(app, "Error reading file!") }
+
+        if !misc::is_image(&header) { return popup(app, "Not an image!") }
+    }
+
     //SHA256 OVER THE WHOLE FILE - BLOCKING I/O AND CPU, KEEP IT OFF THE RUNTIME
     let hash = task::spawn_blocking(move || -> Option<[u8; 32]>
     {
@@ -196,7 +228,13 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
     //THE UPLOAD TASK LOOKS THE PATH UP BY HASH WHEN THE APPROVAL COMES BACK
     client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
 
-    send_packet(state, write_stream, PacketCode::Upload { hash, token: None, uid: None }).await;
+    let request = match image
+    {
+        true => PacketCode::Image { hash, filename, token: None, uid: None },
+        false => PacketCode::Upload { hash, token: None, uid: None },
+    };
+
+    send_packet(state, write_stream, request).await;
 }
 
 //MODERATION ACTIONS - /server <action> [parameters]
@@ -269,11 +307,27 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
 //TRANSLATES ONE EVENT OF THE SESSION INTO SOMETHING THE WEBVIEW CAN RENDER
 
 #[tauri::command]
-pub(crate) async fn upload_file_from_path(path: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn upload_file_from_path(path: String, image: bool, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
 
-    upload_file(&app, &state, &write_stream, &path).await;
+    upload_file(&app, &state, &write_stream, &path, image).await;
+
+    Ok(())
+}
+
+//A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES THEIR
+//HASHES, AND THIS IS THE ONLY THING THAT EVER PUTS A STORED ONE ON THE WIRE. THE SERVER HOLDS ONE CLIENT
+//TO ONE OF THESE PER IMAGE_REQUEST_DELAY AND SERVES IT LATE RATHER THAN REFUSING IT, SO THERE IS NOTHING
+//TO RETRY: THE ANSWER ALWAYS COMES, AND THE CAPTION WAITS FOR IT
+#[tauri::command]
+pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+
+    let Some(hash) = unhex(&hash) else { return Err(String::from("Invalid image")) };
+
+    send_packet(&state, &write_stream, PacketCode::ImageData { hash, data: None }).await;
 
     Ok(())
 }
@@ -336,8 +390,16 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                 {
                     Command::Upload => match parameters
                     {
-                        Some(path) => upload_file(&app, &state, &write_stream, &path).await,
+                        Some(path) => upload_file(&app, &state, &write_stream, &path, false).await,
                         None => popup(&app, "Usage: /upload <PATH>"),
+                    },
+
+                    //THE SAME PATH, ASKED FOR WITH THE OTHER CODE: THE SERVER KEEPS THE PICTURE AND PUTS
+                    //IT IN THE CHANNEL, AND THE HISTORY NAMES IT FOR EVERYBODY WHO LOGS IN AFTERWARDS
+                    Command::Image => match parameters
+                    {
+                        Some(path) => upload_file(&app, &state, &write_stream, &path, true).await,
+                        None => popup(&app, "Usage: /image <PATH>"),
                     },
 
                     Command::Server => server_command(&app, &state, &write_stream, parameters).await,

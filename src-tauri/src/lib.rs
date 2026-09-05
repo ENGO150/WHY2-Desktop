@@ -31,6 +31,7 @@ mod net;
 mod input;
 mod events;
 mod screen;
+mod picture;
 
 //THE ONLY PLACE IN THE APP THAT SPEAKS JNI, AND THE ONLY ONE A PHONE NEEDS: THE CALL HAS A PERMISSION TO
 //ASK FOR AND cpal HAS A CONTEXT TO BE HANDED
@@ -71,7 +72,7 @@ use state::AppState;
 
 use net::{ connect_to_server, refresh_screens, answer_tofu };
 use servers::{ get_servers, save_server, remove_server };
-use input::{ send_input, upload_file_from_path };
+use input::{ send_input, upload_file_from_path, request_image };
 use palette::{ get_commands, get_vocabulary };
 use screen::{ watch_frames, drop_frames };
 use settings::
@@ -205,6 +206,7 @@ pub fn run()
             restart_server,
             answer_tofu,
             upload_file_from_path,
+            request_image,
             watch_frames,
             drop_frames,
             refresh_screens,

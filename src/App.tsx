@@ -33,6 +33,7 @@ import type
     ScreenUser,
     FileOwner,
     PaneEntry,
+    MessageImage,
     OnlineUser,
     ArgValues,
     AudioDevices,
@@ -69,7 +70,9 @@ import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
+import type { Pictures } from "./messages";
 import { renderNotice, renderChat, renderBlock } from "./messages";
+import { markWaiting, deliverPicture } from "./pictures";
 import
 {
     RESTART_LABEL,
@@ -81,6 +84,15 @@ import
     landRow,
     unsavedRows,
 } from "./settings";
+
+//WHAT THE PICKER OFFERS WHEN IT IS ASKED FOR A PICTURE. IT IS THE FORMATS misc::is_image RECOGNISES, AS
+//FILE EXTENSIONS - THE HEADER IS WHAT ACTUALLY DECIDES (HERE, AND AGAIN ON THE SERVER), SO THIS IS A
+//CONVENIENCE AND NOT A CHECK: ANYTHING ELSE CAN STILL BE TYPED OUT AS /image <PATH> AND WILL BE REFUSED
+const IMAGE_EXTENSIONS =
+[
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "tif", "tiff", "webp",
+    "qoi", "hdr", "ff", "dds", "exr", "pnm", "pbm", "pgm", "ppm", "pam",
+];
 
 function App()
 {
@@ -148,6 +160,10 @@ function App()
 
     //THE MEMBER COLUMN IS A VIEW PREFERENCE AND NOT A SESSION FACT, SO IT SURVIVES A RECONNECT
     const [members, setMembers] = useState(true);
+
+    //THE PICTURE BEING LOOKED AT, WHILE ONE IS. THE PANE DRAWS EVERY IMAGE SMALL ENOUGH TO READ AROUND -
+    //A SHARED SCREENSHOT IS NOT LEGIBLE AT THAT SIZE, AND THIS IS WHERE IT IS ACTUALLY LOOKED AT
+    const [lightbox, setLightbox] = useState<MessageImage | null>(null);
 
     //WHAT IS UP FOR DOWNLOAD, WHILE THE WINDOW SHOWING IT IS OPEN, AND WHAT IS BEING LOOKED FOR IN IT
     const [files, setFiles] = useState<FileOwner[] | null>(null);
@@ -624,6 +640,17 @@ function App()
                 case "history":
                 {
                     push(...payload.data.messages.map((message): PaneEntry => ({ entry: "message", message })));
+                    break;
+                }
+
+                //THE ANSWER TO A CAPTION SOMEBODY ASKED TO SEE - OR THE LACK OF ONE, WHICH THE CAPTION THEN
+                //SAYS. IT FILLS THE OLDEST LINE STILL WAITING FOR THAT PICTURE, THE WAY THE TUI DOES: THE
+                //SAME PICTURE CAN BE IN THE PANE TWICE, AND THE SECOND ONE IS ANSWERED BY ITS OWN PACKET
+                case "image_data":
+                {
+                    const { hash, image } = payload.data;
+
+                    setPaneByChannel((previous) => deliverPicture(previous, hash, image));
                     break;
                 }
 
@@ -1168,12 +1195,32 @@ function App()
         }
     };
 
-    const uploadFile = async () =>
+    //THE ONE UPLOAD PATH, ASKED FOR EITHER WAY ROUND: A FILESHARE IS SOMETHING TO FETCH LATER AND AN IMAGE
+    //IS SOMETHING TO LOOK AT NOW, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE TWO IT IS
+    const uploadFile = async (image: boolean) =>
     {
-        const selected = await open({ multiple: false });
+        const selected = await open(image
+            ? { multiple: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] }
+            : { multiple: false });
+
         if (typeof selected !== "string") return;
 
-        invoke("upload_file_from_path", { path: selected }).catch((error: unknown) => setPopupMessage(String(error)));
+        invoke("upload_file_from_path", { path: selected, image }).catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
+    //THEIR HASHES - SO THIS IS THE ONLY THING THAT EVER PUTS A STORED PICTURE ON THE WIRE. THE PACKET IS
+    //SENT OUTSIDE THE UPDATER: AN UPDATER MAY RUN TWICE, AND THE SERVER COUNTS WHAT IT IS ASKED FOR
+    const pictures: Pictures =
+    {
+        show: (hash: string) =>
+        {
+            setPaneByChannel((previous) => markWaiting(previous, hash));
+
+            invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
+        },
+
+        open: setLightbox,
     };
 
     //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
@@ -1479,23 +1526,26 @@ function App()
     }, [watching]);
 
     //THE PICTURE HAS THE WHOLE WINDOW, SO THE WAY BACK HAS TO BE A KEY AS WELL AS A BUTTON - AND THERE IS
-    //NO COMPOSER UNDER IT TO TAKE THE KEYSTROKE FIRST
+    //NO COMPOSER UNDER IT TO TAKE THE KEYSTROKE FIRST. ONE SOMEBODY SENT IS THE SAME SITUATION, AND IT
+    //STANDS OVER THE OTHER: A PICTURE OPENED WHILE WATCHING A SCREEN IS WHAT THE KEY IS ABOUT
     useEffect(() =>
     {
-        if (!theater) return;
+        if (!theater && !lightbox) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
             if (event.key !== "Escape") return;
 
             event.preventDefault();
-            setView("chat");
+
+            if (lightbox) setLightbox(null);
+            else setView("chat");
         };
 
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [theater]);
+    }, [theater, lightbox]);
 
     //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
     //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
@@ -1593,7 +1643,8 @@ function App()
         host.__why2Back = () =>
         {
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
-            if (theater) setView("chat");
+            if (lightbox) setLightbox(null);
+            else if (theater) setView("chat");
             else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
@@ -2145,7 +2196,7 @@ function App()
 
             previous = author;
 
-            return renderChat(message, index, grouped, config, username, dm !== null);
+            return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures);
         });
     })();
 
@@ -2173,6 +2224,31 @@ function App()
     //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
     //SCROLLBACK - IT IS A DRAWER THAT IS OPENED, LOOKED THROUGH AND CLOSED, AND IT CLOSES THE WAY EVERY
     //OTHER MENU HERE DOES: ESC, THE X, OR A PRESS THAT LANDED OUTSIDE IT
+    //A PICTURE AT THE SIZE IT WAS SENT AT, WITH THE WINDOW TO ITSELF. IT IS NOT A DIALOG - THERE IS
+    //NOTHING TO ANSWER - SO IT IS THE PICTURE ON A DARKENED ROOM, AND A PRESS ANYWHERE PUTS IT AWAY
+    const pictureBox = lightbox?.source && (
+        <div
+            role="presentation"
+            onMouseDown={() => setLightbox(null)}
+            className="fixed inset-0 z-[60] flex flex-col bg-black/85 backdrop-blur-sm"
+        >
+            <div className="safe-top flex shrink-0 items-center gap-3 px-4 py-3">
+                <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-sm text-muted">{lightbox.filename}</span>
+                <IconButton icon="close" label="Close" onClick={() => setLightbox(null)} />
+            </div>
+
+            <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center px-4 pb-4">
+                <img
+                    src={lightbox.source}
+                    alt={lightbox.filename}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    className="max-h-full max-w-full object-contain"
+                />
+            </div>
+        </div>
+    );
+
     const filesBox = files && (
         <FilesBox
             files={files}
@@ -2532,7 +2608,8 @@ function App()
                             )}
 
                             <form onSubmit={handleChatSubmit} className={`flex items-center gap-1 bg-raised px-2 ${narrow ? "rounded-full py-1" : "rounded-app py-1.5"}`}>
-                                <IconButton icon="plus" label="Upload a file" onClick={uploadFile} />
+                                <IconButton icon="plus" label="Upload a file" onClick={() => uploadFile(false)} />
+                                <IconButton icon="image" label="Send an image" onClick={() => uploadFile(true)} />
 
                                 <input
                                     ref={chatInputRef}
@@ -2595,6 +2672,7 @@ function App()
                 </div>
             )}
 
+            {pictureBox}
             {settingsBox}
             {filesBox}
             {screensBox}

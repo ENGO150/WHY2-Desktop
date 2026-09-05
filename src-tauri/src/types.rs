@@ -39,6 +39,20 @@ pub(crate) struct ChatMessage
     pub(crate) username_color: Option<u8>,
     pub(crate) message_color: Option<u8>,
     pub(crate) direct: Option<DirectPeer>, //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
+    pub(crate) image: Option<MessageImage>, //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
+}
+
+//A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
+//PICTURE WHERE THE TEXT WOULD BE. WHAT ARRIVED WITH ITS OWN BYTES CARRIES source AND NOTHING ELSE; ONE
+//THE HISTORY ONLY NAMED CARRIES hash, AND NOTHING IS FETCHED UNTIL SOMEBODY ASKS TO SEE IT (request_image)
+#[derive(Serialize, Clone)]
+pub(crate) struct MessageImage
+{
+    pub(crate) filename: String,
+    pub(crate) hash: Option<String>,   //THE CONTENT HASH AS HEX - WHAT PacketCode::ImageData IS ASKED WITH
+    pub(crate) source: Option<String>, //THE PICTURE ITSELF, AS A data: URL
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 //WHO A PRIVATE MESSAGE IS *WITH*, WHICH IS THE OTHER PERSON WHICHEVER WAY IT WENT: THE SERVER NAMES THE
@@ -287,6 +301,7 @@ pub(crate) enum UiEvent
     Role { role: String, username: Option<String> },              //A ROLE WAS SET (None IS OURS)
     Message { message: ChatMessage },                             //ONE LINE FOR THE PANE
     History { messages: Vec<ChatMessage> },                       //THE LOBBY'S STORED MESSAGES
+    ImageData { hash: String, image: Option<MessageImage> },      //A CAPTION'S PICTURE, ASKED FOR (None = IT IS GONE)
     Popup { text: String },                                       //A TOAST, GONE IN A MOMENT
     TofuPrompt                                                    //THE SESSION IS PARKED ON THIS ANSWER
     {
@@ -327,6 +342,7 @@ impl ChatMessage
             username_color: None,
             message_color: None,
             direct: None,
+            image: None,
         }
     }
 
@@ -356,6 +372,14 @@ impl ChatMessage
     {
         self.username_color = colors.username_color;
         self.message_color = colors.message_color;
+        self
+    }
+
+    //THE LINE IS A PICTURE. THE TEXT STAYS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS AND WHAT THE
+    //TUI PUTS IN ITS OWN LINE - THE WINDOW HAS SOMEWHERE TO DRAW THE PICTURE, AND THE TUI DOES NOT
+    pub(crate) fn picture(mut self, image: MessageImage) -> Self
+    {
+        self.image = Some(image);
         self
     }
 
