@@ -50,7 +50,7 @@ toml = "1"
 
 # THE DESKTOP BUILD IS THE WHOLE PROGRAM: THE CHAT, THE CALL AND THE SCREEN SHARE BOTH WAYS
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.0.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.1.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 # A WATCHED SHARE IS DECODED HERE WHEN THE WEBVIEW CANNOT DO IT ITSELF - openh264 IS THE CRATE'S OWN
 # DECODER, AND THE JPEG IS WHAT THE PICTURE TRAVELS TO THE CANVAS AS
@@ -64,7 +64,7 @@ jpeg-encoder = { version = "0.7", features = ["simd"] }
 # DRAWS THROUGH winit/wgpu, WHICH WANT THE MAIN THREAD TAURI ALREADY OWNS - AND A PHONE SHARES ITS SCREEN
 # THROUGH MediaProjection ANYWAY - SO THAT ONE IS OFF, AND build.rs TURNS THE `screen` CFG OFF WITH IT
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.0.1", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.1.0", default-features = false, features = ["client_base", "client_voice"] }
 
 # THE FILE PICKER ON ANDROID ANSWERS WITH A content:// URI, WHICH IS A HANDLE ON SOMEBODY ELSE'S FILE AND
 # NOT A PLACE ON THE DISK - THE CONTENT RESOLVER IS THE ONLY THING THAT OPENS ONE, AND THIS IS THE WAY TO
