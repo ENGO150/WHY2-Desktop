@@ -125,7 +125,8 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `emit_screen`), then the paths that do something: `net.rs` (the socket, the roster clock, `connect_to_server`),
 `input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
 `pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), `picture.rs` (a decoded
-image on its way to the webview, and the hash it is asked for by), plus `settings.rs`, `palette.rs`,
+image on its way to the webview, and the hash it is asked for by), `tray.rs` (where the window goes when it
+is closed — see **The tray**), plus `settings.rs`, `palette.rs`,
 `color.rs` and `servers.rs` for the four things that are their own vocabulary.
 
 **`src/`** — `App.tsx` still owns all the state, every effect and every handler, and that is deliberate: the
@@ -462,6 +463,38 @@ change how the pane looks (`show_id`, `disable_colors`), which the TUI re-reads 
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
+
+### The tray
+
+**Closing the window is not quitting the program.** A chat client is something that is *running* rather than
+something that is open — the session, the call and the watched share all go on while nobody is looking at the
+glass, and a close that ended them would make hanging up a call the price of putting the window away. So on
+the desktop the window hides and the tray is where it went: `tray.rs` is the whole of it, and its icon is the
+one the bundle already carries (`default_window_icon`) rather than a second copy of the mark beside the first.
+
+`window_event` is registered on the builder and answers the one event this app cares about: `CloseRequested`
+is `prevent_close` plus a `hide`. Our own title bar's ×, the mac's red light and the window manager's own
+shortcut are all that same event, so there is one answer and not three — nothing on the frontend changed,
+and `core:window:allow-close` still means what it did.
+
+The menu is **Open WHY2** and **Quit WHY2**, which are the only two things to do with a program that is not
+on screen. A left click opens the window without the menu and a right click opens the menu, as every other
+icon in the bar does — **except on Linux**, where the indicator reports no clicks to us at all
+(`TrayIconEvent` is documented as unsupported there) and the menu is the whole of the interface. That is why
+`Open` is an item and not only a gesture. Opening is `show` + `unminimize` + `set_focus`, since hidden and
+minimized are two different places a window can be in and it can be in both.
+
+**Quit is the one way out**, and it is the one close that must go through: `QUITTING` is set before
+`app.exit(0)`, because the exit takes the window with it and that arrives as one last `CloseRequested` which
+must not be prevented — without the flag the menu item would hide a window that is already hidden and the
+process would never end.
+
+It is `#[cfg(desktop)]` and the `tray-icon` feature is asked of `tauri` in the **non-Android** target section
+only — the module gate and the feature are one answer spelled twice, the same shape as `voice`/`screen`. A
+phone has no tray and answers this question its own way already, with the foreground service that holds the
+session while the app is off screen (see **Android**). On Linux the icon is an appindicator, so a desktop
+with no `libayatana-appindicator` on it shows nothing in its bar — the program still runs, and its window is
+then only reachable from wherever it was launched.
 
 ### The command path
 

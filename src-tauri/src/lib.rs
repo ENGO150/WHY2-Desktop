@@ -33,6 +33,11 @@ mod events;
 mod screen;
 mod picture;
 
+//THE PROGRAM GOING ON WITHOUT ITS WINDOW, WHICH IS A DESKTOP QUESTION ONLY - A PHONE HAS NO TRAY, AND
+//KEEPS ITS SESSION ALIVE WITH A FOREGROUND SERVICE INSTEAD
+#[cfg(desktop)]
+mod tray;
+
 //THE ONLY PLACE IN THE APP THAT SPEAKS JNI, AND THE ONLY ONE A PHONE NEEDS: THE CALL HAS A PERMISSION TO
 //ASK FOR AND cpal HAS A CONTEXT TO BE HANDED
 #[cfg(target_os = "android")]
@@ -128,6 +133,11 @@ pub fn run()
     #[cfg(not(target_os = "android"))]
     let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
 
+    //AND THE WINDOW BEING CLOSED IS NOT THE PROGRAM BEING QUIT WHERE THERE IS A TRAY TO GO INTO: THE
+    //SESSION, THE CALL AND THE SHARE ALL OUTLIVE THE GLASS. IT IS THE ONLY WINDOW EVENT THIS APP ANSWERS
+    #[cfg(desktop)]
+    let builder = builder.on_window_event(tray::window_event);
+
     builder
         .manage(AppState
         {
@@ -180,6 +190,11 @@ pub fn run()
             //MATCHES NOTHING IS A CALL WITH NO STREAMS RATHER THAN A CALL ON THE DEFAULT DEVICE
             #[cfg(target_os = "android")]
             android::forget_devices();
+
+            //THE PLACE THE WINDOW GOES WHEN IT IS CLOSED, WHICH HAS TO BE STANDING BEFORE ANYBODY CAN
+            //CLOSE IT
+            #[cfg(desktop)]
+            tray::init(_app.handle())?;
 
             //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
             if config::read_config("socks5_enabled") { options::enable_socks5(); }
