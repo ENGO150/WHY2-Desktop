@@ -2244,9 +2244,11 @@ function App()
         <div
             role="presentation"
             onMouseDown={() => setLightbox(null)}
-            className="fixed inset-0 z-[60] flex flex-col bg-black/85 backdrop-blur-sm"
+            className="lightbox-room fixed inset-0 z-[60] flex flex-col bg-black/85 backdrop-blur-sm"
         >
-            <div className="safe-top flex shrink-0 items-center gap-3 px-4 py-3">
+            {/* THE ROW SITS LOWER THAN A HEADER WOULD: THERE IS NOTHING ABOVE IT TO SEPARATE IT FROM, AND
+                A CLOSE BUTTON IN THE VERY CORNER OF A DARKENED ROOM IS ONE NOBODY FINDS */}
+            <div className="safe-top flex shrink-0 items-center gap-3 px-4 pb-3 pt-6">
                 <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />
                 <span className="min-w-0 flex-1 truncate text-sm text-muted">{lightbox.filename}</span>
                 <IconButton icon="close" label="Close" onClick={() => setLightbox(null)} />
@@ -2257,7 +2259,7 @@ function App()
                     src={lightbox.source}
                     alt={lightbox.filename}
                     onMouseDown={(event) => event.stopPropagation()}
-                    className="max-h-full max-w-full object-contain"
+                    className="lightbox-open max-h-full max-w-full object-contain"
                 />
             </div>
         </div>

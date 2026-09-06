@@ -142,6 +142,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     animation: fall 120ms ease-out;
 }
 
+/* THE LIGHTBOX OPENING. THE ROOM DARKENS ON ITS OWN AND THE PICTURE COMES UP INTO IT A LITTLE LARGER
+   THAN IT STARTED - SLIGHT, AND OVER IN A FIFTH OF A SECOND, BECAUSE THE POINT IS TO SAY THAT THE LINE
+   THAT WAS CLICKED BECAME THIS AND NOT TO BE SOMETHING ANYBODY WAITS THROUGH */
+@keyframes lightbox-room
+{
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.lightbox-room
+{
+    animation: lightbox-room 120ms ease-out;
+}
+
+@keyframes lightbox-open
+{
+    from { opacity: 0; transform: scale(0.94) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.lightbox-open
+{
+    animation: lightbox-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 /* THE OPENING (login.tsx). THE MARK IS THE SIZE index.html'S OWN IS, SO THE PAGE'S SPLASH FADING OVER
    IT IS A HANDOVER RATHER THAN A CUT; IT SETTLES SMALLER ONCE THERE IS SOMETHING UNDER IT FOR IT TO BE
    THE HEADING OF */
