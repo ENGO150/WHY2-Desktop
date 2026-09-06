@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import "./index.css";
 
 import { LOBBY } from "./types";
@@ -35,6 +35,7 @@ import type
     PaneEntry,
     ChatMessage,
     MessageImage,
+    PictureActions,
     OnlineUser,
     ArgValues,
     AudioDevices,
@@ -65,15 +66,15 @@ import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
-import { ServerRail, AddServerDialog } from "./servers";
+import { ServerRail, AddServerDialog, useHoldMenu } from "./servers";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures } from "./messages";
-import { renderNotice, renderChat, renderBlock } from "./messages";
-import { markWaiting, deliverPicture } from "./pictures";
+import { renderNotice, renderChat, renderBlock, PictureMenu } from "./messages";
+import { markWaiting, deliverPicture, pictureName } from "./pictures";
 import
 {
     RESTART_LABEL,
@@ -85,6 +86,33 @@ import
     landRow,
     unsavedRows,
 } from "./settings";
+
+//HOW FAR A CLICK GOES INTO A PICTURE, AND HOW FAR TWO FINGERS MAY. A CLICK IS ONE STEP AND NOT A RANGE -
+//IT IS THE MAGNIFYING GLASS AND THEN THE OTHER ONE - WHILE A PINCH IS A RANGE BY NATURE, AND ITS FLOOR IS
+//THE PICTURE AS IT WAS: THERE IS NOTHING BELOW "ALL OF IT", THE LIGHTBOX ALREADY FITTING IT TO THE GLASS
+const ZOOM = 2.5;
+const ZOOM_MAX = 6;
+
+//AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
+//IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
+//THE WINDOW BEING RESIZED UNDER IT
+interface Zoom
+{
+    scale: number;
+    x: number;
+    y: number;
+}
+
+//ONE PINCH IN PROGRESS: WHAT THE FINGERS STARTED AT, WHAT THE PICTURE WAS AT WHEN THEY LANDED, AND WHERE
+//IT HAS GOT TO - THE LAST OF THOSE IS THE ONE THING THAT IS NOT STATE WHILE THE FINGERS ARE STILL DOWN
+interface Pinch
+{
+    span: number;
+    scale: number;
+    x: number;
+    y: number;
+    live: number;
+}
 
 //WHAT THE PICKER OFFERS WHEN IT IS ASKED FOR A PICTURE. IT IS THE FORMATS misc::is_image RECOGNISES, AS
 //FILE EXTENSIONS - THE HEADER IS WHAT ACTUALLY DECIDES (HERE, AND AGAIN ON THE SERVER), SO THIS IS A
@@ -165,6 +193,25 @@ function App()
     //THE PICTURE BEING LOOKED AT, WHILE ONE IS. THE PANE DRAWS EVERY IMAGE SMALL ENOUGH TO READ AROUND -
     //A SHARED SCREENSHOT IS NOT LEGIBLE AT THAT SIZE, AND THIS IS WHERE IT IS ACTUALLY LOOKED AT
     const [lightbox, setLightbox] = useState<MessageImage | null>(null);
+
+    //AND HOW FAR INTO IT SOMEBODY HAS GONE: THE FACTOR, AND THE POINT OF THE PICTURE IT GREW OUT OF - A
+    //ZOOM ANCHORED IN THE MIDDLE IS ONE THAT MOVES WHATEVER WAS BEING LOOKED AT OFF THE SCREEN. null IS
+    //THE PICTURE AS IT ARRIVED, WHICH IS ALSO WHAT EVERY WAY OUT OF THE LIGHTBOX PUTS IT BACK TO
+    const [zoom, setZoom] = useState<Zoom | null>(null);
+
+    //THE PICTURE BEING DRAGGED UNDER A ZOOM, WRITTEN STRAIGHT ONTO THE ELEMENT: A PINCH PUTS OUT SIXTY
+    //POSITIONS A SECOND AND REACT OWNS WHERE THE PICTURE *IS*, NOT WHERE IT IS BEING MOVED TO (THE
+    //DRAWERS ARE DRAGGED THE SAME WAY). WHAT THE FINGERS SETTLE ON IS WHAT BECOMES STATE
+    const pictureRef = useRef<HTMLImageElement | null>(null);
+    const pinchRef = useRef<Pinch | null>(null);
+
+    //WHETHER THIS PLATFORM HAS A CLIPBOARD THAT TAKES PIXELS AND A DIALOG TO ASK "WHERE" WITH. A PHONE
+    //HAS NEITHER, AND ITS MENU IS THEREFORE THE ONE ITEM
+    const [actions, setActions] = useState<PictureActions>({ copy: false, ask: false });
+
+    //THE MENU A PICTURE OPENS - A RIGHT-CLICK, OR A HOLD ON A PHONE. IT IS THE GESTURE THE SERVER LISTS
+    //ALREADY USE, WITH THE PICTURE ITSELF IN IT RATHER THAN AN ID: A LIVE ONE HAS NOT EVEN A HASH
+    const pictureHold = useHoldMenu<MessageImage>("pointer");
 
     //WHAT IS UP FOR DOWNLOAD, WHILE THE WINDOW SHOWING IT IS OPEN, AND WHAT IS BEING LOOKED FOR IN IT
     const [files, setFiles] = useState<FileOwner[] | null>(null);
@@ -518,6 +565,7 @@ function App()
         //DRAWS NO BAR - WHICH IS THE RIGHT WAY ROUND: A BAR THAT APPEARED AND WENT AGAIN WOULD BE A
         //LAYOUT THAT MOVED UNDER SOMEBODY, AND ON EVERY DESKTOP THE ANSWER IS BACK BEFORE THE MARK FADES
         invoke<WindowChrome>("window_chrome").then(setChrome).catch(console.error);
+        invoke<PictureActions>("picture_actions").then(setActions).catch(console.error);
 
         //THE LIST IS THE FIRST THING THE WINDOW ASKS FOR, AND IT IS WHAT THE PROGRAM OPENS ON: WHICH
         //SERVER THIS IS GOING TO BE IS THE ONE QUESTION A LIST CANNOT ANSWER BY ITSELF, AND A SESSION
@@ -966,7 +1014,7 @@ function App()
 
         //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
         swipeRef.current = narrow && event.touches.length === 1 && touch && connected
-            && !theater && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu
+            && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu
             ? { x: touch.clientX, y: touch.clientY, side: null, from: 0, width: 1 }
             : null;
     };
@@ -1225,6 +1273,158 @@ function App()
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
     //THEIR HASHES - SO THIS IS THE ONLY THING THAT EVER PUTS A STORED PICTURE ON THE WIRE. THE PACKET IS
     //SENT OUTSIDE THE UPDATER: AN UPDATER MAY RUN TWICE, AND THE SERVER COUNTS WHAT IT IS ASKED FOR
+    //THE PICTURE ON A DARKENED ROOM, AND THE ZOOM PUT BACK: WHAT IS OPENED IS THE WHOLE PICTURE, EVERY
+    //TIME, WHICHEVER WAY THE LAST ONE WAS LEFT
+    function openLightbox(image: MessageImage)
+    {
+        setZoom(null);
+        setLightbox(image);
+    }
+
+    const closeLightbox = () =>
+    {
+        setZoom(null);
+        setLightbox(null);
+    };
+
+    //THE PICTURE PUT SOMEWHERE ELSE. THE BYTES ARE THE ONES THE WINDOW WAS SENT - THE data: URL GOES BACK
+    //DOWN AND IS UNWRAPPED THERE, RATHER THAN BEING KEPT A SECOND TIME ON THAT SIDE FOR THE ONE PRESS IN
+    //A THOUSAND THAT ASKS FOR IT
+    const copyPicture = (image: MessageImage) =>
+    {
+        if (!image.source) return;
+
+        invoke("copy_image", { source: image.source })
+            .then(() => setPopupMessage("Image copied."))
+            .catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //AND ONTO THE DISK. A DESKTOP IS ASKED WHERE AND A PHONE HAS NOWHERE TO ASK ABOUT, SO THERE THE
+    //PICTURE GOES STRAIGHT TO THE GALLERY - WHICH IS THE ONE PLACE A PHONE KEEPS PICTURES, AND WHAT COMES
+    //BACK EITHER WAY IS WHERE IT LANDED
+    const savePicture = async (image: MessageImage) =>
+    {
+        if (!image.source) return;
+
+        const filename = pictureName(image);
+
+        let path: string | null = null;
+
+        if (actions.ask)
+        {
+            const extension = filename.slice(filename.lastIndexOf(".") + 1);
+
+            path = await save({ defaultPath: filename, filters: [{ name: "Image", extensions: [extension] }] })
+                .catch(() => null);
+
+            //THE DIALOG WAS DISMISSED, WHICH IS AN ANSWER AND NOT A FAILURE
+            if (!path) return;
+        }
+
+        invoke<string>("save_image", { source: image.source, path, filename })
+            .then((where) => setPopupMessage(`Saved to ${where}`))
+            .catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    //A CLICK INTO THE PICTURE, WHICH IS THE MAGNIFYING GLASS THE CURSOR IS ALREADY DRAWN AS. IT IS ONE
+    //STEP AND THE NEXT CLICK IS THE WAY BACK, AND IT GROWS OUT OF THE POINT THAT WAS CLICKED RATHER THAN
+    //OUT OF THE MIDDLE - ZOOMING INTO A CORNER OF A PHOTOGRAPH BY CLICKING ON IT IS THE WHOLE GESTURE
+    const zoomPicture = (event: React.MouseEvent<HTMLImageElement>) =>
+    {
+        if (zoom)
+        {
+            setZoom(null);
+
+            return;
+        }
+
+        const box = event.currentTarget.getBoundingClientRect();
+
+        setZoom(
+        {
+            scale: ZOOM,
+            x: ((event.clientX - box.left) / box.width) * 100,
+            y: ((event.clientY - box.top) / box.height) * 100,
+        });
+    };
+
+    //AND TWO FINGERS, WHICH IS THE SAME THING WITHOUT THE STEPS. THE SPAN BETWEEN THEM IS THE FACTOR AND
+    //THE POINT BETWEEN THEM IS WHAT IT GROWS OUT OF, BOTH TAKEN ONCE WHEN THEY LAND
+    const pinchAt = (touches: React.TouchList, box: DOMRect) =>
+    {
+        const [first, second] = [touches[0], touches[1]];
+
+        const span = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+
+        return {
+            span,
+            x: (((first.clientX + second.clientX) / 2 - box.left) / box.width) * 100,
+            y: (((first.clientY + second.clientY) / 2 - box.top) / box.height) * 100,
+        };
+    };
+
+    const onPinchStart = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        if (event.touches.length !== 2)
+        {
+            pinchRef.current = null;
+
+            return;
+        }
+
+        const at = pinchAt(event.touches, event.currentTarget.getBoundingClientRect());
+
+        //A PINCH THAT STARTS ON AN ALREADY ZOOMED PICTURE CARRIES ON FROM WHERE IT IS, AND MOVES THE
+        //ANCHOR TO WHERE THE FINGERS ACTUALLY ARE
+        const scale = zoom?.scale ?? 1;
+
+        pinchRef.current = { span: at.span, scale, x: at.x, y: at.y, live: scale };
+    };
+
+    const onPinchMove = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        const start = pinchRef.current;
+
+        if (!start || event.touches.length !== 2) return;
+
+        const at = pinchAt(event.touches, event.currentTarget.getBoundingClientRect());
+
+        const scale = Math.min(ZOOM_MAX, Math.max(1, start.scale * (at.span / start.span)));
+
+        //STRAIGHT ONTO THE ELEMENT WHILE THE FINGERS ARE DOWN: SIXTY RENDERS A SECOND OF A TRANSFORM IS
+        //WORK FOR NOTHING, AND WHAT REACT OWNS IS WHERE THE PICTURE ENDS UP
+        const picture = pictureRef.current;
+
+        if (!picture) return;
+
+        picture.style.transformOrigin = `${start.x}% ${start.y}%`;
+        picture.style.transform = `scale(${scale})`;
+
+        pinchRef.current = { ...start, live: scale };
+    };
+
+    const onPinchEnd = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        const start = pinchRef.current;
+
+        if (!start || event.touches.length >= 2) return;
+
+        pinchRef.current = null;
+
+        const picture = pictureRef.current;
+
+        //WHAT WAS WRITTEN ONTO THE ELEMENT GOES BACK TO THE CLASSES, WHICH IS WHERE THE SAME NUMBERS
+        //ARRIVE A RENDER LATER - THE DRAWERS HAND THEIRS BACK THE SAME WAY
+        if (picture)
+        {
+            picture.style.transform = "";
+            picture.style.transformOrigin = "";
+        }
+
+        //ALL THE WAY BACK OUT IS THE PICTURE AS IT ARRIVED, AND NOT A ZOOM OF ONE
+        setZoom(start.live <= 1.01 ? null : { scale: start.live, x: start.x, y: start.y });
+    };
+
     const pictures: Pictures =
     {
         show: (hash: string) =>
@@ -1234,7 +1434,9 @@ function App()
             invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
         },
 
-        open: setLightbox,
+        open: openLightbox,
+        hold: (image: MessageImage) => pictureHold.bind(image),
+        held: pictureHold.held,
     };
 
     //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
@@ -1552,14 +1754,15 @@ function App()
 
             event.preventDefault();
 
-            if (lightbox) setLightbox(null);
+            if (zoom) setZoom(null);
+            else if (lightbox) closeLightbox();
             else setView("chat");
         };
 
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [theater, lightbox]);
+    }, [theater, lightbox, zoom]);
 
     //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
     //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
@@ -1656,8 +1859,10 @@ function App()
 
         host.__why2Back = () =>
         {
-            //WHATEVER IS ON TOP, IN THE ORDER THEY STACK
-            if (lightbox) setLightbox(null);
+            //WHATEVER IS ON TOP, IN THE ORDER THEY STACK - AND A PICTURE SOMEBODY HAS ZOOMED INTO IS
+            //ONE MORE LAYER THAN THE PICTURE ITSELF
+            if (lightbox && zoom) setZoom(null);
+            else if (lightbox) closeLightbox();
             else if (theater) setView("chat");
             else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
@@ -2235,36 +2440,73 @@ function App()
             close={closeSettings}
         />
     );
-    //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
-    //SCROLLBACK - IT IS A DRAWER THAT IS OPENED, LOOKED THROUGH AND CLOSED, AND IT CLOSES THE WAY EVERY
-    //OTHER MENU HERE DOES: ESC, THE X, OR A PRESS THAT LANDED OUTSIDE IT
+
+    //THE GESTURE FOR THE PICTURE IN FRONT, BOUND ONCE: THE HOLD AND THE PINCH ARE THE SAME TOUCHES, SO
+    //THEY HAVE TO BE ONE SET OF HANDLERS AND NOT TWO THAT REPLACE EACH OTHER. IT IS ONLY EVER CALLED FROM
+    //INSIDE THE LIGHTBOX, WHICH IS NOT DRAWN WITHOUT ONE
+    const holdPicture = pictureHold.bind(lightbox!);
+
     //A PICTURE AT THE SIZE IT WAS SENT AT, WITH THE WINDOW TO ITSELF. IT IS NOT A DIALOG - THERE IS
     //NOTHING TO ANSWER - SO IT IS THE PICTURE ON A DARKENED ROOM, AND A PRESS ANYWHERE PUTS IT AWAY
     const pictureBox = lightbox?.source && (
         <div
             role="presentation"
-            onMouseDown={() => setLightbox(null)}
-            className="lightbox-room fixed inset-0 z-[60] flex flex-col bg-black/85 backdrop-blur-sm"
+            onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
+            className="lightbox-room fixed inset-0 z-[60] flex flex-col overflow-hidden bg-black/85 backdrop-blur-sm"
         >
             {/* THE ROW SITS LOWER THAN A HEADER WOULD: THERE IS NOTHING ABOVE IT TO SEPARATE IT FROM, AND
                 A CLOSE BUTTON IN THE VERY CORNER OF A DARKENED ROOM IS ONE NOBODY FINDS */}
             <div className="safe-top flex shrink-0 items-center gap-3 px-4 pb-3 pt-6">
                 <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />
                 <span className="min-w-0 flex-1 truncate text-sm text-muted">{lightbox.filename}</span>
-                <IconButton icon="close" label="Close" onClick={() => setLightbox(null)} />
+                <IconButton icon="close" label="Close" onClick={closeLightbox} />
             </div>
 
-            <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center px-4 pb-4">
+            <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-4">
+                {/* THE PICTURE IS THE ONE THING IN THE ROOM A PRESS DOES NOT CLOSE: A CLICK ON IT IS THE
+                    ZOOM, A HOLD OR A RIGHT-CLICK IS THE MENU, AND TWO FINGERS ARE THE SAME ZOOM WITHOUT
+                    THE STEPS. THE TRANSFORM IS THE STATE'S EXCEPT WHILE FINGERS ARE ACTUALLY ON IT */}
                 <img
+                    ref={pictureRef}
                     src={lightbox.source}
                     alt={lightbox.filename}
+                    onContextMenu={holdPicture.onContextMenu}
                     onMouseDown={(event) => event.stopPropagation()}
-                    className="lightbox-open max-h-full max-w-full object-contain"
+                    onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
+                    onTouchStart={(event) =>
+                    {
+                        //TWO FINGERS ARE A PINCH AND NEVER A HOLD, SO THE TIMER THE FIRST ONE STARTED
+                        //IS PUT OUT RATHER THAN LEFT TO OPEN A MENU IN THE MIDDLE OF A ZOOM
+                        if (event.touches.length > 1) holdPicture.onTouchEnd();
+                        else holdPicture.onTouchStart(event);
+
+                        onPinchStart(event);
+                    }}
+                    onTouchMove={(event) => { holdPicture.onTouchMove(); onPinchMove(event); }}
+                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); }}
+                    style={zoom
+                        ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
+                        : undefined}
+                    className={`lightbox-open lightbox-picture max-h-full max-w-full object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
                 />
             </div>
         </div>
     );
 
+    //THE MENU A PICTURE OPENS, WHEREVER IT WAS OPENED FROM - THE PANE OR THE LIGHTBOX OVER IT. IT IS THE
+    //SAME TWO THINGS EITHER WAY, AND ON A PHONE THE FIRST OF THEM IS NOT ONE OF THEM
+    const pictureMenu = pictureHold.menu && (
+        <PictureMenu
+            at={pictureHold.menu}
+            copy={actions.copy ? copyPicture : null}
+            save={savePicture}
+            close={pictureHold.close}
+        />
+    );
+
+    //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
+    //SCROLLBACK - IT IS A DRAWER THAT IS OPENED, LOOKED THROUGH AND CLOSED, AND IT CLOSES THE WAY EVERY
+    //OTHER MENU HERE DOES: ESC, THE X, OR A PRESS THAT LANDED OUTSIDE IT
     const filesBox = files && (
         <FilesBox
             files={files}
@@ -2689,6 +2931,7 @@ function App()
             )}
 
             {pictureBox}
+            {pictureMenu}
             {settingsBox}
             {filesBox}
             {screensBox}

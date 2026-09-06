@@ -72,7 +72,7 @@ export function LoginScreen(
 {
     //THE LIST IS WHERE A SERVER IS FORGOTTEN, SINCE IT IS WHERE THEY ALL ARE. IT IS THE SAME GESTURE THE
     //RAIL ASKS FOR, AND THE SAME MENU
-    const { menu, close, bind, held } = useHoldMenu();
+    const { menu, close, bind, held } = useHoldMenu<string>();
 
     //TWO STEPS AND NOT ONE: `holding` IS THE MARK STANDING ALONE, AND `settled` IS THE SLIDE BEING OVER -
     //THE GRID THAT CLIPS ITS OWN ROW IS WHAT MAKES THE MOVEMENT AND IS NOTHING TO KEEP AFTERWARDS,
@@ -253,9 +253,9 @@ export function LoginScreen(
                                         ))}
                                     </div>
 
-                                    {menu && servers.some((server) => server.id === menu.id) && (
+                                    {menu && servers.some((server) => server.id === menu.value) && (
                                         <ForgetMenu
-                                            server={servers.find((server) => server.id === menu.id)!}
+                                            server={servers.find((server) => server.id === menu.value)!}
                                             at={menu}
                                             onForget={onForget}
                                             close={close}

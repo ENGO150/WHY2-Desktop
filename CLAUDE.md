@@ -309,7 +309,12 @@ rows for one address are two accounts, which is why the username counts when one
 Forgetting a server is asked for the same way in both lists: a **right-click, or a hold on a phone**, opens
 one menu item and nothing else — it is the only destructive thing here, and a button sitting in the row would
 be brushed by accident. `useHoldMenu` and `ForgetMenu` in `servers.tsx` are that gesture and that menu,
-written once for the rail and the selection screen. The menu goes through a **portal**: both lists live in
+written once for the rail and the selection screen — and `useHoldMenu` is generic over what it is a menu
+*about*, since the pictures use the same gesture (see **Images**) and a picture has no id to look back up
+by: it carries the caller's own value, whole. Where the menu opens is the caller's too, and it follows the
+size of the thing: a row is a mouthful wide, so its menu stands **beside** it and points at it, while a
+picture is half the window and opens its menu **at the pointer** — the corner of one is nowhere near
+whatever was actually clicked. The menu goes through a **portal**: both lists live in
 boxes that would swallow it, since a list that scrolls clips whatever leaves it (`.scroller` is
 `overflow-y: auto`, which makes the other axis clip too) and a drawer is translated, which is enough to make
 `position: fixed` mean "inside the drawer". It is placed against the element that was held and kept inside
@@ -610,7 +615,39 @@ is this session's `ClientEvent` sender, kept for the one thing outside the pump 
 The pane draws a picture at a size somebody can read around it, and the **lightbox** is where it is actually
 looked at: the picture on a darkened room, closed by esc, the ×, a press anywhere, or the back gesture (it is
 first in `__why2Back`, above the theater — a picture opened while watching a screen is what the key is
-about). It is not a dialog, because there is nothing to answer.
+about). It is not a dialog, because there is nothing to answer. It opens as a picture that **grows into the
+room** rather than as a cut — `lightbox-room` fades the room and `lightbox-open` brings the picture the last
+few percent up into it — and the close button sits a row lower than a header's would, since nothing stands
+above it to separate it from and a × in the very corner of a darkened room is one nobody finds.
+
+**A picture in it is zoomed**, and the two platforms ask for that the way they each already do. A **click**
+is one step in and the next click is the way back — the cursor is the magnifying glass and then the other
+one (`cursor-zoom-in`/`cursor-zoom-out`) — and it grows out of **the point that was clicked**, which is the
+whole gesture: a zoom anchored in the middle moves whatever was being looked at off the screen. Two
+**fingers** are the same thing without the steps, between the picture as it arrived and `ZOOM_MAX`; the
+floor is 1 because the lightbox already fits the picture to the glass and there is nothing below all of it.
+While the fingers are down the transform is written **straight onto the element** and handed back to React
+when they leave, exactly as a dragged drawer is — a pinch puts out sixty positions a second. `touch-action:
+none` on the picture is what keeps the page itself out of the gesture (React's own `touchmove` is passive,
+so a `preventDefault` there would only warn), and esc and the back gesture take the zoom off before they
+take the picture away.
+
+**A right-click on a picture — or a hold on a phone — opens a menu**, in the pane and in the lightbox both.
+It is `useHoldMenu`, the gesture the server lists already use, and `PictureMenu` in `messages.tsx` is what it
+opens: **Copy image** and **Save image**. A hold ends in a click like any other press, so `held()` is what
+stops that click from opening the picture underneath it, and two fingers landing put the hold timer out —
+a pinch is never a menu. Both items are the same one thing, which is putting the picture somewhere else:
+the `data:` URL goes back down to `picture.rs`, which unwraps it there rather than this side keeping the
+bytes a second time for the one press in a thousand that asks.
+
+`picture_actions` is what the menu is drawn from, and it is the platform's answer rather than the protocol's
+— **whether there is a clipboard that takes pixels, and whether there is a file dialog to ask "where" with**.
+A desktop has both: `copy_image` decodes the copy the window was sent and hands the pixels to
+`tauri-plugin-clipboard-manager` (a picture goes on a clipboard as pixels, not as a file), and `save_image`
+writes what the dialog answered with. **A phone has neither**, so its menu is the one item and the picture
+goes where a phone keeps pictures — see **Android**. The name it is saved under is `pictureName`'s: the
+sender's, with the extension the bytes **actually are**, since what is on the disk is the PNG or JPEG this
+app encoded and a `.webp` that is a JPEG is a file half the programs on a machine will not open.
 
 ### Voice
 
@@ -827,7 +864,7 @@ be one library rather than a wall:
   to the x86 one. `LIBOPUS_STATIC` is set with it, since `audiopus_sys` decides static-or-shared from the
   machine it is *compiled on* and would otherwise link the phone against a `libopus.so` that is not there.
 
-Four things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
+Five things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
 this app that speaks JNI:
 
 - **A context.** `cpal` asks `ndk_context` for one whenever it enumerates devices and **panics** where
@@ -903,6 +940,19 @@ this app that speaks JNI:
   `forget_devices()` drops both `aaudio:` device keys at every launch, which is also all a device picked in
   `/settings` could honestly be worth on a phone.
 
+- **Somewhere to keep a picture.** A desktop asks with a file dialog; a phone has none, and no path worth
+  asking about either — the one answer every Android user already knows is the gallery, which is a
+  `MediaStore` row and not a directory. `scripts/android/ImageStore.kt` is that write. From 10 the insert is
+  the app's own row in the media database and **costs no permission at all**, which is the whole reason it
+  is worth doing properly: the picture lands in `Pictures/WHY2`, and the display name is read back off the
+  row rather than assumed, since MediaStore renames a collision itself and what is said out loud had better
+  be what is actually there. Below 10 the shared `Pictures` directory is `WRITE_EXTERNAL_STORAGE`'s, so the
+  picture goes to the app's **own external `Pictures` directory** and is handed to the media scanner — a
+  real file in a real place that the saved line names, rather than a permission dialog in front of a feature
+  nobody asked to be asked about. The filename is the **sender's** and is therefore cut down to a bare name
+  (`safe_name`) at the write and not wherever it was last passed along: a slash in it is a directory
+  somebody else chose.
+
 The class names come from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
 wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because
 that is where AAudio starts.
@@ -928,8 +978,8 @@ no idea the app records audio, still less that it goes on doing so behind the ho
 `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE` and
 `POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
 with the `<service android:name=".SessionService">` element and its special-use subtype, writes
-`MainActivity.kt`, `SessionService.kt` and `AudioRoute.kt` from `scripts/android/`, keeping the package line
-the generated activity already had, copies the launcher out of `scripts/android/res/` over the template icons
+`MainActivity.kt`, `SessionService.kt`, `AudioRoute.kt` and `ImageStore.kt` from `scripts/android/`, keeping
+the package line the generated activity already had, copies the launcher out of `scripts/android/res/` over the template icons
 `init` put there, and points the theme's `windowBackground` at the splash drawable that came with it (see
 **The name and the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
 is an error and not a shrug** — Tauri changing its template should stop the build rather than quietly ship
@@ -1122,6 +1172,12 @@ A plugin only one platform needs is a target-gated dependency and a gated `.plug
 builds the builder into a `let` rather than one chain: `tauri-plugin-fs` is Android's alone. Nothing has to be
 regenerated for it — `gen/android/tauri.settings.gradle` is written from the Cargo dependencies on every
 build.
+
+The capability is the exception when **nothing in the webview ever invokes the plugin**: that array gates the
+IPC and nothing else, so a plugin only this side calls needs the first two places and not the third.
+`tauri-plugin-clipboard-manager` is that — `picture.rs` uses its Rust API and no `invoke` ever names it.
+`tauri-plugin-dialog` is not: `save()` and `open()` are called from `App.tsx`, so `dialog:default` (which
+carries `allow-save` and `allow-open` both) has to be there.
 
 ### CI
 

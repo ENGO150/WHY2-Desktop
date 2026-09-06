@@ -22,13 +22,62 @@ import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { createPortal } from "react-dom";
+import { MENU_WIDTH, type HeldMenu } from "./servers";
 
-//WHAT A PICTURE IN THE PANE CAN BE ASKED TO DO. NEITHER OF THEM IS THE MESSAGE'S OWN BUSINESS - ONE PUTS
-//A PACKET ON THE WIRE AND THE OTHER OPENS A WINDOW, AND BOTH BELONG TO THE COMPONENT THAT HOLDS THE STATE
+//WHAT A PICTURE IN THE PANE CAN BE ASKED TO DO. NONE OF IT IS THE MESSAGE'S OWN BUSINESS - ONE PUTS A
+//PACKET ON THE WIRE, ONE OPENS A WINDOW AND ONE OPENS A MENU, AND ALL OF THEM BELONG TO THE COMPONENT
+//THAT HOLDS THE STATE. hold IS THE RIGHT-CLICK AND THE LONG PRESS, WHICH IS servers.tsx' OWN GESTURE
+//WITH A PICTURE IN IT INSTEAD OF A SERVER, AND held IS WHETHER THE PRESS THAT IS ENDING OPENED ONE -
+//A HOLD ENDS IN A CLICK LIKE ANY OTHER, AND THAT ONE WOULD OPEN THE PICTURE BEING HELD
 export interface Pictures
 {
     show: (hash: string) => void;
     open: (image: MessageImage) => void;
+    hold: (image: MessageImage) => Record<string, unknown>;
+    held: () => boolean;
+}
+
+//AND THE MENU ITSELF. A PICTURE IS SOMEBODY ELSE'S FILE THAT LANDED IN A WINDOW, SO THE TWO THINGS
+//ANYBODY EVER WANTS OF ONE ARE TO PUT IT SOMEWHERE ELSE: ON THE CLIPBOARD, OR ON THE DISK.
+//COPYING IS DRAWN ONLY WHERE THERE IS A CLIPBOARD THAT TAKES PIXELS (can_copy_image), WHICH ON A PHONE
+//THERE IS NOT - SO A PHONE'S MENU IS THE ONE ITEM, WHICH IS ALSO THE ONE IT ALREADY HAS EVERYWHERE ELSE.
+//IT GOES THROUGH A PORTAL FOR THE REASON ForgetMenu DOES: THE PANE SCROLLS, AND A LIST THAT SCROLLS
+//CLIPS WHATEVER LEAVES IT
+export function PictureMenu(
+{
+    at, copy, save, close,
+}: {
+    at: HeldMenu<MessageImage>;
+    copy: ((image: MessageImage) => void) | null;
+    save: (image: MessageImage) => void;
+    close: () => void;
+})
+{
+    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
+
+    return createPortal(
+        <div
+            data-hold-menu
+            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
+            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+        >
+            <div className="truncate px-2 py-1.5 text-sm font-semibold">{at.value.filename}</div>
+
+            {copy && (
+                <button type="button" onClick={() => { close(); copy(at.value); }} className={item}>
+                    <Icon name="copy" className="h-4 w-4" />
+                    Copy image
+                </button>
+            )}
+
+            <button type="button" onClick={() => { close(); save(at.value); }} className={item}>
+                <Icon name="download" className="h-4 w-4" />
+                Save image
+            </button>
+        </div>,
+        document.body,
+    );
 }
 
 //A LINE AS IT IS READ: THE TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE. IT OPENS IN THE
@@ -102,8 +151,9 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
             <button
                 type="button"
                 title={image.filename}
-                onClick={() => pictures.open(image)}
-                className="mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
+                {...pictures.hold(image)}
+                onClick={() => { if (!pictures.held()) pictures.open(image); }}
+                className="picture-hold mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
             >
                 <img
                     src={image.source}

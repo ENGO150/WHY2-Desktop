@@ -16,9 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-//THE THREE THINGS A CALL NEEDS FROM THE PLATFORM ITSELF, AND THE ONLY PLACE IN THIS APP THAT SPEAKS JNI.
-//THE DESKTOP HAS NONE OF THE THREE PROBLEMS: A DEVICE IS A DEVICE, NOBODY IS ASKED FOR PERMISSION TO OPEN
-//ONE, AND A WINDOW THAT IS NOT ON SCREEN IS STILL A PROGRAM THAT IS RUNNING
+//WHAT THE PLATFORM ITSELF HAS TO BE ASKED FOR, AND THE ONLY PLACE IN THIS APP THAT SPEAKS JNI. THE DESKTOP
+//HAS NONE OF THESE PROBLEMS: A DEVICE IS A DEVICE, NOBODY IS ASKED FOR PERMISSION TO OPEN ONE, A WINDOW
+//THAT IS NOT ON SCREEN IS STILL A PROGRAM THAT IS RUNNING, AND A PICTURE IS SAVED WHEREVER IT IS ASKED FOR
 
 use std::
 {
@@ -35,7 +35,7 @@ use jni::
 {
     JavaVM,
     jni_sig,
-    objects::{ JClass, JObject, JValue },
+    objects::{ JClass, JObject, JString, JValue },
     refs::Global,
     strings::JNIString,
     sys::{ jint, JNI_VERSION_1_6 },
@@ -52,18 +52,20 @@ use why2_chat::
 use crate::types::ChatMessage;
 use crate::emit::say;
 
-//THE THREE CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
+//THE FOUR CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
 //tauri.conf.json - build.rs READS IT THERE SO THEY CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
 //NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS THE
-//SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE; AND THE ROUTE IS WHICH OF THE PHONE'S
-//TWO SPEAKERS THE CALL COMES OUT OF
+//SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE; THE ROUTE IS WHICH OF THE PHONE'S
+//TWO SPEAKERS THE CALL COMES OUT OF; AND THE STORE IS WHERE A PICTURE GOES WHEN SOMEBODY KEEPS ONE
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 const SERVICE: &str = env!("ANDROID_SERVICE_CLASS");
 const ROUTE: &str = env!("ANDROID_ROUTE_CLASS");
+const STORE: &str = env!("ANDROID_STORE_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static SERVICE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static ROUTE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
+static STORE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
 static CONTEXT: Once = Once::new();
@@ -150,7 +152,8 @@ fn ready() -> Option<()>
         let loader = env.call_method(&**application, JNIString::new("getClassLoader"),
             jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
 
-        for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS), (ROUTE, &ROUTE_CLASS)]
+        for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS), (ROUTE, &ROUTE_CLASS),
+            (STORE, &STORE_CLASS)]
         {
             let name = env.new_string(name)?;
 
@@ -185,6 +188,74 @@ fn warn(message: &str)
 
         Ok(())
     });
+}
+
+//A PICTURE PUT WHERE THE PHONE KEEPS PICTURES. THERE IS NO FILE DIALOG TO ASK WITH AND NO PATH WORTH
+//ASKING FOR - THE ONE ANSWER EVERY ANDROID USER ALREADY KNOWS IS THE GALLERY, WHICH IS A MediaStore ROW
+//AND NOT A DIRECTORY, SO ImageStore.kt IS WHAT ACTUALLY WRITES IT AND WHAT COMES BACK IS WHERE IT LANDED.
+//THE NAME IS THE SENDER'S AND IS THEREFORE NOT TRUSTED WITH A PATH: IT IS CUT DOWN TO A BARE FILENAME
+//HERE, WHERE THE WRITE IS, RATHER THAN WHEREVER IT WAS LAST PASSED ALONG
+pub(crate) fn save_picture(filename: &str, mime: &str, bytes: &[u8]) -> Result<String, String>
+{
+    prepare();
+
+    let name = safe_name(filename);
+
+    let Some(vm) = VM.get() else { return Err(unreachable("the picture cannot be saved")) };
+    let Some(class) = STORE_CLASS.get() else { return Err(unreachable("the picture cannot be saved")) };
+    let Some(application) = APPLICATION.get() else { return Err(unreachable("the picture cannot be saved")) };
+
+    let saved = vm.attach_current_thread(|env| -> jni::errors::Result<String>
+    {
+        let name = env.new_string(&name)?;
+        let kind = env.new_string(mime)?;
+        let data = env.byte_array_from_slice(bytes)?;
+
+        let answer = env.call_static_method(&**class, JNIString::new("save"),
+            jni_sig!("(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;[B)Ljava/lang/String;"),
+            &[JValue::Object(&**application), JValue::Object(&name), JValue::Object(&kind),
+              JValue::Object(&data)])?.l()?;
+
+        let answer = unsafe { JString::from_raw(env, answer.into_raw()) };
+
+        answer.try_to_string(env)
+    });
+
+    match saved
+    {
+        //EMPTY IS ANDROID REFUSING THE WRITE, WHICH IS THE ONE WAY THIS FAILS THAT IS NOT A BUG HERE -
+        //A FULL DISK, A MEDIA STORE THAT WOULD NOT TAKE THE ROW
+        Ok(saved) if !saved.is_empty() => Ok(saved),
+        Ok(_) => Err(String::from("Android would not save the picture.")),
+
+        Err(_) => Err(unreachable("the picture cannot be saved")),
+    }
+}
+
+//A FILENAME AND NOT A PATH. IT WAS TYPED BY WHOEVER SENT THE PICTURE, SO A SLASH IN IT IS A DIRECTORY
+//SOMEBODY ELSE CHOSE AND A DOT-DOT IS A DIRECTORY ABOVE THIS ONE - NEITHER IS A NAME, AND THE MEDIA
+//STORE IS HANDED WHAT IS LEFT AFTER THE LAST OF THEM
+fn safe_name(filename: &str) -> String
+{
+    let name = filename.rsplit(['/', '\\']).next().unwrap_or_default();
+
+    let name: String = name.chars().filter(|character| !character.is_control()).take(120).collect();
+    let name = name.trim().trim_matches('.').to_owned();
+
+    match name.is_empty()
+    {
+        true => String::from("picture"),
+        false => name,
+    }
+}
+
+//THE JAVA SIDE NOT REACHED AT ALL, WHICH IS A BUG HERE AND NOT SOMETHING TO SEND ANYBODY TO SETTINGS
+//FOR - IT GOES TO logcat UNDER WHY2 BESIDE WHATEVER THE USER IS TOLD
+fn unreachable(what: &str) -> String
+{
+    warn(&format!("the Java side could not be reached - {what}"));
+
+    String::from("WHY2 could not reach Android.")
 }
 
 //WHETHER THE PERMISSION IS THERE, ASKED OF THE APPLICATION AND NOT OF THE ACTIVITY. checkSelfPermission IS

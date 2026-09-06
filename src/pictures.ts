@@ -76,3 +76,17 @@ export function deliverPicture(panes: Panes, hash: string, image: MessageImage |
         };
     });
 }
+
+//WHAT A PICTURE IS CALLED WHEN SOMEBODY KEEPS IT. THE NAME IS THE SENDER'S, BUT THE FILE IS THE COPY
+//THIS APP ENCODED FOR THE WINDOW (picture.rs) - PNG WHERE THERE WAS AN ALPHA CHANNEL TO KEEP AND JPEG
+//EVERYWHERE ELSE - SO THE EXTENSION IS THE ONE THE BYTES ACTUALLY ARE, AND NOT THE ONE THEY ARRIVED
+//UNDER: A .webp THAT IS A JPEG ON THE DISK IS A FILE HALF THE PROGRAMS ON A MACHINE WILL NOT OPEN
+export function pictureName(image: MessageImage): string
+{
+    const extension = image.source?.startsWith("data:image/png") ? ".png" : ".jpg";
+
+    const stop = image.filename.lastIndexOf(".");
+    const stem = (stop > 0 ? image.filename.slice(0, stop) : image.filename).trim();
+
+    return (stem || "picture") + extension;
+}

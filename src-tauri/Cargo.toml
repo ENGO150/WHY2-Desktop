@@ -58,6 +58,12 @@ toml = "1"
 [target.'cfg(not(target_os = "android"))'.dependencies]
 why2-chat = { version = "2.1.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
+# COPYING A PICTURE IS THE ONE THING IN THIS APP THAT NEEDS THE SYSTEM CLIPBOARD, AND IT IS A DESKTOP
+# QUESTION ONLY: ANDROID'S CLIPBOARD TAKES TEXT AND A URI AND NOT PIXELS, WHICH IS WHY THE MENU THERE
+# SAVES AND DOES NOT OFFER TO COPY. NOTHING IN THE WEBVIEW EVER INVOKES IT - picture.rs USES THE PLUGIN'S
+# RUST API - SO IT IS NOT IN capabilities/default.json, WHICH GATES THE IPC AND NOTHING ELSE
+tauri-plugin-clipboard-manager = "2"
+
 # A WATCHED SHARE IS DECODED HERE WHEN THE WEBVIEW CANNOT DO IT ITSELF - openh264 IS THE CRATE'S OWN
 # DECODER, AND THE JPEG IS WHAT THE PICTURE TRAVELS TO THE CANVAS AS
 openh264 = "0.9.8"

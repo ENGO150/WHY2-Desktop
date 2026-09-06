@@ -169,19 +169,22 @@ export function AddServerDialog(
 //PROGRAM ASKS FOR BEFORE THROWING SOMETHING AWAY. BOTH LISTS THAT HAVE IT - THE RAIL AND THE SELECTION
 //SCREEN - ASK THE SAME WAY, SO THE GESTURE IS WRITTEN ONCE
 const HOLD = 500;
-const MENU_WIDTH = 224;
+export const MENU_WIDTH = 224;
 const MENU_HEIGHT = 96;
 
-export interface HeldMenu
+export interface HeldMenu<T>
 {
-    id: string;
+    value: T;
     x: number;
     y: number;
 }
 
-export function useHoldMenu()
+//THE GESTURE IS THE SAME WHEREVER IT IS ASKED FOR AND WHAT IT OPENS A MENU *ABOUT* IS NOT - A SERVER IN
+//THE TWO LISTS, A PICTURE IN THE PANE - SO WHAT IT CARRIES IS THE CALLER'S, WHOLE AND NOT AS AN ID TO
+//LOOK BACK UP: A PICTURE HAS NO ID, THE LIVE ONES NOT EVEN A HASH
+export function useHoldMenu<T>(anchor: "element" | "pointer" = "element")
 {
-    const [menu, setMenu] = useState<HeldMenu | null>(null);
+    const [menu, setMenu] = useState<HeldMenu<T> | null>(null);
     const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const firedRef = useRef(false);
 
@@ -215,17 +218,23 @@ export function useHoldMenu()
         };
     }, [menu]);
 
-    //BESIDE WHAT WAS HELD, AND INSIDE THE WINDOW: A ROW NEAR THE BOTTOM OR THE RIGHT EDGE WOULD OTHERWISE
-    //OPEN A MENU PAST IT
-    const openAt = (id: string, element: HTMLElement) =>
+    //BESIDE WHAT WAS HELD, OR AT THE POINT IT WAS HELD BY, AND INSIDE THE WINDOW EITHER WAY: SOMETHING
+    //NEAR THE BOTTOM OR THE RIGHT EDGE WOULD OTHERWISE OPEN A MENU PAST IT.
+    //WHICH OF THE TWO IS THE CALLER'S, AND IT FOLLOWS THE SIZE OF THE THING: A ROW IS A MOUTHFUL WIDE AND
+    //A MENU BESIDE IT POINTS AT IT, WHILE A PICTURE IS HALF THE WINDOW AND ITS TOP CORNER IS NOWHERE NEAR
+    //WHATEVER WAS ACTUALLY CLICKED
+    const openAt = (value: T, element: HTMLElement, x: number, y: number) =>
     {
         const box = element.getBoundingClientRect();
 
+        const left = anchor === "pointer" ? x + 2 : box.right + 8;
+        const top = anchor === "pointer" ? y + 2 : box.top;
+
         setMenu(
         {
-            id,
-            x: Math.max(8, Math.min(box.right + 8, window.innerWidth - MENU_WIDTH - 8)),
-            y: Math.max(8, Math.min(box.top, window.innerHeight - MENU_HEIGHT - 8)),
+            value,
+            x: Math.max(8, Math.min(left, window.innerWidth - MENU_WIDTH - 8)),
+            y: Math.max(8, Math.min(top, window.innerHeight - MENU_HEIGHT - 8)),
         });
     };
 
@@ -236,22 +245,28 @@ export function useHoldMenu()
         pressRef.current = null;
     };
 
-    const bind = (id: string) => (
+    const bind = (value: T) => (
     {
         onContextMenu: (event: React.MouseEvent) =>
         {
             event.preventDefault();
-            openAt(id, event.currentTarget as HTMLElement);
+            openAt(value, event.currentTarget as HTMLElement, event.clientX, event.clientY);
         },
 
         onTouchStart: (event: React.TouchEvent) =>
         {
             const element = event.currentTarget as HTMLElement;
+            const touch = event.touches[0];
+
+            //WHERE THE FINGER LANDED, TAKEN NOW: THE MENU OPENS HALF A SECOND LATER, AND THE EVENT IT
+            //WOULD HAVE TO BE READ OUT OF THEN IS OVER
+            const x = touch?.clientX ?? 0;
+            const y = touch?.clientY ?? 0;
 
             firedRef.current = false;
             release();
 
-            pressRef.current = setTimeout(() => { firedRef.current = true; openAt(id, element); }, HOLD);
+            pressRef.current = setTimeout(() => { firedRef.current = true; openAt(value, element, x, y); }, HOLD);
         },
 
         onTouchEnd: release,
@@ -278,7 +293,7 @@ export function ForgetMenu(
     server, at, onForget, close,
 }: {
     server: StoredServer;
-    at: HeldMenu;
+    at: HeldMenu<string>;
     onForget: (id: string) => void;
     close: () => void;
 })
@@ -329,7 +344,7 @@ export function ServerRail(
     onForget: (id: string) => void;
 })
 {
-    const { menu, close, bind, held } = useHoldMenu();
+    const { menu, close, bind, held } = useHoldMenu<string>();
 
     return (
         <nav className="scroller scroller-quiet relative z-10 flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border bg-deep py-3">
@@ -375,9 +390,9 @@ export function ServerRail(
                 <Icon name="plus" className="h-5 w-5" />
             </button>
 
-            {menu && servers.some((server) => server.id === menu.id) && (
+            {menu && servers.some((server) => server.id === menu.value) && (
                 <ForgetMenu
-                    server={servers.find((server) => server.id === menu.id)!}
+                    server={servers.find((server) => server.id === menu.value)!}
                     at={menu}
                     onForget={onForget}
                     close={close}

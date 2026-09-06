@@ -41,7 +41,7 @@ fn main()
     tauri_build::build()
 }
 
-//WHAT android.rs LOOKS THE THREE KOTLIN CLASSES UP BY: THE IDENTIFIER WITH ITS DASHES AS UNDERSCORES,
+//WHAT android.rs LOOKS THE FOUR KOTLIN CLASSES UP BY: THE IDENTIFIER WITH ITS DASHES AS UNDERSCORES,
 //WHICH IS THE PACKAGE TAURI GENERATES THEM INTO. THEY ARE BINARY NAMES AND KEEP THEIR DOTS, SINCE THE
 //LOOKUP GOES THROUGH ClassLoader.loadClass AND NOT FindClass - AND A NAME THAT IS WRONG IS NOT A BUILD
 //ERROR BUT A CALL THAT SILENTLY NEVER ASKS FOR THE MICROPHONE, SO IT IS READ FROM THE CONFIG RATHER
@@ -65,4 +65,5 @@ fn activity_class()
     println!("cargo::rustc-env=ANDROID_ACTIVITY_CLASS={package}.MainActivity");
     println!("cargo::rustc-env=ANDROID_SERVICE_CLASS={package}.SessionService");
     println!("cargo::rustc-env=ANDROID_ROUTE_CLASS={package}.AudioRoute");
+    println!("cargo::rustc-env=ANDROID_STORE_CLASS={package}.ImageStore");
 }

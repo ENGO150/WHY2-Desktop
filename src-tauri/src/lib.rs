@@ -73,6 +73,7 @@ use state::AppState;
 use net::{ connect_to_server, refresh_screens, answer_tofu };
 use servers::{ get_servers, save_server, remove_server };
 use input::{ send_input, upload_file_from_path, request_image };
+use picture::{ picture_actions, copy_image, save_image };
 use palette::{ get_commands, get_vocabulary };
 use screen::{ watch_frames, drop_frames };
 use settings::
@@ -120,6 +121,12 @@ pub fn run()
     //ON THE DESKTOP SIDE BECAUSE THERE IS NOTHING THERE THAT NEEDS IT - SEE input.rs::stage_content_uri
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_fs::init());
+
+    //AND THE OTHER WAY ROUND: PUTTING A PICTURE SOMEWHERE ELSE IN THE SYSTEM. A DESKTOP CLIPBOARD TAKES
+    //PIXELS AND A PHONE'S DOES NOT, WHICH IS WHY THIS IS THE HALF ANDROID GOES WITHOUT - picture.rs USES
+    //THE PLUGIN'S RUST API AND THE WEBVIEW NEVER INVOKES IT, SO IT NEEDS NO CAPABILITY ENTRY
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
 
     builder
         .manage(AppState
@@ -208,6 +215,9 @@ pub fn run()
             answer_tofu,
             upload_file_from_path,
             request_image,
+            picture_actions,
+            copy_image,
+            save_image,
             watch_frames,
             drop_frames,
             refresh_screens,

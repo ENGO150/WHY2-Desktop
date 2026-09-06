@@ -16,7 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # WHAT THE GENERATED ANDROID PROJECT DOES NOT KNOW: THAT THE APP RECORDS AUDIO, THAT IT KEEPS RECORDING
-# BEHIND THE HOME BUTTON THROUGH A FOREGROUND SERVICE, THAT THE THREE KOTLIN CLASSES android.rs REACHES
+# BEHIND THE HOME BUTTON THROUGH A FOREGROUND SERVICE, THAT THE FOUR KOTLIN CLASSES android.rs REACHES
 # THROUGH JNI EXIST AT ALL, AND WHAT THE APP LOOKS LIKE ON A HOME SCREEN. gen/android IS NOT TRACKED - IT
 # IS MADE ON EVERY MACHINE AND IN CI - SO THIS RUNS AFTER EVERY init, AND AGAIN IN FRONT OF EVERY BUILD.
 # IT IS WRITTEN TO BE RUN TWICE: EVERY MANIFEST LINE IS INSERTED ONLY WHERE IT IS MISSING, AND THE
@@ -206,9 +206,9 @@ fi
 
 sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/MainActivity.kt" > "$ACTIVITY"
 
-# THE OTHER TWO ARE SIBLINGS OF THE ACTIVITY AND NOT GENERATED FILES AT ALL, SO THEY ARE SIMPLY WRITTEN
+# THE OTHER THREE ARE SIBLINGS OF THE ACTIVITY AND NOT GENERATED FILES AT ALL, SO THEY ARE SIMPLY WRITTEN
 # BESIDE IT - THE PACKAGE IS THE ONE THE ACTIVITY DECLARED, WHICH IS ALSO THE DIRECTORY THEY SIT IN
-for CLASS in SessionService AudioRoute; do
+for CLASS in SessionService AudioRoute ImageStore; do
     sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/$CLASS.kt" > "$(dirname "$ACTIVITY")/$CLASS.kt"
 done
 
@@ -216,4 +216,4 @@ done
 # WOULD COMPILE INTO THE APK AS A SERVICE NOTHING STARTS
 rm -f "$(dirname "$ACTIVITY")/CallService.kt"
 
-echo "android-patch: the activity can ask for the microphone, the service can hold the session, and the call can be moved to the earpiece"
+echo "android-patch: the activity can ask for the microphone, the service can hold the session, the call can be moved to the earpiece, and a picture can be saved to the gallery"
