@@ -8183,7 +8183,7 @@ dependencies = [
  "objc2-metal 0.3.2",
  "objc2-quartz-core 0.3.2",
  "once_cell",
- "ordered-float 4.6.0",
+ "ordered-float 5.5.0",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
@@ -8249,9 +8249,9 @@ dependencies = [
 
 [[package]]
 name = "why2-chat"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ac829e086e50032359fbcbf09f2028a9046ee7757154595fe9d0d2b40791da4"
+checksum = "81ffa5978973c1d887faaa40367f9c9ed59772ef65137014947501cd7933f78d"
 dependencies = [
  "audiopus",
  "base64 0.23.1",
