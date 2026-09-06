@@ -2921,9 +2921,13 @@ function App()
                 IT HANGS FROM THE TOP, WHERE IT COVERS A HEADER THAT SAYS THE SAME THING WHENEVER IT IS
                 DISMISSED - AT THE BOTTOM IT SAT ON THE COMPOSER, WHICH IS WHERE SOMEBODY IS TYPING WHILE
                 IT IS UP. THE INSET IS ITS OWN: THIS IS PINNED TO main AND NOT INSIDE A COLUMN THAT HAS
-                ALREADY PAID FOR THE NOTCH */}
+                ALREADY PAID FOR THE NOTCH.
+                IT STANDS OVER EVERYTHING IN main, THE LIGHTBOX AND ITS MENU INCLUDED: WHAT IT SAYS IS
+                USUALLY THE ANSWER TO WHATEVER WAS JUST DONE IN FRONT - COPYING A PICTURE, SAVING ONE -
+                AND A TOAST BEHIND THE DARKENED ROOM THAT ASKED FOR IT IS AN ANSWER NOBODY EVER SEES.
+                IT IS pointer-events-none, SO STANDING ON TOP COSTS THE MENU UNDER IT NOTHING */}
             {popupMessage && (
-                <div className="fall safe-top pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center">
+                <div className="fall safe-top pointer-events-none absolute inset-x-0 top-0 z-[80] flex justify-center">
                     <div className="mt-4 max-w-[80vw] rounded-app border border-border bg-overlay px-4 py-2 text-sm text-muted shadow-2xl">
                         {popupMessage}
                     </div>

@@ -31,7 +31,13 @@ why2-chat = { path = "../../WHY2/chat" }
 
 `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
-script, not in this code. It is on for **both** targets; what a phone does about the opus it cannot find is
+script, not in this code. On Linux `client_screen` wants **pipewire's headers and a `libclang`** as well:
+`xcap` pulls `libspa-sys`, which runs `bindgen` over them, and bindgen loads `libclang.so` at build time.
+Where the system's `llvm-config` points at a release that ships no `libclang` — a distribution with several
+LLVM slots installed does exactly this — the build script panics with *Unable to find libclang*, and the
+answer is `LIBCLANG_PATH` pointed at a slot that has one (`/usr/lib/llvm/<version>/lib64` on Gentoo). It
+bites a fresh profile rather than a fresh checkout: a `target/debug` that was built once keeps the answer,
+so the first `--release` build is usually where it shows up. It is on for **both** targets; what a phone does about the opus it cannot find is
 in **Android**. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
 own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
 which also documents the one change this app needs in that crate. When behaviour looks wrong, the cause is often in that crate, not here — read

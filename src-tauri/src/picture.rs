@@ -153,18 +153,22 @@ pub(crate) async fn copy_image(source: String, app: AppHandle) -> Result<(), Str
 
         let Some((_, bytes)) = decode(&source) else { return Err(String::from("That is not a picture.")) };
 
-        let pixels = task::spawn_blocking(move ||
+        //THE DECODE IS UNBROKEN CPU OVER THE WHOLE PICTURE, AND THE WRITE IS A BLOCKING CALL INTO THE
+        //SYSTEM'S OWN CLIPBOARD THAT DOES NOT COME BACK UNTIL IT HAS TAKEN THE PICTURE OVER - NEITHER
+        //BELONGS ON A RUNTIME THREAD, SO BOTH GO TO THE BLOCKING POOL TOGETHER
+        task::spawn_blocking(move ||
         {
-            let image = image::load_from_memory(&bytes).ok()?;
+            let Ok(image) = image::load_from_memory(&bytes) else
+            {
+                return Err(String::from("The picture could not be decoded."));
+            };
+
             let rgba = image.to_rgba8();
+            let (width, height) = (rgba.width(), rgba.height());
 
-            Some((rgba.width(), rgba.height(), rgba.into_raw()))
-        }).await.map_err(|_| String::from("Decoding the picture panicked."))?;
-
-        let Some((width, height, rgba)) = pixels else { return Err(String::from("The picture could not be decoded.")) };
-
-        app.clipboard().write_image(&tauri::image::Image::new(&rgba, width, height))
-            .map_err(|error| error.to_string())
+            app.clipboard().write_image(&tauri::image::Image::new_owned(rgba.into_raw(), width, height))
+                .map_err(|error| error.to_string())
+        }).await.map_err(|_| String::from("Copying the picture panicked."))?
     }
 }
 
