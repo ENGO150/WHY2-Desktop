@@ -48,9 +48,25 @@ use why2_chat::
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::net::refresh_online;
+use crate::net::{ refresh_online, request_picture };
 use crate::picture;
 use crate::settings::client_settings;
+
+//A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT - THE HISTORY'S OWN, AND THE ONES A SERVER OFFERS
+//RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND pending IS THE
+//DIFFERENCE BETWEEN A PICTURE ON ITS WAY AND ONE WAITING TO BE ASKED FOR (tui/state.rs::push_caption)
+fn caption(username: String, filename: String, hash: [u8; 32], pending: bool) -> ChatMessage
+{
+    ChatMessage::new(MessageKind::User, username, filename.clone()).picture(MessageImage
+    {
+        filename,
+        hash: Some(picture::hex(&hash)),
+        source: None,
+        pending,
+        width: 0,
+        height: 0,
+    })
+}
 
 pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
 {
@@ -124,6 +140,26 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             }
         },
 
+        //AN OFFER THE CACHE COULD NOT ANSWER. THE CAPTION GOES UP AS A LINE LIKE ANY OTHER, THE PICTURE
+        //IS ASKED FOR HERE, AND THE ImageData THAT COMES BACK FILLS IT - NOBODY CHOOSES TO SEE A PICTURE
+        //THAT IS BEING SENT TO THEM ANYWAY, SO THERE IS NO BUTTON ON IT
+        ClientEvent::ImagePending(username, filename, hash) =>
+        {
+            say(app, caption(username, filename, hash, true));
+
+            request_picture(&state, hash).await;
+        },
+
+        //THE SAME LINE WITH THE BUTTON STILL ON IT: auto_show_images IS OFF, SO NOBODY ASKED FOR THIS
+        //PICTURE AND NOTHING IS COMING UNTIL SOMEBODY CLICKS
+        ClientEvent::ImageOffer(username, filename, hash) =>
+        {
+            say(app, caption(username, filename, hash, false));
+        },
+
+        //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
+        ClientEvent::ImageRequest(hash) => request_picture(&state, hash).await,
+
         //IT PASSED THE SERVER'S HEADER CHECK AND STILL WOULD NOT DECODE, SO SAY SO WHERE IT WOULD HAVE BEEN
         ClientEvent::ImageFailed(username, filename) =>
         {
@@ -163,25 +199,19 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             say(app, ChatMessage::new(MessageKind::Private, "", text).direct(peer));
         },
 
-        //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN
-        ClientEvent::History(messages) =>
+        //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN, AND WHICH OF THEIR PICTURES THE CACHE HOLDS
+        ClientEvent::History(messages, cached) =>
         {
             let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }|
             {
                 //A PICTURE IS NAMED HERE AND NOT REPLAYED - THE HISTORY CARRIES ITS HASH, AND NOTHING GOES
-                //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME
+                //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME.
+                //ONE WE ALREADY HOLD IS THE EXCEPTION: THE CRATE IS WALKING THE CACHE BEHIND THIS EVENT
+                //AND WILL FILL THAT CAPTION ITSELF, SO IT SAYS SO INSTEAD OF OFFERING A BUTTON THAT WOULD
+                //ASK FOR WHAT IS ALREADY ON ITS WAY
                 match image
                 {
-                    Some(hash) => ChatMessage::new(MessageKind::User, username, text.clone())
-                        .picture(MessageImage
-                        {
-                            filename: text,
-                            hash: Some(picture::hex(&hash)),
-                            source: None,
-                            width: 0,
-                            height: 0,
-                        }),
-
+                    Some(hash) => caption(username, text, hash, cached.contains(&hash)),
                     None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
                 }
             }).collect::<Vec<ChatMessage>>();
@@ -609,6 +639,7 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     *state.write_stream.lock().await = None;
     *state.role.lock().unwrap() = Role::default();
     state.tofu_reply.lock().unwrap().take();
+    state.events.lock().unwrap().take();
     state.roster_queued.store(false, Ordering::Relaxed);
     state.voice_enabled.store(false, Ordering::Relaxed);
     state.voice_roster.lock().unwrap().clear();

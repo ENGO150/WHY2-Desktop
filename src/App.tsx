@@ -33,6 +33,7 @@ import type
     ScreenUser,
     FileOwner,
     PaneEntry,
+    ChatMessage,
     MessageImage,
     OnlineUser,
     ArgValues,
@@ -311,6 +312,19 @@ function App()
             return changed ? next : previous;
         });
     }, [users]);
+
+    //A LINE ON ITS WAY INTO A PANE. A PICTURE THAT CAME WITH ITS OWN BYTES IS SIMPLY DRAWN; ONE THAT WAS
+    //ONLY NAMED IS A CAPTION, AND WHICH OF THE TWO IT IS DECIDES NOTHING - WHAT DOES IS WHETHER THE
+    //PICTURE IS ALREADY ON ITS WAY (A LIVE OFFER THE BRIDGE ASKED FOR, OR A REPLAYED ONE THE CACHE HOLDS),
+    //WHICH IS waiting AND CARRIES NO BUTTON, AGAINST absent, WHICH IS THE [ show ] ONE
+    const entryFor = (message: ChatMessage): PaneEntry =>
+    {
+        const image = message.image;
+
+        if (!image || image.source) return { entry: "message", message };
+
+        return { entry: "message", message, picture: image.pending ? "waiting" : "absent" };
+    };
 
     const push = (...entries: PaneEntry[]) =>
     {
@@ -631,15 +645,15 @@ function App()
                     const message = payload.data.message;
 
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
-                    if (message.direct) pushDirect(message.direct, { entry: "message", message });
-                    else push({ entry: "message", message });
+                    if (message.direct) pushDirect(message.direct, entryFor(message));
+                    else push(entryFor(message));
 
                     break;
                 }
 
                 case "history":
                 {
-                    push(...payload.data.messages.map((message): PaneEntry => ({ entry: "message", message })));
+                    push(...payload.data.messages.map(entryFor));
                     break;
                 }
 

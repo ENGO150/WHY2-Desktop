@@ -56,10 +56,13 @@ export function markWaiting(panes: Panes, hash: string): Panes
 }
 
 //AND THE ANSWER TO IT - OR THE LACK OF ONE, WHICH THE CAPTION THEN SAYS. THE FILENAME IS THE LINE'S OWN
-//AND NOT THE PACKET'S: IT HAS CARRIED THAT SINCE THE HISTORY ARRIVED
+//AND NOT THE PACKET'S: IT HAS CARRIED THAT SINCE THE HISTORY ARRIVED.
+//A PICTURE FILLS A CAPTION NOBODY CLICKED AS WELL AS ONE THAT IS WAITING - AN ANSWER NOBODY ASKED FOR IS
+//WHAT A CACHE HIT *IS*, AND THAT IS THE WHOLE POINT OF HAVING KEPT IT. A REFUSAL ONLY MARKS A LINE THAT
+//DID ASK (tui/state.rs::deliver_image)
 export function deliverPicture(panes: Panes, hash: string, image: MessageImage | null): Panes
 {
-    return rewrite(panes, hash, ["waiting"], (entry) =>
+    return rewrite(panes, hash, image ? ["absent", "waiting"] : ["waiting"], (entry) =>
     {
         if (entry.entry !== "message") return entry;
         if (!image) return { ...entry, picture: "gone" };

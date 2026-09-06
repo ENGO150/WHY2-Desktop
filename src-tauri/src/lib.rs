@@ -126,6 +126,7 @@ pub fn run()
         {
             write_stream: MutexAsync::new(None),
             tofu_reply: Mutex::new(None),
+            events: Mutex::new(None),
             role: Mutex::new(Role::default()),
             session: AtomicU64::new(0),
             last_sent: Mutex::new(Instant::now()),

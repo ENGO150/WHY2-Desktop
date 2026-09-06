@@ -44,13 +44,15 @@ pub(crate) struct ChatMessage
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
 //PICTURE WHERE THE TEXT WOULD BE. WHAT ARRIVED WITH ITS OWN BYTES CARRIES source AND NOTHING ELSE; ONE
-//THE HISTORY ONLY NAMED CARRIES hash, AND NOTHING IS FETCHED UNTIL SOMEBODY ASKS TO SEE IT (request_image)
+//THAT WAS ONLY NAMED CARRIES hash, AND NOTHING IS FETCHED UNTIL SOMEBODY ASKS TO SEE IT (request_image) -
+//UNLESS IT IS ALREADY ON ITS WAY, WHICH IS WHAT pending SAYS
 #[derive(Serialize, Clone)]
 pub(crate) struct MessageImage
 {
     pub(crate) filename: String,
     pub(crate) hash: Option<String>,   //THE CONTENT HASH AS HEX - WHAT PacketCode::ImageData IS ASKED WITH
     pub(crate) source: Option<String>, //THE PICTURE ITSELF, AS A data: URL
+    pub(crate) pending: bool,          //THE PICTURE IS COMING, SO THE CAPTION OFFERS NO BUTTON
     pub(crate) width: u32,
     pub(crate) height: u32,
 }

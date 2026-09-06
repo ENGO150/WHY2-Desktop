@@ -101,6 +101,7 @@ pub(crate) async fn encode(image: DynamicImage, filename: String, hash: Option<[
         filename,
         hash: hash.as_ref().map(hex),
         source: Some(format!("data:{};base64,{}", encoded.0, BASE64_STANDARD.encode(encoded.1))),
+        pending: false,
         width,
         height,
     })

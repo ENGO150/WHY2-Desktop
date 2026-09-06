@@ -34,6 +34,7 @@ use tokio::
     sync::
     {
         oneshot,
+        mpsc::Sender,
         Mutex as MutexAsync,
     },
 };
@@ -44,7 +45,7 @@ use why2_chat::
 {
     role::Role,
     options::{ self, LoginState },
-    network::client,
+    network::client::{ self, ClientEvent },
 };
 
 //THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD HAS THE FIRST OF AND NOT THE SECOND - why2-chat
@@ -73,6 +74,7 @@ pub(crate) struct AppState
 {
     pub(crate) write_stream: MutexAsync<Option<Arc<MutexAsync<OwnedWriteHalf>>>>, //WRITE HALF OF THE LIVE SESSION
     pub(crate) tofu_reply: Mutex<Option<oneshot::Sender<bool>>>,                  //THE HANDSHAKE IS PARKED ON THIS
+    pub(crate) events: Mutex<Option<Sender<ClientEvent>>>,                        //WHERE THE LIVE SESSION'S EVENTS GO
     pub(crate) role: Mutex<Role>,                                                 //WHAT THIS SERVER GRANTED US
     pub(crate) session: AtomicU64,                                                //ONLY THE NEWEST SESSION COUNTS
     pub(crate) last_sent: Mutex<Instant>,                                         //WHEN WE LAST PUT SOMETHING ON THE WIRE

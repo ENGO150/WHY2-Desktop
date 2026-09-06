@@ -316,18 +316,21 @@ pub(crate) async fn upload_file_from_path(path: String, image: bool, app: AppHan
     Ok(())
 }
 
-//A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES THEIR
-//HASHES, AND THIS IS THE ONLY THING THAT EVER PUTS A STORED ONE ON THE WIRE. THE SERVER HOLDS ONE CLIENT
-//TO ONE OF THESE PER IMAGE_REQUEST_DELAY AND SERVES IT LATE RATHER THAN REFUSING IT, SO THERE IS NOTHING
-//TO RETRY: THE ANSWER ALWAYS COMES, AND THE CAPTION WAITS FOR IT
+//A CAPTION ASKED TO BE SEEN - ONE THE HISTORY REPLAYED, OR ONE A SERVER OFFERED RATHER THAN PUSHED. IT
+//GOES THROUGH THE CACHE FIRST (client::fetch_image), SINCE THE PICTURE A CLICK ASKS FOR IS USUALLY ALREADY
+//ON DISK AND ASKING THE SERVER FOR IT WOULD COST A DISK READ, A WHOLE RexStream DECRYPT AND MAX_IMAGE_SIZE
+//BACK ON THE WIRE FOR NOTHING. A HIT COMES BACK AS ClientEvent::ImageData AND A MISS AS ImageRequest,
+//WHICH IS WHAT PUTS THE ASK ON THE WIRE - THE SERVER HOLDS ONE CLIENT TO ONE OF THOSE PER
+//IMAGE_REQUEST_DELAY AND SERVES IT LATE RATHER THAN REFUSING IT, SO THERE IS NOTHING TO RETRY:
+//THE ANSWER ALWAYS COMES, AND THE CAPTION WAITS FOR IT
 #[tauri::command]
 pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(events) = state.events.lock().unwrap().clone() else { return Err(String::from("Not connected")) };
 
     let Some(hash) = unhex(&hash) else { return Err(String::from("Invalid image")) };
 
-    send_packet(&state, &write_stream, PacketCode::ImageData { hash, data: None }).await;
+    client::fetch_image(hash, events);
 
     Ok(())
 }

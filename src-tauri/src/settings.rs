@@ -58,6 +58,11 @@ pub(crate) const AUDIO_SETTINGS: &[SettingsKey] = &[];
 pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
 &[
     ("Interface", "Message colors",  "disable_colors", ClientKind::Toggle { invert: true }),
+
+    //OFF, A POSTED PICTURE GOES UP AS A CAPTION WITH A BUTTON ON IT - THE WAY A REPLAYED ONE DOES -
+    //RATHER THAN BEING DECODED AND DRAWN AS IT ARRIVES
+    ("Interface", "Show images automatically", "auto_show_images", ClientKind::Toggle { invert: false }),
+
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 

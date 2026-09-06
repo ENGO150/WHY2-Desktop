@@ -57,6 +57,16 @@ pub(crate) async fn send_packet(state: &AppState, write_stream: &Arc<MutexAsync<
     *state.last_sent.lock().unwrap() = Instant::now();
 }
 
+//A PICTURE THE CACHE COULD NOT ANSWER, ASKED OF THE SERVER. THE TUI QUEUES THESE ONTO ITS REDRAW TICK
+//BECAUSE THE LOOP OWNS THE WRITE HALF AND THE SEQUENCE COUNTER; HERE THE EVENT PUMP *IS* THAT LOOP, SO
+//THE ASK GOES OUT WHERE IT IS DECIDED - THROUGH send_packet, WHICH KEEPS THE ROSTER CLOCK HONEST
+pub(crate) async fn request_picture(state: &AppState, hash: [u8; 32])
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
+
+    send_packet(state, &write_stream, PacketCode::ImageData { hash, data: None }).await;
+}
+
 //ASK FOR THE ROSTER - EVENTUALLY. THE ROSTER IS ALSO THE CHANNEL LIST, SO IT HAS TO FOLLOW EVERY JOIN,
 //AND JOINS ARRIVE IN CLUMPS: LOGGING IN ALONE BRINGS Accept AND OUR OWN Join ONE AFTER THE OTHER, WHICH
 //AS TWO SEPARATE List PACKETS IS EXACTLY WHAT THE SERVER CALLS SPAM. ONE REQUEST ANSWERS THE WHOLE
@@ -186,6 +196,11 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     crate::android::hold_session(true);
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
+
+    //A CLICKED CAPTION IS ANSWERED OUT OF THE IMAGE CACHE WHERE IT CAN BE, AND client::fetch_image REPORTS
+    //WHAT IT FOUND (OR DID NOT) BACK DOWN THIS CHANNEL LIKE ANY OTHER EVENT - SO THIS SESSION'S SENDER IS
+    //KEPT FOR IT, THE WAY tui/mod.rs HANDS ITS OWN tx TO THE MOUSE-UP ARM
+    *state.events.lock().unwrap() = Some(tx.clone());
 
     //CHECK THE PACKAGE VERSION ONCE PER PROCESS - IT REPORTS THROUGH tx LIKE ANYTHING ELSE, SO IT MUST
     //NOT HOLD UP THE HANDSHAKE

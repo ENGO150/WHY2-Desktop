@@ -55,6 +55,7 @@ export interface MessageImage
     filename: string;
     hash: string | null;   //THE CONTENT HASH, WHICH IS WHAT THE SERVER IS ASKED FOR THE PICTURE WITH
     source: string | null; //THE PICTURE ITSELF, AS A data: URL
+    pending: boolean;      //THE PICTURE IS ALREADY ON ITS WAY, SO THE CAPTION OFFERS NO BUTTON
     width: number;
     height: number;
 }
