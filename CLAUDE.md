@@ -6,26 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 WHY2 Desktop is a Tauri 2 GUI for the WHY2 chat protocol — a desktop program on Linux/macOS/Windows and an
 Android app from the same source. All protocol work (async TCP framing, hybrid ECC+ML-KEM key exchange, TOFU
-key pinning, commands, roles, config) lives in the `why2-chat` crate, pulled in as a **git dependency on the
-`development` branch**, with a **different feature set per target** (see **Android**):
+key pinning, commands, roles, config) lives in the `why2-chat` crate, pulled off **crates.io by version**,
+with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.1.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { git = "https://github.com/ENGO150/WHY2", branch = "development", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.1.1", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
-The branch is not a preference: **crates.io stops at `why2-chat` 2.0.0, which has no `SCREEN_FRAME_SINK`** —
-see **Screen sharing** — so the published crate does not compile this app's desktop half. Move to a version
-dependency once that change is released. `Cargo.lock` pins the commit, so `cargo update -p why2-chat` is what
-takes newer `development` work.
+It used to be a git dependency on the crate's `development` branch, because the published crate had no
+`SCREEN_FRAME_SINK` and so did not compile this app's desktop half (see **Screen sharing**). That is
+released, so the version is what is written down — and **the version is bumped by hand when the crate
+publishes one**, which is the moment to read its `CHANGELOG` and reflect whatever moved.
 
 To read the crate against local edits instead, patch it rather than editing the dependency line:
 
 ```toml
-[patch."https://github.com/ENGO150/WHY2"]
+[patch.crates-io]
 why2-chat = { path = "../../WHY2/chat" }
 ```
 
@@ -448,6 +448,9 @@ There is no ASCII logo anywhere — the terminal client's watermark was the last
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
 `ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the two `client.toml` keys that still
 change how the pane looks (`show_id`, `disable_colors`), which the TUI re-reads on every redraw.
+`auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
+decides what the crate does with a picture as it arrives rather than how a line already in the pane is
+drawn (see **Images**).
 
 ### The command path
 
@@ -560,25 +563,49 @@ type in the event is the type this encodes. Encoding is unbroken CPU over the wh
 `spawn_blocking` like every hash here.
 
 A line that is a picture is **a line somebody said** — `MessageKind::User`, their name and their face over
-it, with the picture where the text would be and the filename as the text. The three events behind it are
+it, with the picture where the text would be and the filename as the text. The six events behind it are
 the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
-server's header check and still would not decode (an error line, word for word with `tui/event.rs`), and
-`ImageData` is the answer to a caption somebody asked to see.
+server's header check and still would not decode (an error line, word for word with `tui/event.rs`),
+`ImageData` is the answer to a caption somebody asked to see, and the three the client cache added —
+`ImageOffer`, `ImagePending` and `ImageRequest` — are below.
+
+**A picture is not pushed twice.** The crate keeps every picture it has seen (`cache.rs`, keyed by content
+and scoped by the server's fingerprint, encrypted and authenticated at rest), so a repost arrives as
+`ImageDisplay` with `data: None` — the hash and nothing else. The crate answers that out of the cache
+without anybody being told; only a miss reaches this side, as **`ImagePending`**: the caption goes up and
+the picture is asked for at once, since nobody chooses to see a picture that was being sent to them anyway.
+With **`auto_show_images` off** (the `client.toml` default, and a row in the settings dialog) nothing is
+unpacked without a click at all: every arriving picture is an **`ImageOffer`** instead — the same line with
+the button still on it — and the bytes that came anyway are still cached, so the click is usually free.
 
 **The history replays a hash and not the picture**, which is what keeps every login from carrying every
 image ever posted. So a history entry with an `image` becomes a caption — the filename, and a `Show` that
-sends `request_image`, the one thing in this app that ever puts a stored picture on the wire. The state of
-that caption is the **frontend's**, since the pane is: `PaneEntry` carries a `PictureStatus` (`absent`,
-`waiting`, `gone`) beside the message, which is `tui/state.rs`'s `Picture` minus its ready arm — a picture
-that is here is the message's own `source`. `pictures.ts` is the two things that move it, and
-`deliverPicture` makes the same decision `deliver_image` does: **the answer fills the oldest line still
-waiting for that hash**, because the same picture can be in the pane twice and the second one asked for
-itself. A `gone` caption is askable again (`Try again`) — the picture may have left the history, and the
-answer may also be the one that went missing.
+invokes `request_image`. That command no longer puts a packet on the wire itself: it hands the hash to
+`client::fetch_image`, which answers out of the cache where it can and comes back as **`ImageRequest`**
+where it cannot — and *that* is what asks the server. `ClientEvent::History` also carries **which of its
+pictures we already hold**, and those captions go up as `waiting` rather than `absent`: the crate is walking
+the cache behind that event and will fill them itself, so offering a button for a picture already on its way
+is the one thing they must not do.
+
+The caption's `pending` flag (`MessageImage`) is the whole of what the bridge says about that — it is
+`tui/state.rs::push_caption`'s own parameter, and `entryFor` in `App.tsx` is where it becomes a
+`PictureStatus`. The state of a caption is otherwise the **frontend's**, since the pane is: `PaneEntry`
+carries a `PictureStatus` (`absent`, `waiting`, `gone`) beside the message, which is `tui/state.rs`'s
+`Picture` minus its ready arm — a picture that is here is the message's own `source`. `pictures.ts` is the
+two things that move it, and `deliverPicture` makes the same decision `deliver_image` does: **the answer
+fills the oldest line still without that picture**, because the same picture can be in the pane twice and
+the second one asked for itself. `absent` counts as well as `waiting` — an answer nobody clicked for is
+what a cache hit *is* — while a **refusal only marks a line that actually asked**. A `gone` caption is
+askable again (`Try again`) — the picture may have left the history, and the answer may also be the one
+that went missing.
 
 The server holds one client to one `ImageData` per `IMAGE_REQUEST_DELAY` and **serves it late rather than
-refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it. The ask
-still goes through `send_packet` like everything else, so the roster clock stays honest.
+refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it. Both
+places that ask go through `send_packet` (`request_picture` in `net.rs`), so the roster clock stays honest.
+The TUI queues its asks onto the redraw tick because that loop owns the write half and the sequence
+counter; here `pump_events` **is** that loop, so the ask goes out where it is decided. `AppState::events`
+is this session's `ClientEvent` sender, kept for the one thing outside the pump that reports through it —
+`fetch_image`, which is `tui/mod.rs` handing its own `tx` to the mouse-up arm.
 
 The pane draws a picture at a size somebody can read around it, and the **lightbox** is where it is actually
 looked at: the picture on a darkened room, closed by esc, the ×, a press anywhere, or the back gesture (it is
@@ -670,8 +697,8 @@ pub static SCREEN_FRAME_SINK: RwLock<Option<UnboundedSender<Vec<u8>>>> = RwLock:
 — which `attach` prefers over the proxy: with a sink set it hands over each H.264 access unit as it arrives
 and opens no window. That is the whole crate-side change (three edits in one file: the static, the `Video`
 branch, and an early return before `UserEvent::NewSession`); the TUI is untouched, because with no sink set
-nothing about its path changes. **It lives on `development` and in no published version** — which is why the
-dependency is a git one and not a crates.io one (see **What this is**).
+nothing about its path changes. It is published (2.1.0 and up), which is what let the dependency go back to
+a version (see **What this is**) — a crate older than that does not compile this app's desktop half.
 
 This app sets the sink once in `run()`'s `setup`, for the life of the process, and forwards frames to
 whatever `Channel<InvokeResponseBody>` the pane last handed it through `watch_frames` (`drop_frames` takes it
@@ -1099,7 +1126,7 @@ build.
 ### CI
 
 `.github/workflows/build.yml` is one workflow with two jobs, and it is a plain single-repo checkout because
-the crate arrives over git rather than off the disk beside it.
+the crate arrives off crates.io rather than off the disk beside it.
 
 **`build-desktop`** is a four-way matrix — Linux, macOS on both architectures (`macos-latest` is Apple
 silicon, `macos-13` is Intel), Windows — installing the same system libraries the local build wants, then
