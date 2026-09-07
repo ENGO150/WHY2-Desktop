@@ -464,6 +464,36 @@ change how the pane looks (`show_id`, `disable_colors`), which the TUI re-reads 
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
 
+### Message markup
+
+**What somebody typed goes through `src/markup.ts`, which is `tui/markup.rs`'s parser rewritten** — the same
+rules, so a message reads the same in both clients: Discord's fenced ``` blocks and inline `` ` `` code. The
+parser **never consumes what it cannot close** (an unterminated fence is backticks somebody typed, not a
+block that swallows the rest of the line), a backslash takes the markup off the character after it, and a
+delimiter that was not found once is not searched for again. It walks **code points** (`[...text]`), not
+UTF-16 halves, because the Rust it mirrors counts `chars`.
+
+It reaches exactly what the TUI's does: **what a user wrote**, which here is `renderChat` — `user` and
+`private` lines — and nothing else. `renderNotice` still calls `linked` on its own, because those lines are
+this client's output and there is nothing in them to parse, and a **picture line is skipped too**: its text
+is the filename.
+
+The window has what a terminal does not, so a block is drawn as a box rather than built out of padded cells:
+the warm surface, the bar down the left edge, the language over it. **Code is not word-wrapped** — it is
+broken where it runs out of room, which in a window means it is not broken at all: `.code-block pre` scrolls
+sideways on its own so the pane behind it never does. The newline on either side of a fence is the fence's
+own and is dropped, which is the same thing the TUI does by not opening a row for it.
+
+**The language is used and not only shown.** `highlight.js` (the `lib/common` bundle) paints a block whose
+fence named a language it knows, and one that named none — or named something it does not have — is left as
+plain code: guessing is every grammar it has tried against three lines somebody pasted, which is slow and
+usually wrong. What comes back is HTML the highlighter escaped itself, which is the only reason it may be
+set as markup at all. Its class names are used and **its stylesheets are not** — those are written for a
+white page or for somebody else's dark one — so `widgets.css` maps the classes onto a palette of our own in
+`theme.css`. The five code tokens there (`--code-bg`, `--code-inline`, `--code-text`, `--code-bar`,
+`--code-lang`) are `tui/theme.rs`'s own values; the eight `--syntax-*` ones are this window's alone, since
+the terminal highlights nothing.
+
 ### The tray
 
 **Closing the window is not quitting the program.** A chat client is something that is *running* rather than

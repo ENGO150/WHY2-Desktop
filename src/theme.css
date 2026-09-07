@@ -50,6 +50,26 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --arg-required: #a0937f;     /* SOFT SAND */
     --arg-optional: #a58c88;     /* FADED CORAL */
 
+    /* CODE. THESE FIVE ARE tui/theme.rs' OWN - CODE_BG, CODE, CODE_BLOCK, CODE_BAR AND CODE_LANG - SO A
+       BLOCK READS THE SAME IN BOTH CLIENTS. IT IS THE ONE WARM SURFACE IN THE WINDOW ON PURPOSE: A BLOCK
+       IS SOMEBODY ELSE'S TEXT SET IN SOMEBODY ELSE'S LANGUAGE, AND IT IS MEANT TO SIT APART */
+    --code-bg: #2e2428;          /* DEEP ROSE-BROWN */
+    --code-inline: #ffbbba;
+    --code-text: #eed1d6;
+    --code-bar: #9dceff;         /* THE BLOCK'S LEFT EDGE */
+    --code-lang: #cab4b7;
+
+    /* AND WHAT A HIGHLIGHTER PAINTS ON IT. THE TERMINAL HIGHLIGHTS NOTHING, SO THESE ARE THIS WINDOW'S
+       ALONE - PITCHED TO SIT ON --code-bg RATHER THAN TAKEN FROM THE CHROME, WHICH IS GREY BY DESIGN */
+    --syntax-keyword: #ffa0b4;
+    --syntax-string: #a9c99b;
+    --syntax-number: #e0b878;
+    --syntax-comment: #9a8a8e;
+    --syntax-title: #9dceff;
+    --syntax-type: #c9b0e8;
+    --syntax-builtin: #86c9c0;
+    --syntax-attr: #f0c9c4;
+
     --radius: 8px;
 }
 
@@ -85,6 +105,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
     --color-arg-required: var(--arg-required);
     --color-arg-optional: var(--arg-optional);
+
+    --color-code-bg: var(--code-bg);
+    --color-code-inline: var(--code-inline);
+    --color-code-text: var(--code-text);
+    --color-code-bar: var(--code-bar);
+    --color-code-lang: var(--code-lang);
 
     --radius-app: var(--radius);
 }

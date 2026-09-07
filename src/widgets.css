@@ -237,3 +237,99 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         transition-duration: 1ms;
     }
 }
+
+/* CODE. THE TUI PADS A FENCED BLOCK OUT TO THE PANE BECAUSE A TERMINAL HAS NOTHING BUT CELLS TO MAKE A
+   BOX WITH; A WINDOW HAS A BOX, SO WHAT IS KEPT IS WHAT THE BOX IS FOR - THE WARM SURFACE, THE BAR DOWN
+   THE LEFT EDGE AND THE LANGUAGE OVER IT. CODE IS BROKEN WHERE IT RUNS OUT OF ROOM AND NOT AT THE LAST
+   SPACE BEFORE IT, WHICH HERE MEANS IT IS NOT BROKEN AT ALL: THE BLOCK SCROLLS SIDEWAYS ON ITS OWN AND
+   THE PANE BEHIND IT NEVER DOES */
+.code-block
+{
+    display: block;
+    margin: 6px 0;
+    border-radius: var(--radius);
+    border-left: 2px solid var(--code-bar);
+    background: var(--code-bg);
+    color: var(--code-text);
+    overflow: hidden;
+}
+
+.code-lang
+{
+    padding: 4px 10px 0;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--code-lang);
+}
+
+.code-block pre
+{
+    margin: 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: 13px;
+    line-height: 1.5;
+    tab-size: 4;
+}
+
+/* INLINE `code` IS A RUN INSIDE A SENTENCE AND NOT A BOX - IT WRAPS WITH THE TEXT AROUND IT, AND A
+   NEWLINE INSIDE ONE IS A SPACE, THE WAY tui/markup.rs TREATS IT */
+.code-inline
+{
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--code-bg);
+    color: var(--code-inline);
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* WHAT THE HIGHLIGHTER EMITS. IT IS highlight.js' CLASS NAMES AND NOT ITS STYLESHEET: THEIR THEMES ARE
+   WRITTEN FOR A WHITE PAGE OR FOR SOMEBODY ELSE'S DARK ONE, AND THIS SURFACE IS NEITHER */
+.hljs-comment,
+.hljs-quote { color: var(--syntax-comment); font-style: italic; }
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-name { color: var(--syntax-keyword); }
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-template-tag,
+.hljs-selector-attr,
+.hljs-selector-pseudo { color: var(--syntax-string); }
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link { color: var(--syntax-number); }
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section { color: var(--syntax-title); }
+
+.hljs-type,
+.hljs-title.class_,
+.hljs-class .hljs-title,
+.hljs-selector-class { color: var(--syntax-type); }
+
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-meta { color: var(--syntax-builtin); }
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property,
+.hljs-params { color: var(--syntax-attr); }
+
+.hljs-deletion { color: var(--error); }
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }

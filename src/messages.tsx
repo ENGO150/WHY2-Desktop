@@ -21,6 +21,8 @@ import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
+import { parse } from "./markup";
+import hljs from "highlight.js/lib/common";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createPortal } from "react-dom";
 import { MENU_WIDTH, type HeldMenu } from "./servers";
@@ -102,6 +104,64 @@ export function linked(text: string): React.ReactNode
             </a>
         )
         : <span key={index}>{part.text}</span>));
+}
+
+//A FENCED BLOCK. THE LANGUAGE IS USED AND NOT ONLY SHOWN - THE TUI PRINTS IT BECAUSE A TERMINAL HAS
+//NOTHING TO HIGHLIGHT WITH, AND A WINDOW DOES - BUT ONLY WHERE THE FENCE NAMED ONE THE HIGHLIGHTER KNOWS:
+//GUESSING IS TRYING EVERY GRAMMAR IT HAS AGAINST THREE LINES SOMEBODY PASTED, WHICH IS SLOW AND USUALLY
+//WRONG. WHAT COMES BACK IS HTML highlight.js ESCAPED ITSELF, WHICH IS THE ONLY REASON IT MAY BE SET AS
+//MARKUP - NOTHING OFF THE NETWORK IS EVER PUT IN A PAGE WITHOUT PASSING THROUGH IT
+function CodeBlock({ lang, body }: { lang: string | null; body: string })
+{
+    const language = lang && hljs.getLanguage(lang) ? lang : null;
+
+    const painted = language ? hljs.highlight(body, { language, ignoreIllegals: true }).value : null;
+
+    return (
+        <div className="code-block">
+            {lang && <div className="code-lang">{lang}</div>}
+
+            <pre className="font-mono">
+                {painted !== null
+                    ? <code dangerouslySetInnerHTML={{ __html: painted }} />
+                    : <code>{body}</code>}
+            </pre>
+        </div>
+    );
+}
+
+//A MESSAGE AS IT IS READ. WHAT SOMEBODY TYPED GOES THROUGH tui/markup.rs' PARSER (markup.ts IS THAT FILE
+//REWRITTEN), SO A FENCE IS A BLOCK AND A BACKTICK IS A RUN OF CODE HERE THE SAME WAY IT IS THERE - AND
+//WHAT IS LEFT IS TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE
+export function markup(text: string): React.ReactNode
+{
+    const segments = parse(text);
+
+    //NOTHING IN IT, WHICH IS ALMOST EVERY LINE - THE ARRAY AND THE KEYS ARE NOT WORTH BUILDING
+    if (segments.length === 1 && segments[0].kind === "text") return linked(text);
+
+    return segments.map((segment, index) =>
+    {
+        //A BLOCK OWNS THE ROWS IT SITS ON, SO THE NEWLINE ON EITHER SIDE OF ONE IS THE FENCE'S AND NOT A
+        //BLANK LINE SOMEBODY TYPED - THE TUI DROPS THE SAME TWO, IT JUST DOES IT BY NOT OPENING A ROW
+        if (segment.kind === "text")
+        {
+            let text = segment.text;
+
+            if (segments[index - 1]?.kind === "block" && text.startsWith("\n")) text = text.slice(1);
+            if (segments[index + 1]?.kind === "block" && text.endsWith("\n")) text = text.slice(0, -1);
+
+            return <span key={index}>{linked(text)}</span>;
+        }
+
+        //A NEWLINE INSIDE INLINE CODE IS A SPACE: IT IS ONE RUN OF TEXT, AND A FENCE IS WHAT SPANS ROWS
+        if (segment.kind === "code")
+        {
+            return <code key={index} className="code-inline font-mono">{segment.text.replace(/\n/g, " ")}</code>;
+        }
+
+        return <CodeBlock key={index} lang={segment.lang} body={segment.body} />;
+    });
 }
 
 //WHAT A LINE IS PAINTED IN, WHERE ANYTHING IS: THE PROTOCOL'S SIXTEEN, AND NOTHING AT ALL WHERE THE
@@ -238,7 +298,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         style={{ color: messageColor(config, message.message_color) }}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {message.image ? renderPicture(message.image, picture, pictures) : linked(message.text)}
+                        {message.image ? renderPicture(message.image, picture, pictures) : markup(message.text)}
                     </div>
                 </div>
             </div>
