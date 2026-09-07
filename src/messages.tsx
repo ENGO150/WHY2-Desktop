@@ -303,7 +303,7 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
     //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
-    picture: PictureStatus, pictures: Pictures)
+    picture: PictureStatus, pictures: Pictures, copy: (text: string) => void)
     {
         //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
         const author = message.direct?.outgoing ? username : message.username;
@@ -322,8 +322,23 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         return (
             <div
                 key={key}
-                className={`flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
+                className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
+                {/* WHAT SOMEBODY SAID, ON THE CLIPBOARD. A PICTURE HAS NO BUTTON HERE - IT IS NOT TEXT, AND
+                    ITS OWN MENU ALREADY CARRIES THE TWO THINGS THERE ARE TO DO WITH ONE (PictureMenu). IT
+                    IS THE LINE AS IT WAS TYPED, MARKUP AND ALL, WHICH IS WHAT PASTES USEFULLY ANYWHERE
+                    ELSE - THE RENDERED FORM ONLY MEANS SOMETHING IN A WINDOW LIKE THIS ONE */}
+                {!message.image && (
+                    <button
+                        type="button"
+                        title="Copy message"
+                        aria-label="Copy message"
+                        onClick={() => copy(message.text)}
+                        className="row-action absolute right-3 top-1 flex h-7 w-7 items-center justify-center rounded-app border border-border bg-overlay text-muted shadow-lg transition-colors hover:text-accent"
+                    >
+                        <Icon name="copy" className="h-4 w-4" />
+                    </button>
+                )}
                 <div className="w-9 shrink-0">
                     {!grouped && <Avatar name={author} color={messageColor(config, message.username_color)} />}
                 </div>
@@ -347,7 +362,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     )}
 
                     <div
-                        className="select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
+                        className="message-body select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
                         style={{ color: messageColor(config, message.message_color) }}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}

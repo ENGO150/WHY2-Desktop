@@ -20,6 +20,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "re
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import "./index.css";
 
 //THE ONE STYLESHEET IN HERE THAT IS NOT OURS. IT COMES WITH ITS OWN FONTS, WHICH THE BUNDLE CARRIES -
@@ -1292,6 +1293,16 @@ function App()
         setLightbox(null);
     };
 
+    //A LINE ONTO THE CLIPBOARD. IT IS THE ONE THING IN HERE THAT GOES THROUGH THE PLUGIN FROM THIS SIDE
+    //RATHER THAN FROM RUST - TEXT IS EVERY PLATFORM'S CLIPBOARD, PIXELS ARE NOT - WHICH IS WHY IT IS THE
+    //ONE CLIPBOARD PERMISSION IN capabilities/default.json
+    const copyMessage = (text: string) =>
+    {
+        writeText(text)
+            .then(() => setPopupMessage("Message copied."))
+            .catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
     //THE PICTURE PUT SOMEWHERE ELSE. THE BYTES ARE THE ONES THE WINDOW WAS SENT - THE data: URL GOES BACK
     //DOWN AND IS UNWRAPPED THERE, RATHER THAN BEING KEPT A SECOND TIME ON THAT SIDE FOR THE ONE PRESS IN
     //A THOUSAND THAT ASKS FOR IT
@@ -2454,7 +2465,8 @@ function App()
 
             previous = author;
 
-            return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures);
+            return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
+                copyMessage);
         });
     })();
 

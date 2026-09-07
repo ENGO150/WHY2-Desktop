@@ -425,6 +425,22 @@ take the session with it. The opener's scope is what actually allows the two sch
 carries an `opener:allow-open-url` entry beside `opener:default` — **a glob there is `http://**`, not
 `http://*`, which stops at the first slash**.
 
+**Every line somebody said carries a copy button**, floating at its top-right and drawn only while the row
+is under the pointer — a button on every line of a conversation is a column of buttons and not a
+conversation. Where there is no pointer to hover with it simply stands (`.row-action` under
+`@media (hover: hover)`), since the alternative on a phone is a button nobody can ever reach, and
+`.message-body` pays it a gutter there so it does not sit on the end of somebody's first line. What goes on
+the clipboard is **the line as it was typed**, markup and all: that is what pastes usefully anywhere else,
+while the rendered form only means something in a window like this one. A **picture line has none** — it is
+not text, and its own hold menu already carries the two things there are to do with one. Neither do the
+lines nobody said: `renderNotice` is this client's own narration.
+
+This is the one place the clipboard is reached **from the webview** rather than from Rust, because text is
+every platform's clipboard while pixels are only a desktop's — so `tauri-plugin-clipboard-manager` is a
+plain dependency registered on both targets now, and `clipboard-manager:allow-write-text` is the one
+clipboard permission in `capabilities/default.json`. The picture half of the same plugin is still Rust-side
+and still desktop-only (see **Images**).
+
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
 run** — a system line, a notice, a `/list` card. A line nobody said keeps the avatar column but puts an icon
@@ -1309,9 +1325,12 @@ build.
 
 The capability is the exception when **nothing in the webview ever invokes the plugin**: that array gates the
 IPC and nothing else, so a plugin only this side calls needs the first two places and not the third.
-`tauri-plugin-clipboard-manager` is that — `picture.rs` uses its Rust API and no `invoke` ever names it.
-`tauri-plugin-dialog` is not: `save()` and `open()` are called from `App.tsx`, so `dialog:default` (which
-carries `allow-save` and `allow-open` both) has to be there.
+`tauri-plugin-dialog` is not one of those: `save()` and `open()` are called from `App.tsx`, so
+`dialog:default` (which carries `allow-save` and `allow-open` both) has to be there.
+`tauri-plugin-clipboard-manager` is **both at once**, which is why its entry is a single permission rather
+than a `default`: `writeText` is invoked from the webview by a message's copy button and needs
+`clipboard-manager:allow-write-text`, while the picture half is `picture.rs` calling the same plugin's Rust
+API, which needs nothing in that array at all.
 
 ### CI
 

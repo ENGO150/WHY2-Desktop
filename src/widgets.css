@@ -367,3 +367,38 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     overflow-y: auto;
     line-height: 1.45;
 }
+
+/* A ROW'S OWN BUTTON - THE ONE THAT COPIES A MESSAGE. IT IS DRAWN ONLY WHILE THE ROW IS UNDER THE POINTER,
+   BECAUSE A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A CONVERSATION. WHERE
+   THERE IS NO POINTER TO HOVER WITH - A PHONE - IT SIMPLY STANDS, SINCE THE ALTERNATIVE THERE IS A
+   BUTTON NOBODY CAN EVER REACH */
+.row-action
+{
+    opacity: 1;
+    transition: opacity 120ms ease;
+}
+
+@media (hover: hover)
+{
+    .row-action
+    {
+        opacity: 0;
+    }
+
+    .group:hover .row-action,
+    .row-action:focus-visible
+    {
+        opacity: 1;
+    }
+}
+
+/* AND WHERE IT STANDS, THE LINE UNDER IT KEEPS ITS DISTANCE. THE BUTTON FLOATS OVER THE TOP-RIGHT OF THE
+   MESSAGE, WHICH COSTS NOTHING WHILE IT IS ONLY THERE ON HOVER - ON A TOUCH SCREEN IT IS ALWAYS THERE,
+   AND WOULD OTHERWISE SIT ON THE END OF SOMEBODY'S FIRST LINE */
+@media (hover: none)
+{
+    .message-body
+    {
+        padding-right: 2rem;
+    }
+}
