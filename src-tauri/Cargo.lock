@@ -8408,7 +8408,7 @@ dependencies = [
 
 [[package]]
 name = "why2-desktop"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "base64 0.23.1",
  "image",
