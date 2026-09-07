@@ -355,3 +355,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 {
     margin: 0;
 }
+
+/* THE COMPOSER'S LINE. IT IS A textarea AND NOT AN input BECAUSE Shift+Enter PUTS A NEWLINE IN A MESSAGE,
+   THE WAY IT DOES IN THE TERMINAL - AND A textarea BRINGS THREE THINGS A CHAT LINE DOES NOT WANT: A DRAG
+   HANDLE IN THE CORNER, A SCROLLBAR BEFORE IT IS TALL ENOUGH TO NEED ONE, AND A HEIGHT OF ITS OWN. THE
+   HEIGHT IS MEASURED IN App.tsx; THIS IS THE CEILING IT GROWS TO, AFTER WHICH THE LINE SCROLLS */
+.composer-line
+{
+    resize: none;
+    max-height: 40vh;
+    overflow-y: auto;
+    line-height: 1.45;
+}

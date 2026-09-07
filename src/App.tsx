@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -259,7 +259,7 @@ function App()
     const serverNameRef = useRef("");
     const switchRef = useRef<StoredServer | null>(null);
     const loginInputRef = useRef<HTMLInputElement>(null);
-    const chatInputRef = useRef<HTMLInputElement>(null);
+    const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
     //THE EVENT LISTENER IS REGISTERED ONCE, SO IT READS THE CHANNEL THROUGH A REF - A CAPTURED ONE
     //WOULD BE WHATEVER IT WAS WHEN THE SESSION STARTED
@@ -2236,7 +2236,21 @@ function App()
         return true;
     };
 
-    const handleChatKey = (event: React.KeyboardEvent<HTMLInputElement>) =>
+    //THE LINE IS AS TALL AS WHAT IS IN IT. A textarea HAS NO SIZE OF ITS OWN, SO IT IS MEASURED RATHER
+    //THAN GUESSED - THE HEIGHT GOES BACK TO auto FIRST, BECAUSE scrollHeight NEVER SHRINKS BELOW WHATEVER
+    //THE ELEMENT IS ALREADY SET TO. THE CEILING IS CSS' (.composer-line), WHICH IS WHERE IT STARTS TO
+    //SCROLL INSTEAD OF GROWING: A COMPOSER THAT CAN EAT THE PANE IS NOT A COMPOSER
+    useLayoutEffect(() =>
+    {
+        const line = chatInputRef.current;
+
+        if (!line) return;
+
+        line.style.height = "auto";
+        line.style.height = `${line.scrollHeight}px`;
+    }, [chatInput, narrow, theater]);
+
+    const handleChatKey = (event: React.KeyboardEvent<HTMLTextAreaElement>) =>
     {
         if (event.key === "Escape")
         {
@@ -2246,8 +2260,28 @@ function App()
 
         if (event.key === "Enter")
         {
+            //A NEWLINE, WHICH IS THE ONE THING A LINE THIS TALL IS FOR. IT IS THE TERMINAL'S OWN PAIR -
+            //Alt+Enter EVERYWHERE, Shift+Enter WHERE IT IS REPORTED - AND IT PUTS THE PALETTE AWAY, SINCE
+            //WHAT IS BEING WRITTEN IS NO LONGER THE LINE IT WAS OFFERING TO FINISH
+            if (event.shiftKey || event.altKey)
+            {
+                setDismissed(true);
+
+                return;
+            }
+
             //A HIGHLIGHTED PALETTE ROW THE USER HASN'T FULLY TYPED COMPLETES FIRST
-            if (active && complete(false)) event.preventDefault();
+            if (active && complete(false))
+            {
+                event.preventDefault();
+
+                return;
+            }
+
+            //A textarea TAKES THE RETURN KEY FOR ITSELF, SO THE SEND IS ASKED FOR HERE RATHER THAN BY THE
+            //FORM - WHICH IS ALSO WHAT KEEPS THE COMPOSER FROM POSTING A LINE WITH A STRAY NEWLINE IN IT
+            event.preventDefault();
+            handleChatSubmit(event);
 
             return;
         }
@@ -2878,19 +2912,19 @@ function App()
                                 </div>
                             )}
 
-                            <form onSubmit={handleChatSubmit} className={`flex items-center gap-1 bg-raised px-2 ${narrow ? "rounded-full py-1" : "rounded-app py-1.5"}`}>
+                            <form onSubmit={handleChatSubmit} className={`flex items-end gap-1 bg-raised px-2 ${narrow ? "rounded-3xl py-1" : "rounded-app py-1.5"}`}>
                                 <IconButton icon="plus" label="Upload a file" onClick={() => uploadFile(false)} />
                                 <IconButton icon="image" label="Send an image" onClick={() => uploadFile(true)} />
 
-                                <input
+                                <textarea
                                     ref={chatInputRef}
                                     id="chat-input"
-                                    type="text"
+                                    rows={1}
                                     value={chatInput}
                                     onChange={(event) => writeInput(event.currentTarget.value)}
                                     onKeyDown={handleChatKey}
                                     placeholder={dm ? `Message @${dm.username}` : `Message #${channelLabel}`}
-                                    className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
+                                    className="composer-line min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
 
                                     //THE SOFT KEYBOARD OPENS WHEN THE LINE IS TAPPED AND NOT WHEN THE
                                     //WINDOW APPEARS, AND ITS RETURN KEY SAYS WHAT IT ACTUALLY DOES

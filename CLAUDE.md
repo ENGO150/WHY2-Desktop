@@ -405,6 +405,14 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 - **Middle** — the channel header (`#name`, how many are online, and the buttons for files, screen sharing,
   voice and the member column), the messages, and the composer, whose `+` is the one upload button. The command palette
   floats on the composer.
+  **The composer's line is a `textarea` and not an `input`**, because a message can have more than one row
+  in it: ⏎ sends and **⇧⏎ (or ⌥⏎) is a newline**, which is `tui/mod.rs`'s own pair — and a newline puts the
+  palette away, since what is being written is no longer the line it was offering to finish. A `textarea`
+  takes the return key for itself, so the send is asked for in `handleChatKey` rather than by the form; that
+  is also what stops a stray newline from being posted. It is as tall as what is in it — measured in a
+  `useLayoutEffect` (`height` back to `auto` first, since `scrollHeight` never shrinks below what the element
+  is already set to) up to `.composer-line`'s ceiling, past which it scrolls: a composer that can eat the
+  pane is not a composer.
 - **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
   own button. A row is a button, and it opens the conversation with that person — see **Direct messages**.
 
@@ -1156,7 +1164,8 @@ chat app has settled on:
   `↑↓ select · tab complete · esc dismiss` and the settings footer's `Arrows move and change, esc closes.`
   are both drawn only where `narrow` is false. The footer's other two lines are not hints and stay.
 - Every dialog is the whole screen rather than a card in a darkened room (`dialogWrap`/`dialogCard`), the
-  composer is a pill, and the composer does not take the focus on its own: a soft keyboard is half the screen,
+  composer is a pill — a large radius rather than a true one, since it is a box that grows — and the composer
+  does not take the focus on its own: a soft keyboard is half the screen,
   and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
   before pulling the focus back.
 - `index.html` asks for `viewport-fit=cover` **and** `interactive-widget=resizes-content` — the second is the
