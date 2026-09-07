@@ -3188,7 +3188,10 @@ function App()
                                     title="Send"
                                     aria-label="Send"
                                     disabled={!chatInput.trim()}
-                                    className="flex h-8 w-8 items-center justify-center rounded-app text-muted transition-colors hover:bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                                    //touch-target, LIKE THE TWO BESIDE IT: A FINGER'S BUTTON IS 40 AND
+                                    //A POINTER'S IS 32, AND THE ROW IS BOTTOM-ALIGNED - SO THE ONE THAT
+                                    //DID NOT GROW SAT EIGHT PIXELS BELOW THE OTHERS ON A PHONE
+                                    className="touch-target flex h-8 w-8 items-center justify-center rounded-app text-muted transition-colors hover:bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
                                 >
                                     <Icon name="send" className="h-[18px] w-[18px]" />
                                 </button>

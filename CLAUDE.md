@@ -417,7 +417,9 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
   is also what stops a stray newline from being posted. **On a soft keyboard the pair is one key and it is
   the newline**: `useTouch` flips `handleChatKey` and `enterKeyHint` together, because a phone has neither
   a shift nor an alt to hold and a return key that sends is a second line nobody can write. Sending there
-  is the button beside the line, which is where every other chat app on a phone puts it. It is as tall as what is in it — measured in a
+  is the button beside the line, which is where every other chat app on a phone puts it - and it carries
+`touch-target` like the two upload buttons opposite it, since the row is bottom-aligned and a button
+that did not grow to a fingertip's 40 pixels while its neighbours did sits visibly below them. It is as tall as what is in it — measured in a
   `useLayoutEffect` (`height` back to `auto` first, since `scrollHeight` never shrinks below what the element
   is already set to) up to `.composer-line`'s ceiling, past which it scrolls: a composer that can eat the
   pane is not a composer.
