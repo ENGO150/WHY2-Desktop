@@ -597,11 +597,19 @@ turns that down as invalid usage, which says nothing about why, and the size is 
 the bytes it receives — nothing makes a client run it first). The composer has both: the `+` is a file and
 the picture beside it is an image, which is the same picker with the formats `is_image` knows filtered in.
 
-A picture arrives **decoded**. The crate reads the bytes off the wire under explicit limits and hands over a
-`DynamicImage` rather than the file it came as, so there is nothing to forward and `picture.rs` encodes the
-window's copy again: **PNG where there is an alpha channel to keep and JPEG everywhere else** — a photograph
-as PNG is several times the bytes of one nobody can tell apart, and a picture with a hole in it as JPEG is a
-black rectangle. It travels as a `data:` URL on the message itself (`MessageImage`), which is why `image` is
+A picture arrives **decoded**, and always as frames: the crate reads the bytes off the wire under explicit
+limits and hands over a `client::Animation` — a `Vec<ImageFrame>`, one entry for a still and all of them for
+a GIF, an animated WebP or an APNG — rather than the file it came as, so there is nothing to forward and
+`picture.rs` encodes the window's copy again. A **still** is **PNG where there is an alpha channel to keep
+and JPEG everywhere else** — a photograph as PNG is several times the bytes of one nobody can tell apart,
+and a picture with a hole in it as JPEG is a black rectangle. Anything with **more than one frame is written
+back out as a GIF** (`write_animation`), whatever it arrived as: that is the only animated container `image`
+can encode, and an `<img>` plays one with nothing asked of this side — no canvas, no timer, and the lightbox
+and the pane are the same element showing the same URL. The price is 256 colors a frame, which is what most
+of these already were, and the quantizer is run at `GIF_SPEED` rather than at the quality end of its range
+because an animation is hundreds of frames and somebody is waiting for the line to go up. A one-frame
+animation is deliberately **not** put through that writer — it would cost a photograph every color past the
+first 256 for an animation of nothing. It travels as a `data:` URL on the message itself (`MessageImage`), which is why `image` is
 a dependency here at all and why its version is why2-chat's own: the two share one `image` crate, so the
 type in the event is the type this encodes. Encoding is unbroken CPU over the whole picture, so it is in
 `spawn_blocking` like every hash here.
@@ -693,7 +701,9 @@ A desktop has both: `copy_image` decodes the copy the window was sent and hands 
 writes what the dialog answered with. **A phone has neither**, so its menu is the one item and the picture
 goes where a phone keeps pictures — see **Android**. The name it is saved under is `pictureName`'s: the
 sender's, with the extension the bytes **actually are**, since what is on the disk is the PNG or JPEG this
-app encoded and a `.webp` that is a JPEG is a file half the programs on a machine will not open.
+app encoded — `.gif` where it moves — and a `.webp` that is a JPEG is a file half the programs on a machine
+will not open. **Copying** an animation puts its first frame on the clipboard, since a clipboard takes pixels
+and pixels do not move.
 
 ### Voice
 

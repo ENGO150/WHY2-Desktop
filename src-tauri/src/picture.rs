@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use std::io::Cursor;
+use std::{ io::Cursor, time::Duration };
 
 use tokio::task;
 
@@ -26,9 +26,15 @@ use base64::prelude::{ Engine, BASE64_STANDARD };
 
 use image::
 {
+    Frame,
+    Delay,
     DynamicImage,
     ImageFormat,
-    codecs::jpeg::JpegEncoder,
+    codecs::
+    {
+        gif::{ GifEncoder, Repeat },
+        jpeg::JpegEncoder,
+    },
 };
 
 use why2_chat::network::client::Animation;
@@ -37,6 +43,11 @@ use crate::types::{ MessageImage, PictureActions };
 
 //CONSTS
 const JPEG_QUALITY: u8 = 88; //WHAT A PHOTOGRAPH SURVIVES WITHOUT ANYBODY LOOKING FOR THE DIFFERENCE
+
+//THE GIF ENCODER QUANTIZES EVERY FRAME ON ITS OWN, AND THE SPEED IS HOW MUCH OF THE FRAME IT LOOKS AT
+//WHILE PICKING THE 256 COLOURS. AN ANIMATION IS HUNDREDS OF FRAMES AND SOMEBODY IS WAITING FOR THE LINE
+//TO GO UP, SO THIS IS THE MIDDLE OF THE RANGE RATHER THAN THE QUALITY END OF IT
+const GIF_SPEED: i32 = 20;
 
 //FUNCTIONS
 //A CONTENT HASH AS THE PROTOCOL WRITES IT DOWN. IT IS THE HISTORY'S NAME FOR A PICTURE AND THE ONLY
@@ -91,17 +102,50 @@ fn write(image: &DynamicImage) -> Option<(&'static str, Vec<u8>)>
     }
 }
 
+//AND A PICTURE THAT MOVES. THE CRATE HANDS OVER THE FRAMES AND THEIR DELAYS RATHER THAN THE FILE THEY
+//CAME AS, SO WHATEVER IT WAS ON THE WIRE - A GIF, AN ANIMATED WEBP, AN APNG - IT GOES TO THE WINDOW AS
+//A GIF: THAT IS THE ONE ANIMATED CONTAINER image CAN WRITE, AND AN <img> PLAYS IT WITH NOTHING ASKED OF
+//THIS SIDE. THE PRICE IS 256 COLOURS A FRAME, WHICH IS WHAT MOST OF THESE ALREADY WERE
+fn write_animation(frames: Vec<(DynamicImage, Duration)>) -> Option<(&'static str, Vec<u8>)>
+{
+    let mut bytes = Cursor::new(Vec::new());
+
+    {
+        let mut encoder = GifEncoder::new_with_speed(&mut bytes, GIF_SPEED);
+
+        //A CHAT GIF LOOPS - IT IS WHAT EVERY ONE OF THEM WAS DOING WHEREVER IT WAS COPIED FROM, AND THE
+        //PROTOCOL CARRIES NO LOOP COUNT TO SAY OTHERWISE
+        encoder.set_repeat(Repeat::Infinite).ok()?;
+
+        for (image, delay) in frames
+        {
+            encoder.encode_frame(Frame::from_parts(image.to_rgba8(), 0, 0,
+                Delay::from_saturating_duration(delay))).ok()?;
+        }
+    }
+
+    Some(("image/gif", bytes.into_inner()))
+}
+
 //ENCODING IS UNBROKEN CPU OVER THE WHOLE PICTURE - KEEP IT OFF THE RUNTIME, THE WAY EVERY HASH HERE IS.
 //A PICTURE THAT WILL NOT ENCODE IS None, WHICH THE CALLER SAYS OUT LOUD RATHER THAN DROPPING QUIETLY
 pub(crate) async fn encode(animation: Animation, filename: String, hash: Option<[u8; 32]>)
     -> Option<MessageImage>
 {
-    let image = animation.into_iter().next()?.image;
+    //THE FIRST FRAME IS THE PICTURE AS FAR AS THE PANE IS CONCERNED - EVERY FRAME OF AN ANIMATION IS THE
+    //SAME SIZE, SO IT IS ALSO THE ROOM THE LINE RESERVES FOR ALL OF THEM
+    let first = animation.first()?;
 
-    let width = image.width();
-    let height = image.height();
+    let width = first.image.width();
+    let height = first.image.height();
 
-    let encoded = task::spawn_blocking(move || write(&image)).await.ok()??;
+    //A STILL IS AN ANIMATION OF ONE FRAME, AND THE ONE FRAME IS WHAT IT SHOULD BE ENCODED AS - PUTTING IT
+    //THROUGH THE GIF WRITER WOULD COST IT EVERY COLOUR PAST THE FIRST 256 FOR AN ANIMATION OF NOTHING
+    let encoded = task::spawn_blocking(move || match animation.len()
+    {
+        1 => write(&animation.into_iter().next()?.image),
+        _ => write_animation(animation.into_iter().map(|frame| (frame.image, frame.delay)).collect()),
+    }).await.ok()??;
 
     Some(MessageImage
     {
