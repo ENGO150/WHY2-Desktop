@@ -2432,13 +2432,19 @@ function App()
     //WRITE THE HIGHLIGHTED ROW ONTO THE LINE, WHETHER IT IS A COMMAND OR ONE ANSWER OF A PARAMETER.
     //force IS TAB, WHICH COMPLETES WHATEVER IS HIGHLIGHTED; ENTER ONLY COMPLETES WHAT IS NOT SPELLED OUT
     //ALREADY, SO A FINISHED LINE IS SENT INSTEAD OF BEING REWRITTEN. RETURNS WHETHER THE LINE WAS TOUCHED
-    const complete = (force: boolean): boolean =>
+    //THE ROW IS THE CALLER'S WHERE THERE IS ONE. A KEY COMPLETES WHATEVER IS HIGHLIGHTED, AND A POINTER
+    //MOVES THAT HIGHLIGHT ON ITS WAY IN - BUT A FINGER NEVER HOVERS ANYTHING, SO A TAP USED TO TAKE THE
+    //ROW THE KEYBOARD LEFT SELECTED (THE FIRST ONE) INSTEAD OF THE ONE UNDER IT. setSelected IS NO ANSWER
+    //TO THAT EITHER: THE STATE IT WRITES IS NOT READABLE UNTIL THE NEXT RENDER
+    const complete = (force: boolean, row?: number): boolean =>
     {
         if (exact >= 0 && !force) return false;
 
+        const picked = row ?? selected;
+
         if (palette.mode === "values")
         {
-            const value = palette.matches[selected];
+            const value = palette.matches[picked];
             if (!value) return false;
 
             //EVERYTHING UP TO THE HALF-TYPED VALUE STAYS - THE PARAMETERS BEFORE IT WERE ANSWERED ALREADY
@@ -2449,7 +2455,7 @@ function App()
 
         if (palette.mode !== "menu") return false;
 
-        const entry = palette.entries[selected];
+        const entry = palette.entries[picked];
         if (!entry) return false;
 
         //LEAVE ROOM FOR PARAMETERS RIGHT AWAY - AN ACTION WORD COUNTS AS ONE, SO /server OPENS ITS OWN MENU
@@ -2608,7 +2614,7 @@ function App()
                 key={entry.name}
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={index === null ? undefined : () => setSelected(index)}
-                onClick={index === null ? undefined : () => { complete(true); chatInputRef.current?.focus(); }}
+                onClick={index === null ? undefined : () => { setSelected(index); complete(true, index); chatInputRef.current?.focus(); }}
                 className={`flex items-baseline gap-2 border-l-2 px-3 py-1.5 ${index === null ? "border-transparent" : "cursor-pointer"} ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
             >
                 <span className="font-mono text-[13px] font-semibold text-text">/{entry.name}</span>
@@ -2635,7 +2641,7 @@ function App()
                 key={value.value}
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={() => setSelected(index)}
-                onClick={() => { complete(true); chatInputRef.current?.focus(); }}
+                onClick={() => { setSelected(index); complete(true, index); chatInputRef.current?.focus(); }}
                 className={`flex cursor-pointer items-center gap-3 border-l-2 px-3 py-1.5 ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
             >
                 {/* THE SWATCH IS THE ACTUAL ANSI COLOR - EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}

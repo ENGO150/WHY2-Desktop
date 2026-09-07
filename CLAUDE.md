@@ -664,7 +664,10 @@ privileged packet itself.
 a doorway is one row until then, never nine), the **values** a parameter accepts, the **signature** hint for
 one that accepts anything, or hidden. The matching is on `triggers`, not on the canonical name, so `/stfu`
 finds `/server mute` the same way it does in the terminal. ⇥ completes whatever is highlighted; ⏎ completes
-only what is not spelled out already, and otherwise sends the line.
+only what is not spelled out already, and otherwise sends the line. **A click completes the row it landed
+on**, which `complete` takes as an argument rather than reading back out of `selected`: the highlight is
+moved by `onMouseEnter`, a finger never hovers anything, and the `setSelected` beside the call is not
+readable until the next render — so a tap used to take the first row whatever it landed on.
 
 The vocabularies are not shipped with the command list: `get_vocabulary` is invoked when the caret lands on a
 parameter that has one and dropped when it leaves, because a monitor plugged in mid-session is supposed to
