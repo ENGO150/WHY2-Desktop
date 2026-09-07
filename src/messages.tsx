@@ -43,6 +43,45 @@ export interface Pictures
     held: () => boolean;
 }
 
+//AND THE SAME THREE THINGS FOR A LINE OF TEXT: WHAT COPYING ONE DOES, AND THE GESTURE THAT ASKS FOR IT
+export interface Lines
+{
+    copy: (text: string) => void;
+    hold: (text: string) => Record<string, unknown>;
+    held: () => boolean;
+}
+
+//THE MENU A LINE OPENS, WHICH IS THE ONE THING THERE IS TO DO WITH SOMEBODY ELSE'S SENTENCE. IT IS THE
+//PICTURE'S MENU IN EVERY OTHER RESPECT - THE SAME PORTAL, THE SAME BOX - AND THE HEADING IS THE LINE
+//ITSELF, CUT TO ONE ROW, SO A MENU OPENED IN A CROWDED PANE SAYS WHICH LINE IT IS ABOUT
+export function MessageMenu(
+{
+    at, copy, close,
+}: {
+    at: HeldMenu<string>;
+    copy: (text: string) => void;
+    close: () => void;
+})
+{
+    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
+
+    return createPortal(
+        <div
+            data-hold-menu
+            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
+            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+        >
+            <div className="truncate px-2 py-1.5 text-sm font-semibold">{at.value}</div>
+
+            <button type="button" onClick={() => { close(); copy(at.value); }} className={item}>
+                <Icon name="copy" className="h-4 w-4" />
+                Copy message
+            </button>
+        </div>,
+        document.body,
+    );
+}
+
 //AND THE MENU ITSELF. A PICTURE IS SOMEBODY ELSE'S FILE THAT LANDED IN A WINDOW, SO THE TWO THINGS
 //ANYBODY EVER WANTS OF ONE ARE TO PUT IT SOMEWHERE ELSE: ON THE CLIPBOARD, OR ON THE DISK.
 //COPYING IS DRAWN ONLY WHERE THERE IS A CLIPBOARD THAT TAKES PIXELS (can_copy_image), WHICH ON A PHONE
@@ -303,7 +342,7 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
     //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
-    picture: PictureStatus, pictures: Pictures, copy: (text: string) => void)
+    picture: PictureStatus, pictures: Pictures, lines: Lines)
     {
         //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
         const author = message.direct?.outgoing ? username : message.username;
@@ -319,21 +358,41 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //NO COLOUR TO USE (NOBODY PICKED ONE, OR disable_colors IS ON), SO "THIS ONE IS YOU" SURVIVES
         const color = messageColor(config, message.username_color);
 
+        //A PICTURE LINE HAS NEITHER THE BUTTON NOR THE MENU: IT IS NOT TEXT, AND THE PICTURE'S OWN MENU
+        //ALREADY CARRIES THE TWO THINGS THERE ARE TO DO WITH ONE (PictureMenu). WHAT IS COPIED IS THE
+        //LINE AS IT WAS TYPED, MARKUP AND ALL, WHICH IS WHAT PASTES USEFULLY ANYWHERE ELSE - THE RENDERED
+        //FORM ONLY MEANS SOMETHING IN A WINDOW LIKE THIS ONE
+        const copyable = !message.image;
+
+        //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
+        //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
+        //UNDER IT EVER SEES ONE. EVERY OTHER CLICK ONLY COSTS THE FLAG BEING READ AND PUT BACK
+        const swallowHeld = (event: React.MouseEvent) =>
+        {
+            if (!lines.held()) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
         return (
             <div
                 key={key}
+                {...(copyable ? lines.hold(message.text) : {})}
+                onClickCapture={copyable ? swallowHeld : undefined}
                 className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
-                {/* WHAT SOMEBODY SAID, ON THE CLIPBOARD. A PICTURE HAS NO BUTTON HERE - IT IS NOT TEXT, AND
-                    ITS OWN MENU ALREADY CARRIES THE TWO THINGS THERE ARE TO DO WITH ONE (PictureMenu). IT
-                    IS THE LINE AS IT WAS TYPED, MARKUP AND ALL, WHICH IS WHAT PASTES USEFULLY ANYWHERE
-                    ELSE - THE RENDERED FORM ONLY MEANS SOMETHING IN A WINDOW LIKE THIS ONE */}
-                {!message.image && (
+                {/* AND THE BUTTON THAT DOES IT, WHICH IS THE POINTER'S HALF OF THE GESTURE: IT FLOATS OVER
+                    THE ROW ON HOVER AND COSTS THE LINE NOTHING WHILE IT IS NOT THERE. WHERE THERE IS
+                    NOTHING TO HOVER WITH IT IS NOT DRAWN AT ALL (.row-action UNDER @media (hover: none)) -
+                    A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A
+                    CONVERSATION - AND A HOLD ON THE ROW OPENS THE SAME THING AS A MENU */}
+                {copyable && (
                     <button
                         type="button"
                         title="Copy message"
                         aria-label="Copy message"
-                        onClick={() => copy(message.text)}
+                        onClick={() => lines.copy(message.text)}
                         className="row-action absolute right-3 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-app border border-border bg-overlay text-muted shadow-lg transition-colors hover:text-accent"
                     >
                         <Icon name="copy" className="h-4 w-4" />

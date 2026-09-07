@@ -77,8 +77,8 @@ import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
-import type { Pictures } from "./messages";
-import { renderNotice, renderChat, renderBlock, PictureMenu, MarkupPreview } from "./messages";
+import type { Pictures, Lines } from "./messages";
+import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
 import { markWaiting, deliverPicture, pictureName } from "./pictures";
 import
 {
@@ -231,6 +231,11 @@ function App()
     //THE MENU A PICTURE OPENS - A RIGHT-CLICK, OR A HOLD ON A PHONE. IT IS THE GESTURE THE SERVER LISTS
     //ALREADY USE, WITH THE PICTURE ITSELF IN IT RATHER THAN AN ID: A LIVE ONE HAS NOT EVEN A HASH
     const pictureHold = useHoldMenu<MessageImage>("pointer");
+
+    //AND THE SAME GESTURE OVER A LINE OF TEXT, WHICH IS HOW COPYING IS ASKED FOR WHERE THERE IS NOTHING TO
+    //HOVER WITH. IT IS AT THE POINTER FOR THE REASON THE PICTURE'S IS: A MESSAGE ROW IS THE WIDTH OF THE
+    //PANE, AND A MENU BESIDE ONE WOULD OPEN OFF THE EDGE OF THE WINDOW
+    const lineHold = useHoldMenu<string>("pointer");
 
     //WHAT IS UP FOR DOWNLOAD, WHILE THE WINDOW SHOWING IT IS OPEN, AND WHAT IS BEING LOOKED FOR IN IT
     const [files, setFiles] = useState<FileOwner[] | null>(null);
@@ -1521,6 +1526,13 @@ function App()
         held: pictureHold.held,
     };
 
+    const lines: Lines =
+    {
+        copy: copyMessage,
+        hold: (text: string) => lineHold.bind(text),
+        held: lineHold.held,
+    };
+
     //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
     const shape = useMemo<PaletteShape>(
         () => (dismissed ? { mode: "hidden" } : analyze(chatInput, commands)),
@@ -2532,7 +2544,7 @@ function App()
             previous = author;
 
             return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
-                copyMessage);
+                lines);
         });
     })();
 
@@ -2628,6 +2640,11 @@ function App()
             save={savePicture}
             close={pictureHold.close}
         />
+    );
+
+    //AND THE ONE A LINE OPENS, WHICH IS THE ONLY WAY TO COPY ONE ON A PHONE
+    const messageMenu = lineHold.menu && (
+        <MessageMenu at={lineHold.menu} copy={copyMessage} close={lineHold.close} />
     );
 
     //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
@@ -3070,6 +3087,7 @@ function App()
 
             {pictureBox}
             {pictureMenu}
+            {messageMenu}
             {settingsBox}
             {filesBox}
             {screensBox}

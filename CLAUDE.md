@@ -425,14 +425,19 @@ take the session with it. The opener's scope is what actually allows the two sch
 carries an `opener:allow-open-url` entry beside `opener:default` — **a glob there is `http://**`, not
 `http://*`, which stops at the first slash**.
 
-**Every line somebody said carries a copy button**, floating at its top-right and drawn only while the row
-is under the pointer — a button on every line of a conversation is a column of buttons and not a
-conversation. Where there is no pointer to hover with it simply stands (`.row-action` under
-`@media (hover: hover)`), since the alternative on a phone is a button nobody can ever reach, and
-`.message-body` pays it a gutter there so it does not sit on the end of somebody's first line. What goes on
+**Every line somebody said can be copied, and the two platforms ask for it the way they each already do.**
+A pointer gets a button floating at the row's top-right, drawn only while the row is under it — a button on
+every line of a conversation is a column of buttons and not a conversation. A finger gets **a hold on the
+row**, which opens `MessageMenu`: the same `useHoldMenu` the pictures and the server lists use, at the
+pointer rather than beside the row, since a message row is the width of the pane and a menu beside one
+would open off the edge. Where there is nothing to hover with the button is **not drawn at all**
+(`.row-action` under `@media (hover: none)`) — standing on every row, it sat on the end of somebody's first
+line and made the pane a column of buttons, which is exactly what the hover rule exists to prevent. The
+click that ends a hold is swallowed on the way **down** (`onClickCapture`, `lines.held()`), because a line
+with a link in it would otherwise open it on the way up. What goes on
 the clipboard is **the line as it was typed**, markup and all: that is what pastes usefully anywhere else,
-while the rendered form only means something in a window like this one. A **picture line has none** — it is
-not text, and its own hold menu already carries the two things there are to do with one. Neither do the
+while the rendered form only means something in a window like this one. A **picture line has neither** — it
+is not text, and its own hold menu already carries the two things there are to do with one. Neither do the
 lines nobody said: `renderNotice` is this client's own narration.
 
 The write itself is **`clipboard.rs::copy_text`, a command of ours and not the plugin's own IPC**. Both are
