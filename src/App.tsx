@@ -2368,8 +2368,11 @@ function App()
         {
             //A NEWLINE, WHICH IS THE ONE THING A LINE THIS TALL IS FOR. IT IS THE TERMINAL'S OWN PAIR -
             //Alt+Enter EVERYWHERE, Shift+Enter WHERE IT IS REPORTED - AND IT PUTS THE PALETTE AWAY, SINCE
-            //WHAT IS BEING WRITTEN IS NO LONGER THE LINE IT WAS OFFERING TO FINISH
-            if (event.shiftKey || event.altKey)
+            //WHAT IS BEING WRITTEN IS NO LONGER THE LINE IT WAS OFFERING TO FINISH.
+            //A SOFT KEYBOARD HAS NEITHER OF THOSE KEYS ON IT, SO THERE THE RETURN KEY *IS* THE NEWLINE:
+            //THE ONLY WAY TO WRITE A SECOND LINE ON A PHONE IS THE ONE KEY THAT COULD DO IT, AND SENDING
+            //IS THE BUTTON BESIDE THE COMPOSER - WHICH IS WHERE EVERY OTHER CHAT APP PUTS IT ANYWAY
+            if (event.shiftKey || event.altKey || touchPointer)
             {
                 setDismissed(true);
 
@@ -3053,9 +3056,10 @@ function App()
                                     className="composer-line min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
 
                                     //THE SOFT KEYBOARD OPENS WHEN THE LINE IS TAPPED AND NOT WHEN THE
-                                    //WINDOW APPEARS, AND ITS RETURN KEY SAYS WHAT IT ACTUALLY DOES
+                                    //WINDOW APPEARS, AND ITS RETURN KEY SAYS WHAT IT ACTUALLY DOES -
+                                    //WHICH ON A SOFT KEYBOARD IS A NEWLINE (SEE handleChatKey)
                                     autoFocus={!narrow}
-                                    enterKeyHint="send"
+                                    enterKeyHint={touchPointer ? "enter" : "send"}
                                     autoCapitalize="sentences"
                                     autoCorrect="off"
                                     spellCheck={false}
