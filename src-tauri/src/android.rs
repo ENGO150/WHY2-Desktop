@@ -127,7 +127,7 @@ fn ready() -> Option<()>
 {
     let vm = VM.get()?;
 
-    vm.attach_current_thread(|env| -> jni::errors::Result<()>
+    let missing = vm.attach_current_thread(|env| -> jni::errors::Result<Vec<&'static str>>
     {
         //cpal ASKS ndk_context FOR THE CONTEXT WHENEVER IT ENUMERATES DEVICES, AND PANICS WHERE NOBODY
         //SET ONE - TAURI DOES NOT, SINCE ITS ANDROID SIDE IS KOTLIN AND HAS NO USE FOR IT. THE
@@ -152,21 +152,49 @@ fn ready() -> Option<()>
         let loader = env.call_method(&**application, JNIString::new("getClassLoader"),
             jni_sig!("()Ljava/lang/ClassLoader;"), &[])?.l()?;
 
+        let mut missing = Vec::new();
+
         for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS), (ROUTE, &ROUTE_CLASS),
             (STORE, &STORE_CLASS)]
         {
-            let name = env.new_string(name)?;
+            //EACH ONE ON ITS OWN, BECAUSE A CLASS THAT WILL NOT LOAD IS ONE THING MISSING AND NOT ALL OF
+            //THEM: A `?` HERE LEFT THE LOOP, SO A SINGLE ClassNotFoundException TOOK EVERY LOOKUP BEHIND
+            //IT DOWN WITH IT - AND THE THROW IS CLEARED, SINCE A PENDING EXCEPTION FAILS THE NEXT CALL
+            //ON THIS THREAD RATHER THAN THE ONE THAT MADE IT
+            let loaded = (|| -> jni::errors::Result<()>
+            {
+                let name = env.new_string(name)?;
 
-            let class = env.call_method(&loader, JNIString::new("loadClass"),
-                jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"), &[JValue::Object(&name)])?.l()?;
+                let class = env.call_method(&loader, JNIString::new("loadClass"),
+                    jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"), &[JValue::Object(&name)])?.l()?;
 
-            let class = unsafe { JClass::from_raw(env, class.into_raw()) };
+                let class = unsafe { JClass::from_raw(env, class.into_raw()) };
 
-            let _ = cell.set(env.new_global_ref(&class)?);
+                let _ = cell.set(env.new_global_ref(&class)?);
+
+                Ok(())
+            })();
+
+            if loaded.is_err()
+            {
+                env.exception_clear();
+
+                missing.push(name);
+            }
         }
 
-        Ok(())
-    }).ok()
+        Ok(missing)
+    }).ok()?;
+
+    //AND WHAT WAS MISSING IS SAID OUT HERE RATHER THAN INSIDE THE ATTACH, SINCE warn() ATTACHES A THREAD
+    //OF ITS OWN. THE RELEASE BUILD IS WHERE THIS HAPPENS AND logcat IS THE ONLY PLACE IT SHOWS FROM THE
+    //OUTSIDE - SEE scripts/android/why2.pro FOR WHY A CLASS GOES MISSING FROM ONE AND NOT FROM A DEBUG
+    for name in &missing
+    {
+        warn(&format!("{name} could not be loaded"));
+    }
+
+    missing.is_empty().then_some(())
 }
 
 //WHAT WENT WRONG, WHERE A USER CANNOT BE SHOWN IT: EVERY ANSWER HERE IS A JAVA CALL THAT EITHER WORKED OR

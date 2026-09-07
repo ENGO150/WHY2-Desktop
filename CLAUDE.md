@@ -773,8 +773,14 @@ above it to separate it from and a × in the very corner of a darkened room is o
 **A picture in it is zoomed**, and the two platforms ask for that the way they each already do. A **click**
 is one step in and the next click is the way back — the cursor is the magnifying glass and then the other
 one (`cursor-zoom-in`/`cursor-zoom-out`) — and it grows out of **the point that was clicked**, which is the
-whole gesture: a zoom anchored in the middle moves whatever was being looked at off the screen. Two
-**fingers** are the same thing without the steps, between the picture as it arrived and `ZOOM_MAX`; the
+whole gesture: a zoom anchored in the middle moves whatever was being looked at off the screen. A finger
+asks for that same step **twice** (`TAP_AGAIN`, `TAP_SLOP` — close enough in time and in place to be one
+gesture, which is what every phone gallery does): a single tap on a picture is somebody putting the room
+away or missing the picture as often as it is somebody zooming, and a lightbox that jumped on the first of
+them was one nobody could look at. `touchedRef` is what keeps the two apart — a touch synthesizes a click
+afterwards, and that click is not a second gesture — while a hold and a pinch are neither, so `tapPicture`
+drops the pair for both. Two **fingers** are the same thing without the steps, between the picture as it
+arrived and `ZOOM_MAX`; the
 floor is 1 because the lightbox already fits the picture to the glass and there is nothing below all of it.
 While the fingers are down the transform is written **straight onto the element** and handed back to React
 when they leave, exactly as a dragged drawer is — a pinch puts out sixty positions a second. `touch-action:
@@ -1140,6 +1146,17 @@ The service element is **rewritten and not skipped when present** (matched by cl
 included), so a change here reaches a `gen/android` that was patched by an earlier version — the manifest is
 then parsed back as XML before it is written, because a half-removed element fails several steps later, in
 the manifest merger, saying nothing about where it came from.
+
+It also writes **`scripts/android/why2.pro`** into the project as `app/proguard-why2.pro`, package
+substituted, which is what keeps those four classes in a **release** build: `isMinifyEnabled` is on there,
+R8 shrinks the Kotlin half down to what references it, and every reference to `AudioRoute` and `ImageStore`
+is a *string* inside `android.rs`. The activity and the service survive on the manifest naming them; the
+other two were simply deleted, and a release APK's speaker button and saved picture then both answered
+`WHY2 could not reach Android.` while a debug build — where nothing is shrunk — was perfect. The generated
+`build.gradle.kts` feeds ProGuard every `.pro` under `app/`, so the file is picked up without that
+generated Gradle being patched at all. On this side, `ready()` loads the four **one at a time**: a `?` in
+that loop meant one missing class took every lookup behind it down with it, so a shrunk `AudioRoute` was
+also a picture that could not be saved, and what is missing is named in logcat under `WHY2`.
 
 **What the window knows about it.** Nothing on the frontend is told which platform it is on. The palette is
 already `get_commands`, which is `COMMAND_LIST` filtered by role — and `/voice` and `/screens` are in

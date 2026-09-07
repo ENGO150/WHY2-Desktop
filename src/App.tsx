@@ -98,6 +98,12 @@ import
 const ZOOM = 2.5;
 const ZOOM_MAX = 6;
 
+//AND HOW A FINGER ASKS FOR THAT STEP, WHICH IS TWICE AND NOT ONCE: A TAP ON A PICTURE IS HOW SOMEBODY
+//DISMISSES THE ROOM IT IS STANDING IN AS OFTEN AS IT IS HOW THEY ZOOM IT, SO THE ZOOM IS THE SECOND OF A
+//PAIR - CLOSE ENOUGH IN TIME AND IN PLACE TO BE THE SAME GESTURE, WHICH IS WHAT EVERY PHONE GALLERY DOES
+const TAP_AGAIN = 300;
+const TAP_SLOP = 32;
+
 //AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
 //IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
 //THE WINDOW BEING RESIZED UNDER IT
@@ -209,6 +215,14 @@ function App()
     //DRAWERS ARE DRAGGED THE SAME WAY). WHAT THE FINGERS SETTLE ON IS WHAT BECOMES STATE
     const pictureRef = useRef<HTMLImageElement | null>(null);
     const pinchRef = useRef<Pinch | null>(null);
+
+    //THE TAP BEFORE THIS ONE, WHILE IT IS STILL RECENT ENOUGH TO BE HALF OF A PAIR; WHETHER THE PRESS
+    //BEING ANSWERED CAME FROM A FINGER, SINCE A TOUCH SYNTHESIZES A CLICK AFTERWARDS AND THAT ONE IS NOT
+    //A SECOND GESTURE; AND WHETHER TWO FINGERS WERE EVER DOWN, WHICH MAKES THE WHOLE THING A PINCH AND
+    //NOT A TAP - onPinchEnd HAS ALREADY DROPPED ITS OWN STATE BY THE TIME THE LAST FINGER LEAVES
+    const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
+    const touchedRef = useRef(false);
+    const pinchedRef = useRef(false);
 
     //WHETHER THIS PLATFORM HAS A CLIPBOARD THAT TAKES PIXELS AND A DIALOG TO ASK "WHERE" WITH. A PHONE
     //HAS NEITHER, AND ITS MENU IS THEREFORE THE ONE ITEM
@@ -1288,6 +1302,10 @@ function App()
 
     const closeLightbox = () =>
     {
+        //THE HALF-FINISHED GESTURE GOES WITH THE PICTURE IT WAS ABOUT: A TAP KEPT ACROSS A CLOSE WOULD
+        //PAIR WITH THE FIRST TAP ON WHATEVER IS OPENED NEXT
+        tapRef.current = null;
+
         setZoom(null);
         setLightbox(null);
     };
@@ -1342,10 +1360,10 @@ function App()
             .catch((error: unknown) => setPopupMessage(String(error)));
     };
 
-    //A CLICK INTO THE PICTURE, WHICH IS THE MAGNIFYING GLASS THE CURSOR IS ALREADY DRAWN AS. IT IS ONE
-    //STEP AND THE NEXT CLICK IS THE WAY BACK, AND IT GROWS OUT OF THE POINT THAT WAS CLICKED RATHER THAN
-    //OUT OF THE MIDDLE - ZOOMING INTO A CORNER OF A PHOTOGRAPH BY CLICKING ON IT IS THE WHOLE GESTURE
-    const zoomPicture = (event: React.MouseEvent<HTMLImageElement>) =>
+    //ONE STEP INTO THE PICTURE, AND THE NEXT ONE IS THE WAY BACK. IT GROWS OUT OF THE POINT THAT WAS
+    //POINTED AT RATHER THAN OUT OF THE MIDDLE - ZOOMING INTO A CORNER OF A PHOTOGRAPH BY PICKING IT IS
+    //THE WHOLE GESTURE - AND IT IS THE SAME STEP WHETHER A MOUSE OR A SECOND TAP ASKED FOR IT
+    const zoomAt = (box: DOMRect, x: number, y: number) =>
     {
         if (zoom)
         {
@@ -1354,14 +1372,62 @@ function App()
             return;
         }
 
-        const box = event.currentTarget.getBoundingClientRect();
-
         setZoom(
         {
             scale: ZOOM,
-            x: ((event.clientX - box.left) / box.width) * 100,
-            y: ((event.clientY - box.top) / box.height) * 100,
+            x: ((x - box.left) / box.width) * 100,
+            y: ((y - box.top) / box.height) * 100,
         });
+    };
+
+    //A CLICK INTO THE PICTURE, WHICH IS THE MAGNIFYING GLASS THE CURSOR IS ALREADY DRAWN AS. IT IS THE
+    //MOUSE'S GESTURE ALONE: A FINGER LANDS ON A PICTURE TO SCROLL PAST IT, TO HOLD IT OR TO PINCH IT FAR
+    //MORE OFTEN THAN TO ZOOM IT, SO A TOUCH THAT SYNTHESIZED THIS CLICK IS ANSWERED BY tapPicture INSTEAD
+    const zoomPicture = (event: React.MouseEvent<HTMLImageElement>) =>
+    {
+        if (touchedRef.current)
+        {
+            touchedRef.current = false;
+
+            return;
+        }
+
+        zoomAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
+    };
+
+    //AND THE FINGER'S, WHICH IS TWO TAPS AND NOT ONE - THE SAME PAIR EVERY PHONE GALLERY IS ZOOMED WITH.
+    //A HOLD IS NOT A TAP, A PINCH IS NOT A TAP, AND A SECOND TAP THAT LANDED SOMEWHERE ELSE OR ARRIVED TOO
+    //LATE IS THE FIRST TAP OF THE NEXT PAIR RATHER THAN THE END OF THIS ONE
+    const tapPicture = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        const fired = pictureHold.held();
+
+        //THE LAST FINGER OF THE GESTURE IS THE ONLY ONE THAT COULD HAVE BEEN A TAP
+        if (event.touches.length > 0) return;
+
+        const touch = event.changedTouches[0];
+        const pinched = pinchedRef.current;
+
+        pinchedRef.current = false;
+
+        if (fired || pinched || !touch)
+        {
+            tapRef.current = null;
+
+            return;
+        }
+
+        const now = performance.now();
+        const last = tapRef.current;
+
+        tapRef.current = { at: now, x: touch.clientX, y: touch.clientY };
+
+        if (!last || now - last.at > TAP_AGAIN) return;
+        if (Math.hypot(touch.clientX - last.x, touch.clientY - last.y) > TAP_SLOP) return;
+
+        tapRef.current = null;
+
+        zoomAt(event.currentTarget.getBoundingClientRect(), touch.clientX, touch.clientY);
     };
 
     //AND TWO FINGERS, WHICH IS THE SAME THING WITHOUT THE STEPS. THE SPAN BETWEEN THEM IS THE FACTOR AND
@@ -2514,9 +2580,10 @@ function App()
             </div>
 
             <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-4">
-                {/* THE PICTURE IS THE ONE THING IN THE ROOM A PRESS DOES NOT CLOSE: A CLICK ON IT IS THE
-                    ZOOM, A HOLD OR A RIGHT-CLICK IS THE MENU, AND TWO FINGERS ARE THE SAME ZOOM WITHOUT
-                    THE STEPS. THE TRANSFORM IS THE STATE'S EXCEPT WHILE FINGERS ARE ACTUALLY ON IT */}
+                {/* THE PICTURE IS THE ONE THING IN THE ROOM A PRESS DOES NOT CLOSE: A CLICK - OR TWO
+                    TAPS, WHICH IS THE SAME STEP ASKED FOR THE WAY A PHONE ASKS - IS THE ZOOM, A HOLD OR A
+                    RIGHT-CLICK IS THE MENU, AND TWO FINGERS ARE THE SAME ZOOM WITHOUT THE STEPS. THE
+                    TRANSFORM IS THE STATE'S EXCEPT WHILE FINGERS ARE ACTUALLY ON IT */}
                 <img
                     ref={pictureRef}
                     src={lightbox.source}
@@ -2526,15 +2593,23 @@ function App()
                     onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
                     onTouchStart={(event) =>
                     {
+                        touchedRef.current = true;
+
                         //TWO FINGERS ARE A PINCH AND NEVER A HOLD, SO THE TIMER THE FIRST ONE STARTED
-                        //IS PUT OUT RATHER THAN LEFT TO OPEN A MENU IN THE MIDDLE OF A ZOOM
-                        if (event.touches.length > 1) holdPicture.onTouchEnd();
+                        //IS PUT OUT RATHER THAN LEFT TO OPEN A MENU IN THE MIDDLE OF A ZOOM - AND NEVER
+                        //A TAP EITHER, WHICH IS WHAT THE SECOND FLAG IS FOR
+                        if (event.touches.length > 1)
+                        {
+                            pinchedRef.current = true;
+
+                            holdPicture.onTouchEnd();
+                        }
                         else holdPicture.onTouchStart(event);
 
                         onPinchStart(event);
                     }}
                     onTouchMove={(event) => { holdPicture.onTouchMove(); onPinchMove(event); }}
-                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); }}
+                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); tapPicture(event); }}
                     style={zoom
                         ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
                         : undefined}

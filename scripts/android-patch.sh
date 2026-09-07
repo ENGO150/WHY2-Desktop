@@ -216,4 +216,12 @@ done
 # WOULD COMPILE INTO THE APK AS A SERVICE NOTHING STARTS
 rm -f "$(dirname "$ACTIVITY")/CallService.kt"
 
+# AND THE FOUR OF THEM ARE KEPT, WHICH IS A RELEASE-ONLY PROBLEM AND THEREFORE THE ONE THAT IS ONLY EVER
+# FOUND IN A SHIPPED APK: R8 SHRINKS THE KOTLIN HALF FROM WHAT REFERENCES IT, AND EVERY REFERENCE TO
+# AudioRoute AND ImageStore IS A STRING INSIDE android.rs. WHAT build.gradle.kts FEEDS PROGUARD IS EVERY
+# .pro IN app/, SO A FILE PUT THERE IS PICKED UP WITHOUT THE GENERATED GRADLE BEING TOUCHED
+sed "s/PACKAGE\./$PACKAGE./g" "$ROOT/scripts/android/why2.pro" > "$PROJECT/app/proguard-why2.pro"
+
+echo "android-patch: the release build keeps the classes only JNI names"
+
 echo "android-patch: the activity can ask for the microphone, the service can hold the session, the call can be moved to the earpiece, and a picture can be saved to the gallery"
