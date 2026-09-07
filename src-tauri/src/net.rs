@@ -174,6 +174,11 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     //THE RECONNECT AFTER PINNING A SERVER KEY DIALS THIS, SO IT HAS TO BE THE RESOLVED ADDRESS
     options::set_server_address(&connecting_addr);
 
+    //AND A COPY OF IT FOR THE NOTIFICATION THE PHONE PUTS UP BELOW, TAKEN HERE BECAUSE THE CONNECT ITSELF
+    //TAKES THE ADDRESS: IT IS THE ONLY NAME THIS SERVER HAS UNTIL IT SAYS ITS OWN (name_session)
+    #[cfg(target_os = "android")]
+    let dialled = connecting_addr.clone();
+
     let (mut read_half, write_half) = client::connect(connecting_addr).await.map_err(|error| error.to_string())?;
 
     //WHATEVER IS LEFT OF THE PREVIOUS SESSION STOPS BEING LISTENED TO THE MOMENT THIS ONE EXISTS
@@ -193,7 +198,7 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     //FOR HERE BECAUSE THIS IS WHERE THE WINDOW STILL HAS THE SCREEN: 14 REFUSES A FOREGROUND SERVICE
     //STARTED FROM THE BACKGROUND, WHICH IS EXACTLY WHERE ASKING ANY LATER WOULD BE FROM
     #[cfg(target_os = "android")]
-    crate::android::hold_session(true, &connecting_addr);
+    crate::android::hold_session(true, &dialled);
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
 

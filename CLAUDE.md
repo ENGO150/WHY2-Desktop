@@ -94,8 +94,13 @@ way. `npm run android:init -- --skip-targets-install` is the way past that once 
 sysroot; it is also what CI uses. `gen/android` is generated and **not** tracked (its `jniLibs` are absolute
 symlinks into this machine's `target/`), so it is made rather than cloned. **`cargo check` alone only
 ever checks the desktop half** — the Android half is a different feature set and a different cfg, and the
-cheap way to compile it without an NDK in reach is to point the target sections at the host and turn the
-`screen` cfg off in `build.rs` by hand.
+cheap way to compile it without an NDK in reach is to copy `src-tauri/` aside and, in the copy, **rewrite
+`target_os = "android"` to the host's** through `src/` and `build.rs`, point the dependency sections at the
+host the same way, and take `build.rs`'s android branch (so `screen` is off and the class names are
+exported). Rewriting only the `Cargo.toml` sections is not enough and is the trap: `android.rs` and every
+call site into it are gated on `target_os`, so they stay invisible and a borrow-after-move in one of them
+reaches the phone. Point `CARGO_TARGET_DIR` at the existing one and the dependencies are all reused, so
+this costs one crate's compile.
 
 All three commands are wrapped: `android` and `android:build` run inside `scripts/android-env.sh`, and
 `android:init` is `scripts/android-init.sh`. That is where **libopus** is built for the ABIs and where the
