@@ -1362,8 +1362,11 @@ function App()
             if (!path) return;
         }
 
+        //WHAT IS SAID AFTERWARDS IS WHATEVER THE USER DOES NOT ALREADY KNOW. A DIALOG WAS ANSWERED WITH A
+        //PATH, SO THE PATH IS NEWS AND THE LINE NAMES IT; A PHONE WAS NEVER ASKED - THE PICTURE GOES WHERE
+        //A PHONE KEEPS PICTURES AND THERE IS NOTHING TO REPORT BUT THAT IT GOT THERE
         invoke<string>("save_image", { source: image.source, path, filename })
-            .then((where) => setPopupMessage(`Saved to ${where}`))
+            .then((where) => setPopupMessage(actions.ask ? `Saved to ${where}` : "Image saved"))
             .catch((error: unknown) => setPopupMessage(String(error)));
     };
 

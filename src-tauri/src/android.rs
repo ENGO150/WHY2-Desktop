@@ -284,14 +284,14 @@ fn safe_name(filename: &str) -> String
 }
 
 //THE JAVA SIDE NOT REACHED AT ALL, WHICH IS A BUG HERE AND NOT SOMETHING TO SEND ANYBODY TO SETTINGS
-//FOR - IT GOES TO logcat UNDER WHY2, AND **THE SAME WORDS GO TO THE USER**: `WHY2 could not reach Android`
-//ON ITS OWN IS A SENTENCE THAT CANNOT BE ACTED ON OR REPORTED USEFULLY, AND WHOEVER SEES IT IS THE ONLY
-//PERSON WHO CAN SAY WHICH OF THESE IT WAS
+//FOR - SO WHICH OF THEM IT WAS GOES TO logcat UNDER WHY2, WHERE A BUG IS READ, AND THE PANE GETS THE ONE
+//SENTENCE THERE IS TO SAY ABOUT IT. A USER READING `ImageStore is not in this build` OVER THEIR
+//CONVERSATION IS BEING HANDED SOMEBODY ELSE'S PROBLEM
 fn unreachable(what: &str) -> String
 {
     warn(&format!("the Java side could not be reached - {what}"));
 
-    format!("WHY2 could not reach Android ({what}).")
+    String::from("WHY2 could not reach Android.")
 }
 
 //WHETHER THE PERMISSION IS THERE, ASKED OF THE APPLICATION AND NOT OF THE ACTIVITY. checkSelfPermission IS

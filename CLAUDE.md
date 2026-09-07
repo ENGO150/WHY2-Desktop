@@ -1139,11 +1139,12 @@ this app that speaks JNI:
   nobody asked to be asked about. The filename is the **sender's** and is therefore cut down to a bare name
   (`safe_name`) at the write and not wherever it was last passed along: a slash in it is a directory
   somebody else chose. The ways of never reaching Kotlin at all — no VM, no `ImageStore`, no application
-  context, the call itself throwing — **say which one they were**, in the pane as well as in logcat:
-  `WHY2 could not reach Android` on its own is a sentence nobody can act on or report usefully, and the
-  person holding the phone is the only one who can tell them apart. `ImageStore is not in this build` is
+  context, the call itself throwing — say which one they were **in logcat**, where a bug is read, and the
+  pane gets the one sentence there is to say about it: a user reading `ImageStore is not in this build`
+  over their conversation is being handed somebody else's problem. `ImageStore is not in this build` is
   the R8 answer, and it is a release-only one — see the keep rules under **What the generated project does
-  not know**.
+  not know**. What a **saved** picture says is the same rule: the desktop's dialog was answered with a
+  path, so the path is news and the line names it, while a phone was never asked and is told `Image saved`.
 
 The class names come from `build.rs`, which reads the identifier out of `tauri.conf.json` — a name that is
 wrong here is not a build error but a call that silently never asks. And **`minSdkVersion` is 26**, because
