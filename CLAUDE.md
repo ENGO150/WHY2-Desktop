@@ -560,8 +560,13 @@ call and not a second renderer: a preview that could disagree with the message i
 where the palette stands, which is free by construction — **the palette answers a line starting with `/`,
 and a command is never parsed for markup**, so the two cannot want that space at once. It is drawn only when
 `hasMarkup` says there is something in the line to show, since a line of plain text previewed is the same
-line twice. An unclosed `$` shows nothing, which is the honest answer: the preview appearing *is* the signal
-that the formula will render.
+line twice — and **once it is up it stays up while there is a delimiter on the line at all** (`previewing`,
+`previewRef`). The parser never consumes what it cannot close, which is right for a message and wrong for a
+line being typed: a formula halfway through is a line with no markup in it, so the panel used to go away at
+every keystroke inside `$…$` and come back at the closing one. Holding it costs nothing in honesty — what
+is drawn is still only `markup`'s own answer, so an unfinished formula shows as the source it still is — and
+it never *opens* the panel, since a line that never had markup in it is not previewed because somebody wrote
+down a price.
 
 **Both of the expensive halves are memoized, and neither of them is optional.** `App.tsx` owns every piece
 of state in the window, so a keystroke in the composer re-renders the whole pane — and highlighting and

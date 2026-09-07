@@ -1668,6 +1668,19 @@ function App()
         held: lineHold.held,
     };
 
+    //WHETHER THE COMPOSER IS SHOWING THE LINE AS THE PANE WILL DRAW IT. THE PARSER NEVER CONSUMES WHAT IT
+    //CANNOT CLOSE, WHICH IS RIGHT FOR A MESSAGE AND WRONG FOR A LINE BEING TYPED: A FORMULA HALFWAY
+    //THROUGH IS A LINE WITH NO MARKUP IN IT, SO THE PANEL WENT AWAY AT EVERY KEYSTROKE INSIDE `$…$` AND
+    //CAME BACK AT THE CLOSING ONE. ONCE IT IS UP IT THEREFORE STAYS UP FOR AS LONG AS THERE IS A
+    //DELIMITER ON THE LINE AT ALL - WHAT IS DRAWN IS STILL ONLY EVER markup()'S OWN ANSWER, SO AN
+    //UNFINISHED FORMULA SHOWS AS THE SOURCE IT STILL IS. IT DOES NOT OPEN ONE: A LINE THAT NEVER HAD
+    //MARKUP IN IT IS NOT PREVIEWED BECAUSE SOMEBODY WROTE DOWN A PRICE
+    const marked = hasMarkup(chatInput, config.render_math);
+    const previewRef = useRef(false);
+    const previewing = marked || (previewRef.current && /[$`]/.test(chatInput));
+
+    useEffect(() => { previewRef.current = previewing; });
+
     //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
     const shape = useMemo<PaletteShape>(
         () => (dismissed ? { mode: "hidden" } : analyze(chatInput, commands)),
@@ -3137,7 +3150,7 @@ function App()
                                 THE PALETTE IS UP FOR A LINE STARTING WITH '/', AND A COMMAND IS NOT
                                 SOMETHING THE MARKUP TOUCHES. IT IS DRAWN ONLY WHERE THERE IS SOMETHING IN
                                 THE LINE TO SHOW - A LINE OF PLAIN TEXT PREVIEWED IS THE SAME LINE TWICE */}
-                            {palette.mode === "hidden" && hasMarkup(chatInput, config.render_math) && (
+                            {palette.mode === "hidden" && previewing && (
                                 <MarkupPreview text={chatInput} config={config} narrow={narrow} />
                             )}
 
