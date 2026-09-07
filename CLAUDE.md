@@ -607,8 +607,15 @@ type in the event is the type this encodes. Encoding is unbroken CPU over the wh
 `spawn_blocking` like every hash here.
 
 A line that is a picture is **a line somebody said** — `MessageKind::User`, their name and their face over
-it, with the picture where the text would be and the filename as the text. The six events behind it are
-the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
+it, with the picture where the text would be and the filename as the text. It is named in the sender's own
+color, the same as a message: **the four events a live picture can put a line up with carry the sender's
+`username_color`** (`ImageDisplay`, `ImagePending`, `ImageOffer` and `ImageFailed`), the history's own lines
+carry it in `StoredMessage`, and `ChatMessage::named` is what puts it on — the *username* color alone, since
+a picture line's text is the filename, which is this client's wording rather than something the sender typed.
+`ImageData` deliberately carries none: it is keyed by hash and only fills a caption one of those already
+made. The other end of the same fact is `upload_file`, which puts `get_colors().username_color` on
+`PacketCode::Image` — the server has no standing notion of anybody's colors, so a picture is named in ours
+only because the upload said so. The six events behind a picture are the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
 server's header check and still would not decode (an error line, word for word with `tui/event.rs`),
 `ImageData` is the answer to a caption somebody asked to see, and the three the client cache added —
 `ImageOffer`, `ImagePending` and `ImageRequest` — are below.

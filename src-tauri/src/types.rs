@@ -387,6 +387,15 @@ impl ChatMessage
         self
     }
 
+    //THE SENDER'S COLOR AND NOTHING ELSE. A PICTURE LINE'S TEXT IS THE FILENAME, WHICH IS THIS CLIENT'S
+    //OWN WORDING RATHER THAN SOMETHING THE SENDER TYPED - SO THERE IS NO MESSAGE COLOR TO KEEP, AND THE
+    //NAME OVER A PICTURE IS PAINTED THE WAY THE NAME OVER A MESSAGE IS
+    pub(crate) fn named(mut self, color: Option<u8>) -> Self
+    {
+        self.username_color = color;
+        self
+    }
+
     //THE LINE IS A PICTURE. THE TEXT STAYS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS AND WHAT THE
     //TUI PUTS IN ITS OWN LINE - THE WINDOW HAS SOMEWHERE TO DRAW THE PICTURE, AND THE TUI DOES NOT
     pub(crate) fn picture(mut self, image: MessageImage) -> Self

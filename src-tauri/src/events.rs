@@ -55,9 +55,10 @@ use crate::settings::client_settings;
 //A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT - THE HISTORY'S OWN, AND THE ONES A SERVER OFFERS
 //RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND pending IS THE
 //DIFFERENCE BETWEEN A PICTURE ON ITS WAY AND ONE WAITING TO BE ASKED FOR (tui/state.rs::push_caption)
-fn caption(username: String, filename: String, hash: [u8; 32], pending: bool) -> ChatMessage
+fn caption(username: String, filename: String, hash: [u8; 32], pending: bool, color: Option<u8>)
+    -> ChatMessage
 {
-    ChatMessage::new(MessageKind::User, username, filename.clone()).picture(MessageImage
+    ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).picture(MessageImage
     {
         filename,
         hash: Some(picture::hex(&hash)),
@@ -128,11 +129,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
 
         //A PICTURE SOMEBODY SENT, DECODED BY THE CRATE AND READY TO DRAW. IT IS A LINE THEY SAID LIKE ANY
         //OTHER - THEIR NAME AND THEIR FACE OVER IT - WITH THE PICTURE WHERE THE TEXT WOULD BE
-        ClientEvent::ImageDisplay(username, filename, image) =>
+        ClientEvent::ImageDisplay(username, filename, image, color) =>
         {
-            match picture::encode(*image, filename.clone(), None).await
+            match picture::encode(image, filename.clone(), None).await
             {
-                Some(image) => say(app, ChatMessage::new(MessageKind::User, username, filename.clone()).picture(image)),
+                Some(image) => say(app, ChatMessage::new(MessageKind::User, username, filename.clone())
+                    .named(color).picture(image)),
 
                 //IT DECODED AND STILL WOULD NOT ENCODE, WHICH IS THE SAME NEWS TO EVERYBODY LOOKING AT IT
                 None => say(app, ChatMessage::error(
@@ -143,25 +145,25 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //AN OFFER THE CACHE COULD NOT ANSWER. THE CAPTION GOES UP AS A LINE LIKE ANY OTHER, THE PICTURE
         //IS ASKED FOR HERE, AND THE ImageData THAT COMES BACK FILLS IT - NOBODY CHOOSES TO SEE A PICTURE
         //THAT IS BEING SENT TO THEM ANYWAY, SO THERE IS NO BUTTON ON IT
-        ClientEvent::ImagePending(username, filename, hash) =>
+        ClientEvent::ImagePending(username, filename, hash, color) =>
         {
-            say(app, caption(username, filename, hash, true));
+            say(app, caption(username, filename, hash, true, color));
 
             request_picture(&state, hash).await;
         },
 
         //THE SAME LINE WITH THE BUTTON STILL ON IT: auto_show_images IS OFF, SO NOBODY ASKED FOR THIS
         //PICTURE AND NOTHING IS COMING UNTIL SOMEBODY CLICKS
-        ClientEvent::ImageOffer(username, filename, hash) =>
+        ClientEvent::ImageOffer(username, filename, hash, color) =>
         {
-            say(app, caption(username, filename, hash, false));
+            say(app, caption(username, filename, hash, false, color));
         },
 
         //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
         ClientEvent::ImageRequest(hash) => request_picture(&state, hash).await,
 
         //IT PASSED THE SERVER'S HEADER CHECK AND STILL WOULD NOT DECODE, SO SAY SO WHERE IT WOULD HAVE BEEN
-        ClientEvent::ImageFailed(username, filename) =>
+        ClientEvent::ImageFailed(username, filename, _) =>
         {
             say(app, ChatMessage::error(format!("{username} sent an image that could not be displayed ({filename}).")));
         },
@@ -174,7 +176,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
 
             let image = match image
             {
-                Some(image) => picture::encode(*image, String::new(), Some(hash)).await,
+                Some(image) => picture::encode(image, String::new(), Some(hash)).await,
                 None => None,
             };
 
@@ -211,7 +213,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                 //ASK FOR WHAT IS ALREADY ON ITS WAY
                 match image
                 {
-                    Some(hash) => caption(username, text, hash, cached.contains(&hash)),
+                    Some(hash) => caption(username, text, hash, cached.contains(&hash),
+                        colors.username_color),
                     None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
                 }
             }).collect::<Vec<ChatMessage>>();

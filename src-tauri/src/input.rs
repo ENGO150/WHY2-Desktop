@@ -230,7 +230,10 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
 
     let request = match image
     {
-        true => PacketCode::Image { hash, filename, token: None, uid: None },
+        //THE SENDER'S OWN COLOR TRAVELS WITH THE PICTURE, THE WAY IT DOES WITH A MESSAGE: THE SERVER
+        //HAS NO STANDING NOTION OF ANYBODY'S COLORS, SO A CAPTION IS NAMED IN OURS ONLY IF WE SAY SO HERE
+        true => PacketCode::Image { hash, filename, token: None, uid: None,
+            username_color: get_colors().username_color },
         false => PacketCode::Upload { hash, token: None, uid: None },
     };
 

@@ -31,6 +31,8 @@ use image::
     codecs::jpeg::JpegEncoder,
 };
 
+use why2_chat::network::client::Animation;
+
 use crate::types::{ MessageImage, PictureActions };
 
 //CONSTS
@@ -91,8 +93,11 @@ fn write(image: &DynamicImage) -> Option<(&'static str, Vec<u8>)>
 
 //ENCODING IS UNBROKEN CPU OVER THE WHOLE PICTURE - KEEP IT OFF THE RUNTIME, THE WAY EVERY HASH HERE IS.
 //A PICTURE THAT WILL NOT ENCODE IS None, WHICH THE CALLER SAYS OUT LOUD RATHER THAN DROPPING QUIETLY
-pub(crate) async fn encode(image: DynamicImage, filename: String, hash: Option<[u8; 32]>) -> Option<MessageImage>
+pub(crate) async fn encode(animation: Animation, filename: String, hash: Option<[u8; 32]>)
+    -> Option<MessageImage>
 {
+    let image = animation.into_iter().next()?.image;
+
     let width = image.width();
     let height = image.height();
 
