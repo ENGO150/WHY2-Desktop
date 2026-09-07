@@ -1098,6 +1098,13 @@ this app that speaks JNI:
   exists a handshake before anybody has said what the server is called, and `name_session` (off
   `ClientEvent::Connected`) redraws it by starting the service again on the same id — the same move the
   call coming and going makes.
+  **A swipe on it puts it back.** From 14 an ongoing foreground-service notification is dismissible —
+  `setOngoing` is only honoured below that — and what a swipe takes away is the one visible sign that the
+  session is still up, the service itself being untouched by it. So the notification carries a
+  `deleteIntent`, and the service registers a receiver for it (`RECEIVER_NOT_EXPORTED`, unregistered in
+  `onDestroy`) that posts the same line again under the same id, out of the `call`/`server` pair it last
+  drew with. It is a **broadcast to ourselves and not a service start**: a swipe comes from the background,
+  which is exactly where starting a service is refused.
   Two flags, because the two are set from two places: `hold_session` from `connect_to_server`, the moment
   there is a socket **and while the window still has the screen** (14 refuses a foreground service started
   from the background, which is where asking any later would be from), and `hold_call` from **`emit_voice`**,

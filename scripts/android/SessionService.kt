@@ -35,8 +35,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -47,6 +49,10 @@ class SessionService : Service() {
     private const val NOTIFICATION = 0x574859 // "WHY"
     private const val CALL = "call"
     private const val SERVER = "server"
+
+    // WHAT A SWIPE ON THE NOTIFICATION FIRES, SEE keeper BELOW. IT IS THE PACKAGE'S OWN AND IS SENT
+    // NOWHERE ELSE - THIS PROCESS PUTS IT UP AND THIS PROCESS RECEIVES IT
+    private const val KEEP = "why2.session.KEEP"
 
     // THE CONTEXT IS HANDED IN RATHER THAN HELD: THE ONE android.rs HAS IS THE APPLICATION, WHICH IS THE
     // ONLY CONTEXT THAT IS STANDING WHETHER OR NOT THERE IS AN ACTIVITY LEFT TO ASK
@@ -75,6 +81,36 @@ class SessionService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
+  // WHAT THE NOTIFICATION LAST SAID, SO THE LINE THAT COMES BACK AFTER A SWIPE IS THE SAME ONE THAT WENT
+  private var call = false
+  private var server = ""
+
+  // FROM 14 AN ONGOING FOREGROUND-SERVICE NOTIFICATION CAN BE SWIPED AWAY - setOngoing IS ONLY HONOURED
+  // BELOW THAT - AND WHAT IT TAKES WITH IT IS THE ONE VISIBLE SIGN THAT THE SESSION IS STILL UP. THE
+  // SERVICE ITSELF IS UNTOUCHED BY THE SWIPE, SO THE ANSWER IS SIMPLY TO SAY IT AGAIN: THE DISMISSAL
+  // FIRES THIS, AND THIS POSTS THE LINE BACK UNDER THE SAME ID. IT IS A BROADCAST TO OURSELVES AND NOT A
+  // SERVICE START, WHICH FROM THE BACKGROUND - WHICH IS EXACTLY WHERE A SWIPE COMES FROM - IS REFUSED
+  private val keeper = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      try {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(call, server))
+      } catch (error: Throwable) {
+      }
+    }
+  }
+
+  override fun onCreate() {
+    super.onCreate()
+
+    val filter = IntentFilter(KEEP)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(keeper, filter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      registerReceiver(keeper, filter)
+    }
+  }
+
   // STARTED AGAIN RATHER THAN REPLACED WHEN THE CALL COMES AND GOES: THE SAME NOTIFICATION ID AND A NEW
   // TYPE IS HOW A RUNNING FOREGROUND SERVICE CHANGES WHAT IT IS FOR
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -84,6 +120,9 @@ class SessionService : Service() {
     // THE ICON BESIDE IT DOES NOT. IT ARRIVES EMPTY UNTIL THE SERVER HAS SAID WHAT IT IS CALLED, SO THE
     // LINE IS WRITTEN BOTH WAYS RATHER THAN LEFT SAYING `Connected to `
     val server = intent?.getStringExtra(SERVER).orEmpty()
+
+    this.call = call
+    this.server = server
 
     // FROM 14 THE TYPE HAS TO BE NAMED IN THE CALL AS WELL AS IN THE MANIFEST, AND microphone IS ONE THE
     // SYSTEM CAN REFUSE - THE SOCKET IS WORTH HOLDING EVEN WHERE THE CALL IS NOT, SO A REFUSAL FALLS BACK
@@ -110,6 +149,11 @@ class SessionService : Service() {
   }
 
   override fun onDestroy() {
+    try {
+      unregisterReceiver(keeper)
+    } catch (error: Throwable) {
+    }
+
     stopForeground(STOP_FOREGROUND_REMOVE)
 
     super.onDestroy()
@@ -132,6 +176,12 @@ class SessionService : Service() {
       this, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
+    // AND WHAT A SWIPE ON IT DOES, WHICH IS TO PUT IT BACK
+    val kept = PendingIntent.getBroadcast(
+      this, 0, Intent(KEEP).setPackage(packageName),
+      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
     return Notification.Builder(this, CHANNEL)
       .setContentTitle(applicationInfo.loadLabel(packageManager))
       .setContentText(
@@ -144,6 +194,7 @@ class SessionService : Service() {
       )
       .setSmallIcon(if (call) android.R.drawable.ic_btn_speak_now else android.R.drawable.stat_notify_chat)
       .setContentIntent(back)
+      .setDeleteIntent(kept)
       .setOngoing(true)
       .build()
   }
