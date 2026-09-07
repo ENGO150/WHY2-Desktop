@@ -546,9 +546,20 @@ own and is dropped, which is the same thing the TUI does by not opening a row fo
 **Math is real KaTeX and not an approximation of one.** The TUI lays TeX out in cells because a terminal
 has nothing else — a Unicode superscript where one exists, `a/b` for a fraction, a subset of the notation on
 purpose — while a window has a browser in it, so `$…$` and `$$…$$` are handed to `katex.renderToString` and
-set the way they would be anywhere else. The parser is still the crate's, guards and all: an opening `$` is
+set the way they would be anywhere else. The parser is the crate's, guards and all: an opening `$` is
 not followed by a space, a closing one is not preceded by one and not followed by a digit, so `$5 and $10
-left` is three words. The options are what they are because **the string is off the network** — nothing is
+left` is three words.
+
+**With one deliberate exception, and it is the only place this parser is wider than `tui/markup.rs`.** That
+space rule is pandoc's, and it is written for prose that happens to contain money rather than for something
+actually written in TeX: `$\sin $` is a formula by any reading and came out as the five characters somebody
+typed. So a space **beside either delimiter is forgiven where what stands between them is unmistakably
+TeX** — a backslash, a `^`, a `_` or a brace (`TEX` in `markup.ts`) — and for **display** math always, since
+nobody ever wrote a price with two dollar signs; the forgiven spaces are then trimmed off the formula. A
+price still has none of those characters, so `$5 and $10 left` is three words exactly as before, and
+everything the terminal renders is rendered here. The divergence runs one way and is worth knowing about:
+a line like `$\sin $` is a formula in this window and the source text in the TUI, and closing that gap means
+the same exception in the crate's own `dollar`. The options are what they are because **the string is off the network** — nothing is
 trusted (no `\href`, no raw HTML), the expansion and the sizes are bounded, and a formula that will not
 parse is drawn as the source somebody typed rather than throwing. Display math owns its rows and is the one
 thing in the pane that can be wider than it, so `.math-display` scrolls on its own. KaTeX's stylesheet is

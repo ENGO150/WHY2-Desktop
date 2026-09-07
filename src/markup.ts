@@ -139,8 +139,18 @@ function isLanguage(word: string): boolean
     return trimmed.length > 0 && trimmed.length <= MAX_LANG && /^[A-Za-z0-9+#\-_.]+$/.test(trimmed);
 }
 
+//WHAT MAKES A SPACE BESIDE A DELIMITER FORGIVABLE: A BACKSLASH, A SUPERSCRIPT, A SUBSCRIPT OR A BRACE.
+//NOTHING ELSE IS TeX AND NOT PROSE - AND A PRICE HAS NONE OF THEM, WHICH IS THE WHOLE POINT (SEE dollar)
+const TEX = /[\\^_{}]/;
+
 //MATH. THE GUARDS ARE WHAT KEEPS PRICES OUT OF IT: AN OPENING $ IS NOT FOLLOWED BY A SPACE, A CLOSING ONE
-//IS NOT PRECEDED BY ONE AND NOT FOLLOWED BY A DIGIT, SO "$5 AND $10 LEFT" IS THREE WORDS AND NOT MATH
+//IS NOT PRECEDED BY ONE AND NOT FOLLOWED BY A DIGIT, SO "$5 AND $10 LEFT" IS THREE WORDS AND NOT MATH.
+//THAT RULE IS PANDOC'S AND IT IS THE CRATE'S, AND IT IS TOO BLUNT FOR SOMETHING ACTUALLY WRITTEN IN TeX:
+//`$\sin $` IS A FORMULA BY ANY READING AND WAS DRAWN AS THE THREE CHARACTERS SOMEBODY TYPED. SO THE SPACE
+//IS FORGIVEN - ON EITHER SIDE - WHERE WHAT IS BETWEEN THE DOLLARS IS UNMISTAKABLY TeX (TEX ABOVE), AND
+//FOR DISPLAY MATH ALWAYS, SINCE NOBODY EVER WROTE A PRICE WITH TWO OF THEM. THIS IS THE ONE PLACE THIS
+//PARSER IS DELIBERATELY WIDER THAN tui/markup.rs: EVERYTHING THE TERMINAL RENDERS IS RENDERED HERE, AND
+//A LINE LIKE THAT ONE IS RENDERED HERE AND NOT THERE
 function dollar(chars: string[], index: number, out: Segment[], flush: () => void, missing: boolean[]): number | null
 {
     const display = chars[index + 1] === "$";
@@ -149,16 +159,22 @@ function dollar(chars: string[], index: number, out: Segment[], flush: () => voi
     const kind = 2 + close.length;
 
     if (missing[kind]) return null;
-    if (start >= chars.length || /\s/.test(chars[start])) return null;
+    if (start >= chars.length) return null;
 
     const end = seen(findEscaped(chars, start, close), missing, kind);
 
     if (end === null) return null;
-    if (/\s/.test(chars[end - 1])) return null;
+
+    const text = chars.slice(start, end).join("");
+    const loose = display || TEX.test(text);
+
+    if (!loose && (/\s/.test(chars[start]) || /\s/.test(chars[end - 1]))) return null;
     if (!display && chars[end + 1] !== undefined && /[0-9]/.test(chars[end + 1])) return null;
 
     flush();
-    out.push({ kind: display ? "display" : "math", text: chars.slice(start, end).join("") });
+
+    //THE SPACES THAT WERE FORGIVEN ARE NOT PART OF THE FORMULA EITHER
+    out.push({ kind: display ? "display" : "math", text: text.trim() });
 
     return end + close.length;
 }
