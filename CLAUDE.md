@@ -592,6 +592,16 @@ session while the app is off screen (see **Android**). On Linux the icon is an a
 with no `libayatana-appindicator` on it shows nothing in its bar — the program still runs, and its window is
 then only reachable from wherever it was launched.
 
+**What it says on hover is `WHY2 Desktop`, and it is said twice** because Linux does not read the first one.
+`tooltip` is the answer on Windows and macOS; an appindicator has no tooltip at all (`tray-icon`'s
+`set_tooltip` is an empty function there), and what a shell shows is the item's **title**, which
+libayatana takes from **GLib's application name**. Nothing sets that, so it fell back to the program name
+and the hover read `why2-desktop` — the file on the disk, named that to stay out of the way of the terminal
+client's own `why2` (see **The name and the mark**) and not what the program is called. `glib` is a
+Linux-only dependency for that one call, and it is already in the graph under `gtk`. This is the one place
+the **project's** name is used rather than the product's: a tray sits in a bar full of other programs, with
+no mark beside it to finish the thought.
+
 ### The command path
 
 Everything the user types goes through `send_input`, which mirrors `submit` in the TUI:
