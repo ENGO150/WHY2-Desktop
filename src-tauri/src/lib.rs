@@ -81,7 +81,7 @@ use servers::{ get_servers, save_server, remove_server };
 use input::{ send_input, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
 use clipboard::copy_text;
-use emit::notify_message;
+use emit::{ notify_message, notification_target };
 use palette::{ get_commands, get_vocabulary };
 use screen::{ watch_frames, drop_frames };
 use settings::
@@ -244,6 +244,7 @@ pub fn run()
             remove_server,
             window_chrome,
             notify_message,
+            notification_target,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

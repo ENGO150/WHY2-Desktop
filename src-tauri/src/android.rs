@@ -306,6 +306,29 @@ pub(crate) fn notify(key: &str, title: &str, text: &str)
     if !matches!(posted, Ok(true)) { warn("the notification was not posted"); }
 }
 
+//WHICH CONVERSATION THE NOTIFICATION SOMEBODY TAPPED WAS ABOUT, IF ANY. THE ACTIVITY IS BACK BEFORE THE
+//PAGE IS LOOKING, SO THE KEY IS PARKED THERE AND COLLECTED FROM HERE - App.tsx ASKS THE MOMENT THE WINDOW
+//IS VISIBLE AGAIN. IT IS TAKEN AND NOT READ: ONE TAP IS ONE JUMP
+pub(crate) fn notification_target() -> Option<String>
+{
+    prepare();
+
+    let vm = VM.get()?;
+    let class = ACTIVITY_CLASS.get()?;
+
+    vm.attach_current_thread(|env| -> jni::errors::Result<Option<String>>
+    {
+        let answer = env.call_static_method(&**class, JNIString::new("takeTarget"),
+            jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+
+        if answer.is_null() { return Ok(None) }
+
+        let answer = unsafe { JString::from_raw(env, answer.into_raw()) };
+
+        answer.try_to_string(env).map(Some)
+    }).ok()?
+}
+
 //A FILENAME AND NOT A PATH. IT WAS TYPED BY WHOEVER SENT THE PICTURE, SO A SLASH IN IT IS A DIRECTORY
 //SOMEBODY ELSE CHOSE AND A DOT-DOT IS A DIRECTORY ABOVE THIS ONE - NEITHER IS A NAME, AND THE MEDIA
 //STORE IS HANDED WHAT IS LEFT AFTER THE LAST OF THEM

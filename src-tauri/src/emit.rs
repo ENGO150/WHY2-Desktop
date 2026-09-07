@@ -225,6 +225,19 @@ pub(crate) fn notify_message(key: String, title: String, body: String)
     let _ = (key, title, body);
 }
 
+//AND THE OTHER HALF OF THAT LINE: WHERE IT POINTED. A TAP BRINGS THE ACTIVITY BACK WITH THE KEY THE
+//NOTIFICATION WAS FILED UNDER ON IT, WHICH IS WHAT THE WINDOW OPENS ON - IT IS ASKED FOR RATHER THAN
+//PUSHED BECAUSE THE ACTIVITY IS ALREADY BACK BY THE TIME THE PAGE IS AWAKE TO HEAR ABOUT IT
+#[tauri::command]
+pub(crate) fn notification_target() -> Option<String>
+{
+    #[cfg(target_os = "android")]
+    { crate::android::notification_target() }
+
+    #[cfg(not(target_os = "android"))]
+    { None }
+}
+
 //ONE ROW OF THE ACTIVITY - WHO WE ARE HEARING, WHICH IS HALF OF WHAT THE PANEL IS BUILT FROM. THE MUTE
 //IS FILLED IN BY voice_rows AT THE MOMENT IT DRAWS, SINCE THAT IS THE ONE THAT KNOWS WHETHER WE ARE IN
 //THE CALL AT ALL - AND IT IS ALSO WHAT KEEPS A MUTE FROM HAVING TO REACH BACK INTO WHAT IS STORED HERE

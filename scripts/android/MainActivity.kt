@@ -24,6 +24,7 @@
 package PACKAGE
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -41,6 +42,22 @@ class MainActivity : TauriActivity() {
     private var denied = false
 
     private const val MICROPHONE = 0x574859 // "WHY"
+
+    // WHICH CONVERSATION THE TAPPED NOTIFICATION WAS ABOUT, UNTIL THE PAGE COMES AND TAKES IT. IT IS KEPT
+    // HERE RATHER THAN PUSHED AT THE WEBVIEW BECAUSE THE ACTIVITY IS BACK BEFORE THE PAGE IS LOOKING:
+    // App.tsx ASKS FOR IT THE MOMENT THE WINDOW IS VISIBLE AGAIN (notification_target)
+    private var target: String? = null
+
+    // TAKEN AND NOT READ - ONE TAP IS ONE JUMP, AND A KEY LEFT LYING THERE WOULD MOVE THE WINDOW AGAIN
+    // AT THE NEXT RESUME
+    @JvmStatic
+    fun takeTarget(): String? {
+      val taken = target
+
+      target = null
+
+      return taken
+    }
 
     @JvmStatic
     fun microphoneGranted(): Boolean =
@@ -113,7 +130,26 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     current = this
+    remember(intent)
     super.onCreate(savedInstanceState)
+  }
+
+  // THE APP WAS ALREADY RUNNING, WHICH IS THE ORDINARY CASE FOR A MESSAGE NOTIFICATION: THE ACTIVITY IS
+  // BROUGHT BACK AND THE INTENT ARRIVES HERE RATHER THAN IN onCreate
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    remember(intent)
+  }
+
+  // AND IT IS TAKEN OFF THE INTENT AS IT IS READ, SO THE SAME LAUNCH REPLAYED (A ROTATION, A RESUME) IS
+  // NOT A SECOND JUMP TO WHEREVER THE NOTIFICATION POINTED
+  private fun remember(intent: Intent?) {
+    val key = intent?.getStringExtra(Notifier.TARGET) ?: return
+
+    intent.removeExtra(Notifier.TARGET)
+
+    target = key
   }
 
   override fun onDestroy() {

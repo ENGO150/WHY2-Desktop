@@ -1159,6 +1159,16 @@ this app that speaks JNI:
   news, an outgoing echo is not either, and neither is our own channel line, which the server broadcasts
   back to us like everybody else's. Away is `awayRef`, fed by `visibilitychange` **and** `blur`, since the
   two are not the same event everywhere and a notification missed is worse than one too many.
+  **Tapping one opens the pane it came from.** The key it was filed under travels on the notification's
+  intent — an **explicit** `MainActivity` intent and not the launcher's own, since a `MAIN`/`LAUNCHER`
+  intent against a task that already exists only brings it to the front and the extras on it are nobody's
+  — and `MainActivity.remember` takes it off the intent in `onCreate`/`onNewIntent` and parks it. The page
+  is not pushed at: the activity is back before the page is awake to hear about it, so `App.tsx` asks
+  (`notification_target`, which is `takeTarget` through JNI) whenever the window becomes visible, on focus,
+  and once on mount — the cold-start case. `jumpTo` is where the answer lands, and it is the sidebar's own
+  two moves: `showDirect` for a `dm:<id>`, `/channel` for a `channel:<name>` we are not already standing
+  in. It is **taken** and not read, so one tap is one jump; a conversation the session did not outlive
+  opens nothing, which is the app opening where it would have anyway.
 
 - **Somewhere to keep a picture.** A desktop asks with a file dialog; a phone has none, and no path worth
   asking about either — the one answer every Android user already knows is the gallery, which is a

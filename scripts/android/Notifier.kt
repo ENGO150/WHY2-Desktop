@@ -32,11 +32,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 
 class Notifier {
   companion object {
     private const val CHANNEL = "why2.messages"
+
+    // WHERE THE LINE LANDED, CARRIED ON THE INTENT SO THE WINDOW CAN OPEN ON IT - MainActivity KEEPS IT
+    // UNTIL THE PAGE ASKS (takeTarget)
+    const val TARGET = "why2.target"
 
     @JvmStatic
     fun post(context: Context, key: String, title: String, text: String): Boolean =
@@ -51,12 +56,19 @@ class Notifier {
           )
         }
 
-        val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        // THE ACTIVITY BY NAME AND NOT THE LAUNCHER'S OWN INTENT: A MAIN/LAUNCHER INTENT AGAINST A TASK
+        // THAT IS ALREADY THERE IS DOCUMENTED AS BRINGING IT TO THE FRONT, AND THE EXTRAS ON IT ARE THEN
+        // NOBODY'S - AN EXPLICIT ONE IS DELIVERED TO onNewIntent, WHICH IS WHERE THE KEY IS READ.
+        // THE REQUEST CODE IS THE KEY'S, SO TWO CONVERSATIONS IN THE SHADE ARE TWO INTENTS RATHER THAN
+        // ONE OF THEM UPDATED INTO THE OTHER
+        val open = Intent(context, MainActivity::class.java)
+          .setAction(Intent.ACTION_MAIN)
+          .addCategory(Intent.CATEGORY_LAUNCHER)
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+          .putExtra(TARGET, key)
 
-        // THE SAME INTENT THE LAUNCHER WOULD FIRE: THE APP IS ALREADY RUNNING BEHIND THIS, SO WHAT IT
-        // ACTUALLY DOES IS BRING THE ACTIVITY BACK - WHICH IS EVERYTHING A CHAT NOTIFICATION IS FOR
-        val back = if (open == null) null else PendingIntent.getActivity(
-          context, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val back = PendingIntent.getActivity(
+          context, key.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val notification = Notification.Builder(context, CHANNEL)

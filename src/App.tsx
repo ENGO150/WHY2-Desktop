@@ -298,6 +298,10 @@ function App()
     //THE SAME EVENT EVERYWHERE, AND A NOTIFICATION MISSED IS WORSE THAN ONE TOO MANY
     const awayRef = useRef(false);
 
+    //AND WHERE A TAPPED NOTIFICATION GOES, WHICH IS THIS RENDER'S ANSWER AND NOT THE FIRST ONE'S - THE
+    //LISTENER THAT ASKS FOR IT IS REGISTERED ONCE, THE WAY THE BRIDGE'S IS
+    const jumpRef = useRef<(key: string) => void>(() => {});
+
     //AND OUR OWN NAME, WHICH THE LISTENER NEEDS FOR THE SAME REASON: THE SERVER BROADCASTS A CHANNEL LINE
     //TO EVERYBODY IN IT, THE ONE WHO SAID IT INCLUDED, AND NOBODY WANTS TO BE TOLD WHAT THEY JUST TYPED
     const usernameRef = useRef("");
@@ -311,11 +315,24 @@ function App()
     //CHANNEL IS: THE EVENT LISTENER IS REGISTERED ONCE AND WOULD CAPTURE A STALE ANSWER OTHERWISE
     useEffect(() =>
     {
-        const hidden = () => { awayRef.current = document.hidden; };
+        //AND COMING BACK IS ALSO WHERE A TAPPED NOTIFICATION IS COLLECTED: THE ACTIVITY IS ALREADY UP
+        //BEFORE THE PAGE IS AWAKE TO HEAR ABOUT IT, SO THE KEY IS PARKED ON THE ANDROID SIDE AND TAKEN
+        //FROM HERE. IT ANSWERS NOTHING EVERYWHERE ELSE
+        const resumed = () =>
+        {
+            invoke<string | null>("notification_target")
+                .then((key) => { if (key) jumpRef.current(key); })
+                .catch(() => {});
+        };
+
+        const hidden = () => { awayRef.current = document.hidden; if (!document.hidden) resumed(); };
         const blur = () => { awayRef.current = true; };
-        const focus = () => { awayRef.current = false; };
+        const focus = () => { awayRef.current = false; resumed(); };
 
         hidden();
+
+        //A COLD START IS A TAP TOO - THE APP WAS NOT RUNNING, AND THE KEY CAME IN ON THE LAUNCH ITSELF
+        resumed();
 
         document.addEventListener("visibilitychange", hidden);
         window.addEventListener("blur", blur);
@@ -1191,6 +1208,37 @@ function App()
     {
         invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
     };
+
+    //WHERE A NOTIFICATION LEADS. THE KEY IS THE ONE notify_message FILED IT UNDER, WHICH IS THE PANE THE
+    //LINE LANDED IN - SO TAPPING IT PUTS THAT PANE IN FRONT, WHICH IS THE WHOLE OF WHAT A CHAT
+    //NOTIFICATION IS FOR. A CONVERSATION THAT DID NOT SURVIVE (THE SESSION ENDED WITH THE PROCESS, AND
+    //NOTHING BUT THIS WINDOW EVER HELD ONE) IS THE APP OPENING WHERE IT WOULD HAVE ANYWAY
+    const jumpTo = (key: string) =>
+    {
+        setDrawer(null);
+
+        if (key.startsWith("dm:"))
+        {
+            const id = Number(key.slice(3));
+            const peer = dms[id] ?? users.find((user) => user.id === id);
+
+            if (peer) showDirect({ id, username: peer.username });
+
+            return;
+        }
+
+        if (!key.startsWith("channel:")) return;
+
+        const channel = key.slice("channel:".length);
+
+        //THE ONE WE ARE STANDING IN IS A WAY BACK OUT OF A CONVERSATION AND NOT A PACKET, EXACTLY AS THE
+        //SIDEBAR'S OWN ROWS ARE
+        if (channel !== currentChannel) send(channel === LOBBY ? "/channel" : `/channel ${channel}`);
+
+        showDirect(null);
+    };
+
+    useEffect(() => { jumpRef.current = jumpTo; });
 
     //WHERE THE CALL COMES OUT, WHICH IS THE ONE THING ABOUT IT THAT IS NOT A COMMAND: THERE IS NOTHING IN
     //THE PROTOCOL ABOUT WHICH OF A PHONE'S SPEAKERS WE ARE HOLDING TO AN EAR. THE PANEL COMES BACK AS A
