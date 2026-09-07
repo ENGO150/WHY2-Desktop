@@ -229,9 +229,13 @@ pub(crate) fn save_picture(filename: &str, mime: &str, bytes: &[u8]) -> Result<S
 
     let name = safe_name(filename);
 
-    let Some(vm) = VM.get() else { return Err(unreachable("the picture cannot be saved")) };
-    let Some(class) = STORE_CLASS.get() else { return Err(unreachable("the picture cannot be saved")) };
-    let Some(application) = APPLICATION.get() else { return Err(unreachable("the picture cannot be saved")) };
+    //AND THE THREE WAYS OF NOT GETTING THERE ARE KEPT APART, BECAUSE THEY ARE THREE DIFFERENT BUGS AND
+    //THE PHONE IS NOT A PLACE ANYBODY READS A LOG FROM: NO VM IS THE LIBRARY NEVER LOADED, NO CLASS IS
+    //ImageStore MISSING FROM THE APK (WHICH IS WHAT R8 DID TO IT - SEE scripts/android/why2.pro), AND NO
+    //APPLICATION IS prepare() NEVER HAVING GOT THAT FAR. ONE SENTENCE FOR ALL THREE SAID NOTHING TWICE
+    let Some(vm) = VM.get() else { return Err(unreachable("the library was never loaded")) };
+    let Some(class) = STORE_CLASS.get() else { return Err(unreachable("ImageStore is not in this build")) };
+    let Some(application) = APPLICATION.get() else { return Err(unreachable("there is no app context")) };
 
     let saved = vm.attach_current_thread(|env| -> jni::errors::Result<String>
     {
@@ -256,7 +260,9 @@ pub(crate) fn save_picture(filename: &str, mime: &str, bytes: &[u8]) -> Result<S
         Ok(saved) if !saved.is_empty() => Ok(saved),
         Ok(_) => Err(String::from("Android would not save the picture.")),
 
-        Err(_) => Err(unreachable("the picture cannot be saved")),
+        //AND THE CALL ITSELF THROWING, WHICH ImageStore.save CATCHES EVERY Exception OF - SO WHAT IS LEFT
+        //IS AN Error (A MISSING METHOD ON A CLASS THAT SURVIVED, MEMORY) OR A THREAD THAT WOULD NOT ATTACH
+        Err(_) => Err(unreachable("ImageStore.save would not run")),
     }
 }
 
@@ -278,12 +284,14 @@ fn safe_name(filename: &str) -> String
 }
 
 //THE JAVA SIDE NOT REACHED AT ALL, WHICH IS A BUG HERE AND NOT SOMETHING TO SEND ANYBODY TO SETTINGS
-//FOR - IT GOES TO logcat UNDER WHY2 BESIDE WHATEVER THE USER IS TOLD
+//FOR - IT GOES TO logcat UNDER WHY2, AND **THE SAME WORDS GO TO THE USER**: `WHY2 could not reach Android`
+//ON ITS OWN IS A SENTENCE THAT CANNOT BE ACTED ON OR REPORTED USEFULLY, AND WHOEVER SEES IT IS THE ONLY
+//PERSON WHO CAN SAY WHICH OF THESE IT WAS
 fn unreachable(what: &str) -> String
 {
     warn(&format!("the Java side could not be reached - {what}"));
 
-    String::from("WHY2 could not reach Android.")
+    format!("WHY2 could not reach Android ({what}).")
 }
 
 //WHETHER THE PERMISSION IS THERE, ASKED OF THE APPLICATION AND NOT OF THE ACTIVITY. checkSelfPermission IS
