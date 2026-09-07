@@ -16,6 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import React from "react";
+
 import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus } from "./types";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
@@ -112,7 +114,7 @@ export function linked(text: string): React.ReactNode
 //GUESSING IS TRYING EVERY GRAMMAR IT HAS AGAINST THREE LINES SOMEBODY PASTED, WHICH IS SLOW AND USUALLY
 //WRONG. WHAT COMES BACK IS HTML highlight.js ESCAPED ITSELF, WHICH IS THE ONLY REASON IT MAY BE SET AS
 //MARKUP - NOTHING OFF THE NETWORK IS EVER PUT IN A PAGE WITHOUT PASSING THROUGH IT
-function CodeBlock({ lang, body }: { lang: string | null; body: string })
+const CodeBlock = React.memo(function CodeBlock({ lang, body }: { lang: string | null; body: string })
 {
     const language = lang && hljs.getLanguage(lang) ? lang : null;
 
@@ -129,16 +131,16 @@ function CodeBlock({ lang, body }: { lang: string | null; body: string })
             </pre>
         </div>
     );
-}
+});
 
 //A FORMULA. THE TUI LAYS TeX OUT IN CELLS BECAUSE A TERMINAL HAS NOTHING ELSE; A WINDOW HAS A BROWSER IN
 //IT, SO THIS IS REAL KaTeX AND NOT AN APPROXIMATION OF ONE - THE SAME $…$ AND $$…$$ THE CRATE'S PARSER
 //FINDS, SET THE WAY THEY WOULD BE ANYWHERE ELSE. THE STRING IS OFF THE NETWORK, WHICH IS THE WHOLE OF WHY
 //THE OPTIONS LOOK LIKE THIS: NOTHING IS TRUSTED (NO \href, NO RAW HTML), THE EXPANSION AND THE SIZES ARE
 //BOUNDED, AND A FORMULA THAT WILL NOT PARSE IS DRAWN AS THE SOURCE SOMEBODY TYPED RATHER THAN THROWING
-function math(tex: string, display: boolean): string
+const Formula = React.memo(function Formula({ tex, display }: { tex: string; display: boolean })
 {
-    return katex.renderToString(tex,
+    const html = katex.renderToString(tex,
     {
         displayMode: display,
         throwOnError: false,
@@ -148,7 +150,13 @@ function math(tex: string, display: boolean): string
         maxSize: 20,
         maxExpand: 1000,
     });
-}
+
+    //INLINE MATH SITS IN THE SENTENCE IT WAS TYPED IN; DISPLAY MATH OWNS ITS ROWS, AND IS THE ONE THING
+    //HERE THAT CAN BE WIDER THAN THE PANE - SO IT SCROLLS ON ITS OWN, THE WAY A BLOCK DOES
+    return display
+        ? <div className="math-display" dangerouslySetInnerHTML={{ __html: html }} />
+        : <span className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
+});
 
 //A MESSAGE AS IT IS READ. WHAT SOMEBODY TYPED GOES THROUGH tui/markup.rs' PARSER (markup.ts IS THAT FILE
 //REWRITTEN), SO A FENCE IS A BLOCK AND A BACKTICK IS A RUN OF CODE HERE THE SAME WAY IT IS THERE - AND
@@ -184,11 +192,7 @@ export function markup(text: string, render_math: boolean): React.ReactNode
 
         if (segment.kind === "block") return <CodeBlock key={index} lang={segment.lang} body={segment.body} />;
 
-        //INLINE MATH SITS IN THE SENTENCE IT WAS TYPED IN; DISPLAY MATH OWNS ITS ROWS, AND IS THE ONE
-        //THING HERE THAT CAN BE WIDER THAN THE PANE - SO IT SCROLLS ON ITS OWN, THE WAY A BLOCK DOES
-        return segment.kind === "math"
-            ? <span key={index} className="math-inline" dangerouslySetInnerHTML={{ __html: math(segment.text, false) }} />
-            : <div key={index} className="math-display" dangerouslySetInnerHTML={{ __html: math(segment.text, true) }} />;
+        return <Formula key={index} tex={segment.text} display={segment.kind === "display"} />;
     });
 }
 

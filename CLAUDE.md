@@ -505,6 +505,14 @@ and the reason is the same as the other two: it changes how a line **already in 
 flipping the row repaints the conversation. The code markup deliberately has no such switch — a fenced block
 is what the sender meant either way.
 
+**Both of the expensive halves are memoized, and neither of them is optional.** `App.tsx` owns every piece
+of state in the window, so a keystroke in the composer re-renders the whole pane — and highlighting and
+typesetting on every one of them is what would make typing feel slow with a long conversation behind it.
+`CodeBlock` and `Formula` are therefore `React.memo`'d leaves, which is what keeps `hljs.highlight` and
+`katex.renderToString` off the render path once their text has stopped changing. `Formula` is **not** called
+`Math`: a component named after a DOM or language global compiles and then fails somewhere else entirely,
+which is the same trap the prop names have (see **Where things are**).
+
 **The language is used and not only shown.** `highlight.js` (the `lib/common` bundle) paints a block whose
 fence named a language it knows, and one that named none — or named something it does not have — is left as
 plain code: guessing is every grammar it has tried against three lines somebody pasted, which is slow and
