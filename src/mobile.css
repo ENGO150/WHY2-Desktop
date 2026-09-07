@@ -60,4 +60,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         min-width: 40px;
         min-height: 40px;
     }
+
+    /* AND THE LINE BETWEEN THEM IS AS TALL AS THEY ARE, WHICH IS THE WHOLE OF WHAT CENTRES THE TEXT IN
+       THE PILL: THE ROW IS BOTTOM-ALIGNED (A GROWN COMPOSER HANGS FROM ITS LAST LINE), SO A textarea
+       SHORTER THAN THE BUTTONS BESIDE IT SITS THE DIFFERENCE TOO LOW. ONE LINE AT 15px/1.45 IS 22, AND
+       9 ABOVE AND BELOW IT IS THE 40 EVERYTHING ELSE IN THE ROW ALREADY IS */
+    .composer-line
+    {
+        padding-block: 9px;
+    }
 }
