@@ -458,8 +458,9 @@ interface face like every other name.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
-`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the two `client.toml` keys that still
-change how the pane looks (`show_id`, `disable_colors`), which the TUI re-reads on every redraw.
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the three `client.toml` keys that
+still change how the pane looks (`show_id`, `disable_colors`, `render_math`), which the TUI re-reads on every
+redraw.
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
@@ -483,6 +484,26 @@ the warm surface, the bar down the left edge, the language over it. **Code is no
 broken where it runs out of room, which in a window means it is not broken at all: `.code-block pre` scrolls
 sideways on its own so the pane behind it never does. The newline on either side of a fence is the fence's
 own and is dropped, which is the same thing the TUI does by not opening a row for it.
+
+**Math is real KaTeX and not an approximation of one.** The TUI lays TeX out in cells because a terminal
+has nothing else — a Unicode superscript where one exists, `a/b` for a fraction, a subset of the notation on
+purpose — while a window has a browser in it, so `$…$` and `$$…$$` are handed to `katex.renderToString` and
+set the way they would be anywhere else. The parser is still the crate's, guards and all: an opening `$` is
+not followed by a space, a closing one is not preceded by one and not followed by a digit, so `$5 and $10
+left` is three words. The options are what they are because **the string is off the network** — nothing is
+trusted (no `\href`, no raw HTML), the expansion and the sizes are bounded, and a formula that will not
+parse is drawn as the source somebody typed rather than throwing. Display math owns its rows and is the one
+thing in the pane that can be wider than it, so `.math-display` scrolls on its own. KaTeX's stylesheet is
+imported beside `index.css` in `App.tsx` (after it, so it wins where the two touch) and its fonts are
+bundled — nothing is fetched at runtime.
+
+**`render_math` is the switch, and it is the crate's own key** (`client.toml`, default on): it is a row in
+the settings dialog like any other, `get_client_config` hands it over beside `show_id` and `disable_colors`,
+and `markup(text, config.render_math)` is where it lands — with it off `parse` never opens a math segment,
+so a dollar sign is a dollar sign. That makes it the **third** key this side reads rather than only writes,
+and the reason is the same as the other two: it changes how a line **already in the pane** is drawn, so
+flipping the row repaints the conversation. The code markup deliberately has no such switch — a fenced block
+is what the sender meant either way.
 
 **The language is used and not only shown.** `highlight.js` (the `lib/common` bundle) paints a block whose
 fence named a language it knows, and one that named none — or named something it does not have — is left as

@@ -21,16 +21,19 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //INCLUDED: AN UNTERMINATED FENCE IS BACKTICKS SOMEBODY TYPED, NOT A BLOCK THAT SWALLOWS THE REST OF IT
 export type Segment =
     | { kind: "text"; text: string }
-    | { kind: "code"; text: string }                        //INLINE `code`
-    | { kind: "block"; lang: string | null; body: string };  //FENCED ```code```
+    | { kind: "code"; text: string }                         //INLINE `code`
+    | { kind: "block"; lang: string | null; body: string }   //FENCED ```code```
+    | { kind: "math"; text: string }                         //INLINE $math$
+    | { kind: "display"; text: string };                     //$$math$$
 
 //CONSTS
 const MAX_LANG = 20; //LONGER THAN THIS AND THE FIRST WORD IS CODE, NOT A LANGUAGE NAME
 
 //FUNCTIONS
 //ONE MESSAGE, IN THE PIECES IT IS DRAWN FROM. IT NEVER FAILS AND NEVER CONSUMES ANYTHING IT CANNOT
-//CLOSE, WHICH IS THE ONLY BEHAVIOUR THAT CANNOT SWALLOW A MESSAGE SOMEBODY ELSE WROTE
-export function parse(text: string): Segment[]
+//CLOSE, WHICH IS THE ONLY BEHAVIOUR THAT CANNOT SWALLOW A MESSAGE SOMEBODY ELSE WROTE.
+//math IS render_math: WITH IT OFF NO MATH SEGMENT IS EVER OPENED, SO A DOLLAR SIGN IS A DOLLAR SIGN
+export function parse(text: string, math: boolean): Segment[]
 {
     const chars = [...text]; //CODE POINTS, THE WAY RUST COUNTS THEM - NOT UTF-16 HALVES
 
@@ -41,7 +44,7 @@ export function parse(text: string): Segment[]
     //A DELIMITER THAT WAS NOT FOUND ONCE IS NOT THERE AT ALL: THE SEARCH ONLY EVER STARTS LATER IN THE
     //MESSAGE, SO IT CANNOT SUCCEED AFTERWARDS. REMEMBERING THAT IS WHAT KEEPS A MESSAGE OF NOTHING BUT
     //BACKTICKS FROM COSTING A SEARCH PER BACKTICK
-    const missing = [false, false, false];
+    const missing = [false, false, false, false, false];
 
     const flush = () =>
     {
@@ -51,7 +54,7 @@ export function parse(text: string): Segment[]
     while (index < chars.length)
     {
         //A BACKSLASH TAKES THE MARKUP OFF WHATEVER FOLLOWS IT, AND OFF NOTHING ELSE
-        if (chars[index] === "\\" && (chars[index + 1] === "`" || chars[index + 1] === "\\"))
+        if (chars[index] === "\\" && (chars[index + 1] === "`" || chars[index + 1] === "$" || chars[index + 1] === "\\"))
         {
             buffer += chars[index + 1];
             index += 2;
@@ -59,7 +62,9 @@ export function parse(text: string): Segment[]
             continue;
         }
 
-        const taken = chars[index] === "`" ? backtick(chars, index, out, flush, missing) : null;
+        const taken = chars[index] === "`" ? backtick(chars, index, out, flush, missing)
+            : chars[index] === "$" && math ? dollar(chars, index, out, flush, missing)
+            : null;
 
         if (taken === null)
         {
@@ -132,6 +137,30 @@ function isLanguage(word: string): boolean
     const trimmed = word.trim();
 
     return trimmed.length > 0 && trimmed.length <= MAX_LANG && /^[A-Za-z0-9+#\-_.]+$/.test(trimmed);
+}
+
+//MATH. THE GUARDS ARE WHAT KEEPS PRICES OUT OF IT: AN OPENING $ IS NOT FOLLOWED BY A SPACE, A CLOSING ONE
+//IS NOT PRECEDED BY ONE AND NOT FOLLOWED BY A DIGIT, SO "$5 AND $10 LEFT" IS THREE WORDS AND NOT MATH
+function dollar(chars: string[], index: number, out: Segment[], flush: () => void, missing: boolean[]): number | null
+{
+    const display = chars[index + 1] === "$";
+    const close = display ? "$$" : "$";
+    const start = index + close.length;
+    const kind = 2 + close.length;
+
+    if (missing[kind]) return null;
+    if (start >= chars.length || /\s/.test(chars[start])) return null;
+
+    const end = seen(findEscaped(chars, start, close), missing, kind);
+
+    if (end === null) return null;
+    if (/\s/.test(chars[end - 1])) return null;
+    if (!display && chars[end + 1] !== undefined && /[0-9]/.test(chars[end + 1])) return null;
+
+    flush();
+    out.push({ kind: display ? "display" : "math", text: chars.slice(start, end).join("") });
+
+    return end + close.length;
 }
 
 function find(chars: string[], from: number, needle: string): number | null //FIRST needle AT OR AFTER from

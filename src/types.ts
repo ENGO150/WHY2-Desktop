@@ -300,6 +300,7 @@ export interface ClientConfig
 {
     show_id: boolean;
     disable_colors: boolean;
+    render_math: boolean;
 }
 
 export interface TofuPrompt

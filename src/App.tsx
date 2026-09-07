@@ -22,6 +22,10 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import "./index.css";
 
+//THE ONE STYLESHEET IN HERE THAT IS NOT OURS. IT COMES WITH ITS OWN FONTS, WHICH THE BUNDLE CARRIES -
+//NOTHING IS FETCHED AT RUNTIME - AND math-inline/math-display IN widgets.css IS ALL WE ADD TO IT
+import "katex/dist/katex.min.css";
+
 import { LOBBY } from "./types";
 import type
 {
@@ -147,7 +151,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);

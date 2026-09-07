@@ -140,6 +140,7 @@ pub(crate) struct ClientConfig
 {
     pub(crate) show_id: bool,
     pub(crate) disable_colors: bool,
+    pub(crate) render_math: bool,
 }
 
 #[derive(Serialize, Clone)]

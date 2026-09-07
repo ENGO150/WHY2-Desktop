@@ -63,6 +63,11 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     //RATHER THAN BEING DECODED AND DRAWN AS IT ARRIVES
     ("Interface", "Show images automatically", "auto_show_images", ClientKind::Toggle { invert: false }),
 
+    //OFF, A DOLLAR SIGN IS A DOLLAR SIGN: NOTHING BETWEEN A PAIR OF THEM IS TAKEN FOR A FORMULA, AND
+    //THE LINE IS SHOWN AS IT WAS TYPED. THE CODE MARKUP HAS NO SUCH SWITCH - A FENCED BLOCK IS WHAT THE
+    //SENDER MEANT EITHER WAY, WHILE MATH IS A MATTER OF TASTE
+    ("Interface", "Math rendering", "render_math", ClientKind::Toggle { invert: false }),
+
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
@@ -86,6 +91,7 @@ pub(crate) fn get_client_config() -> ClientConfig
     {
         show_id: config::read_config("show_id"),
         disable_colors: config::read_config("disable_colors"),
+        render_math: config::read_config("render_math"),
     }
 }
 

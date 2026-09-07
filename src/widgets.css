@@ -333,3 +333,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
+
+/* MATH. KaTeX BRINGS ITS OWN EVERYTHING AND INHERITS THE COLOUR OF WHATEVER IT SITS IN, WHICH IS WHAT WE
+   WANT - A FORMULA IN A COLOURED MESSAGE IS THE SENDER'S COLOUR, THE WAY THE REST OF THEIR TEXT IS.
+   DISPLAY MATH OWNS ITS ROWS AND IS THE ONE THING IN THE PANE THAT CAN BE WIDER THAN THE PANE, SO IT
+   SCROLLS ON ITS OWN AND THE COLUMN BEHIND IT NEVER DOES */
+.math-inline
+{
+    white-space: normal;
+}
+
+.math-display
+{
+    margin: 6px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: normal;
+}
+
+.math-display .katex-display
+{
+    margin: 0;
+}

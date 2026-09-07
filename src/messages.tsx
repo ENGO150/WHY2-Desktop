@@ -21,8 +21,9 @@ import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
-import { parse } from "./markup";
+import { parse, type Segment } from "./markup";
 import hljs from "highlight.js/lib/common";
+import katex from "katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createPortal } from "react-dom";
 import { MENU_WIDTH, type HeldMenu } from "./servers";
@@ -130,12 +131,31 @@ function CodeBlock({ lang, body }: { lang: string | null; body: string })
     );
 }
 
+//A FORMULA. THE TUI LAYS TeX OUT IN CELLS BECAUSE A TERMINAL HAS NOTHING ELSE; A WINDOW HAS A BROWSER IN
+//IT, SO THIS IS REAL KaTeX AND NOT AN APPROXIMATION OF ONE - THE SAME $…$ AND $$…$$ THE CRATE'S PARSER
+//FINDS, SET THE WAY THEY WOULD BE ANYWHERE ELSE. THE STRING IS OFF THE NETWORK, WHICH IS THE WHOLE OF WHY
+//THE OPTIONS LOOK LIKE THIS: NOTHING IS TRUSTED (NO \href, NO RAW HTML), THE EXPANSION AND THE SIZES ARE
+//BOUNDED, AND A FORMULA THAT WILL NOT PARSE IS DRAWN AS THE SOURCE SOMEBODY TYPED RATHER THAN THROWING
+function math(tex: string, display: boolean): string
+{
+    return katex.renderToString(tex,
+    {
+        displayMode: display,
+        throwOnError: false,
+        errorColor: "#ae5c68",
+        strict: false,
+        trust: false,
+        maxSize: 20,
+        maxExpand: 1000,
+    });
+}
+
 //A MESSAGE AS IT IS READ. WHAT SOMEBODY TYPED GOES THROUGH tui/markup.rs' PARSER (markup.ts IS THAT FILE
 //REWRITTEN), SO A FENCE IS A BLOCK AND A BACKTICK IS A RUN OF CODE HERE THE SAME WAY IT IS THERE - AND
 //WHAT IS LEFT IS TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE
-export function markup(text: string): React.ReactNode
+export function markup(text: string, render_math: boolean): React.ReactNode
 {
-    const segments = parse(text);
+    const segments = parse(text, render_math);
 
     //NOTHING IN IT, WHICH IS ALMOST EVERY LINE - THE ARRAY AND THE KEYS ARE NOT WORTH BUILDING
     if (segments.length === 1 && segments[0].kind === "text") return linked(text);
@@ -148,8 +168,10 @@ export function markup(text: string): React.ReactNode
         {
             let text = segment.text;
 
-            if (segments[index - 1]?.kind === "block" && text.startsWith("\n")) text = text.slice(1);
-            if (segments[index + 1]?.kind === "block" && text.endsWith("\n")) text = text.slice(0, -1);
+            const owns = (segment: Segment | undefined) => segment?.kind === "block" || segment?.kind === "display";
+
+            if (owns(segments[index - 1]) && text.startsWith("\n")) text = text.slice(1);
+            if (owns(segments[index + 1]) && text.endsWith("\n")) text = text.slice(0, -1);
 
             return <span key={index}>{linked(text)}</span>;
         }
@@ -160,7 +182,13 @@ export function markup(text: string): React.ReactNode
             return <code key={index} className="code-inline font-mono">{segment.text.replace(/\n/g, " ")}</code>;
         }
 
-        return <CodeBlock key={index} lang={segment.lang} body={segment.body} />;
+        if (segment.kind === "block") return <CodeBlock key={index} lang={segment.lang} body={segment.body} />;
+
+        //INLINE MATH SITS IN THE SENTENCE IT WAS TYPED IN; DISPLAY MATH OWNS ITS ROWS, AND IS THE ONE
+        //THING HERE THAT CAN BE WIDER THAN THE PANE - SO IT SCROLLS ON ITS OWN, THE WAY A BLOCK DOES
+        return segment.kind === "math"
+            ? <span key={index} className="math-inline" dangerouslySetInnerHTML={{ __html: math(segment.text, false) }} />
+            : <div key={index} className="math-display" dangerouslySetInnerHTML={{ __html: math(segment.text, true) }} />;
     });
 }
 
@@ -298,7 +326,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         style={{ color: messageColor(config, message.message_color) }}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {message.image ? renderPicture(message.image, picture, pictures) : markup(message.text)}
+                        {message.image ? renderPicture(message.image, picture, pictures) : markup(message.text, config.render_math)}
                     </div>
                 </div>
             </div>
