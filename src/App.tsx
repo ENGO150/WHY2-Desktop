@@ -20,7 +20,6 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "re
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import "./index.css";
 
 //THE ONE STYLESHEET IN HERE THAT IS NOT OURS. IT COMES WITH ITS OWN FONTS, WHICH THE BUNDLE CARRIES -
@@ -1293,14 +1292,15 @@ function App()
         setLightbox(null);
     };
 
-    //A LINE ONTO THE CLIPBOARD. IT IS THE ONE THING IN HERE THAT GOES THROUGH THE PLUGIN FROM THIS SIDE
-    //RATHER THAN FROM RUST - TEXT IS EVERY PLATFORM'S CLIPBOARD, PIXELS ARE NOT - WHICH IS WHY IT IS THE
-    //ONE CLIPBOARD PERMISSION IN capabilities/default.json
+    //A LINE ONTO THE CLIPBOARD, THROUGH A COMMAND OF OURS RATHER THAN THE CLIPBOARD PLUGIN'S OWN IPC -
+    //THE SAME PATH THE PICTURE ALREADY TAKES, AND THE ONE THAT NEEDS NOTHING SPELLED OUT IN THE ACL.
+    //say IS WHAT SAYS SOMETHING WENT WRONG, AND IT IS GIVEN A SENTENCE TO SAY: AN ERROR THAT STRINGIFIES
+    //TO NOTHING WOULD LEAVE THE TOAST EMPTY, WHICH LOOKS EXACTLY LIKE A BUTTON THAT DID NOTHING
     const copyMessage = (text: string) =>
     {
-        writeText(text)
+        invoke("copy_text", { text })
             .then(() => setPopupMessage("Message copied."))
-            .catch((error: unknown) => setPopupMessage(String(error)));
+            .catch((error: unknown) => setPopupMessage(String(error) || "The message could not be copied."));
     };
 
     //THE PICTURE PUT SOMEWHERE ELSE. THE BYTES ARE THE ONES THE WINDOW WAS SENT - THE data: URL GOES BACK

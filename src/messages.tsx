@@ -334,7 +334,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         title="Copy message"
                         aria-label="Copy message"
                         onClick={() => copy(message.text)}
-                        className="row-action absolute right-3 top-1 flex h-7 w-7 items-center justify-center rounded-app border border-border bg-overlay text-muted shadow-lg transition-colors hover:text-accent"
+                        className="row-action absolute right-3 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-app border border-border bg-overlay text-muted shadow-lg transition-colors hover:text-accent"
                     >
                         <Icon name="copy" className="h-4 w-4" />
                     </button>

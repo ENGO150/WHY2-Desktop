@@ -32,6 +32,7 @@ mod input;
 mod events;
 mod screen;
 mod picture;
+mod clipboard;
 
 //THE PROGRAM GOING ON WITHOUT ITS WINDOW, WHICH IS A DESKTOP QUESTION ONLY - A PHONE HAS NO TRAY, AND
 //KEEPS ITS SESSION ALIVE WITH A FOREGROUND SERVICE INSTEAD
@@ -79,6 +80,7 @@ use net::{ connect_to_server, refresh_screens, answer_tofu };
 use servers::{ get_servers, save_server, remove_server };
 use input::{ send_input, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
+use clipboard::copy_text;
 use palette::{ get_commands, get_vocabulary };
 use screen::{ watch_frames, drop_frames };
 use settings::
@@ -128,8 +130,8 @@ pub fn run()
     let builder = builder.plugin(tauri_plugin_fs::init());
 
     //AND THE OTHER WAY ROUND: PUTTING SOMETHING OF THIS WINDOW'S SOMEWHERE ELSE IN THE SYSTEM. IT IS ON
-    //BOTH TARGETS BECAUSE EVERY CLIPBOARD TAKES TEXT, WHICH IS WHAT A MESSAGE'S COPY BUTTON WRITES; ONLY
-    //THE PICTURE HALF IS A DESKTOP QUESTION, AND THAT IS ANSWERED IN picture.rs AND NOT HERE
+    //BOTH TARGETS BECAUSE EVERY CLIPBOARD TAKES TEXT, WHICH IS WHAT A MESSAGE'S COPY BUTTON WRITES
+    //(clipboard.rs); ONLY THE PICTURE HALF IS A DESKTOP QUESTION, AND picture.rs IS WHERE THAT IS ANSWERED
     let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
 
     //AND THE WINDOW BEING CLOSED IS NOT THE PROGRAM BEING QUIT WHERE THERE IS A TRAY TO GO INTO: THE
@@ -230,6 +232,7 @@ pub fn run()
             upload_file_from_path,
             request_image,
             picture_actions,
+            copy_text,
             copy_image,
             save_image,
             watch_frames,

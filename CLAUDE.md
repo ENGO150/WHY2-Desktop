@@ -435,11 +435,14 @@ while the rendered form only means something in a window like this one. A **pict
 not text, and its own hold menu already carries the two things there are to do with one. Neither do the
 lines nobody said: `renderNotice` is this client's own narration.
 
-This is the one place the clipboard is reached **from the webview** rather than from Rust, because text is
-every platform's clipboard while pixels are only a desktop's — so `tauri-plugin-clipboard-manager` is a
-plain dependency registered on both targets now, and `clipboard-manager:allow-write-text` is the one
-clipboard permission in `capabilities/default.json`. The picture half of the same plugin is still Rust-side
-and still desktop-only (see **Images**).
+The write itself is **`clipboard.rs::copy_text`, a command of ours and not the plugin's own IPC**. Both are
+the same plugin in the end, but a command in `generate_handler!` is reachable the moment it exists while a
+plugin command needs its permission spelled out in `capabilities/default.json` and fails at runtime where it
+is not — and it is the path `picture.rs::copy_image` already takes, which is the one known to work on every
+desktop this runs on. Text is the half **every** platform has, Android included, so the plugin is registered
+on both targets now; only the picture half is a desktop question. **An error that stringifies to nothing is
+given a sentence** before it is shown, at both ends: an empty toast is indistinguishable from a button that
+did nothing, which is the one thing a copy button must never look like.
 
 Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
 first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
@@ -1327,10 +1330,11 @@ The capability is the exception when **nothing in the webview ever invokes the p
 IPC and nothing else, so a plugin only this side calls needs the first two places and not the third.
 `tauri-plugin-dialog` is not one of those: `save()` and `open()` are called from `App.tsx`, so
 `dialog:default` (which carries `allow-save` and `allow-open` both) has to be there.
-`tauri-plugin-clipboard-manager` is **both at once**, which is why its entry is a single permission rather
-than a `default`: `writeText` is invoked from the webview by a message's copy button and needs
-`clipboard-manager:allow-write-text`, while the picture half is `picture.rs` calling the same plugin's Rust
-API, which needs nothing in that array at all.
+`tauri-plugin-clipboard-manager` is the exception: **nothing in the webview names it**, because both halves
+of it are reached through commands of ours — `clipboard.rs::copy_text` and `picture.rs::copy_image` — so it
+needs the first two places and not the third. Doing it the other way round (calling the plugin's own
+`writeText` from `App.tsx`) works too, and costs a permission entry that fails at runtime rather than at
+build time when it is missing.
 
 ### CI
 
