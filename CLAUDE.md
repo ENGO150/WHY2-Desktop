@@ -365,6 +365,13 @@ every dialog — lands under the bar rather than over it. It is `relative z-50` 
 otherwise beat it: a narrow window's drawers are `fixed` against the viewport, and one sliding over the only
 way to close the program is not a drawer, it is a trap.
 
+**The webview's own menu is off** (`main.tsx`). A right-click anywhere used to offer `Reload` and
+`Inspect Element`, which is the one thing left in here that said this was a page rather than a program —
+so `contextmenu` is prevented for the whole window. The window has menus of its own wherever there is
+something to do with what was clicked (a message, a picture, a server row), and each of those already puts
+its own press out on the way past. An **editable field keeps it**: there the menu is not the browser's but
+the platform's own cut/copy/paste, which is what a text box is expected to offer everywhere.
+
 `window_chrome` is the one thing this side is ever told about the platform it is on — every other such
 question is "can this build do it", which `get_commands` answers (see **Android**) — because a title bar is
 not a capability: it is either somebody else's to draw or ours, and only the target says which.

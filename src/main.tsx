@@ -28,6 +28,21 @@ import App from "./App";
 const BOOT_MS = 600;   //HOW LONG THE MARK IS UP, AT THE LEAST
 const FADE_MS = 250;   //AND THE TRANSITION IN index.html IT LEAVES BY
 
+//THE WEBVIEW'S OWN MENU IS THE ONE THING IN HERE THAT SAYS THIS IS A PAGE: A RIGHT-CLICK ON THE CHAT
+//OFFERED Reload AND Inspect Element, WHICH NO PROGRAM DOES. IT IS TURNED OFF FOR THE WHOLE WINDOW - THE
+//WINDOW HAS MENUS OF ITS OWN WHERE THERE IS SOMETHING TO DO (A MESSAGE, A PICTURE, A SERVER ROW), AND
+//THEY PUT THEIR OWN PRESS OUT ON THE WAY PAST THIS ONE.
+//AN EDITABLE FIELD KEEPS IT, BECAUSE THERE IT IS NOT THE BROWSER'S MENU BUT THE PLATFORM'S OWN CUT,
+//COPY AND PASTE - THE ONE THING A TEXT BOX IS EXPECTED TO OFFER EVERYWHERE
+document.addEventListener("contextmenu", (event) =>
+{
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest("input, textarea, [contenteditable=\"true\"]")) return;
+
+    event.preventDefault();
+});
+
 const boot = document.getElementById("boot");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
