@@ -78,7 +78,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines } from "./messages";
-import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
+import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview, overText } from "./messages";
 import { markWaiting, deliverPicture, pictureName } from "./pictures";
 import
 {
@@ -1524,7 +1524,29 @@ function App()
     const lines: Lines =
     {
         copy: copyMessage,
-        hold: (text: string) => lineHold.bind(text),
+
+        //THE HOLD IS THE GESTURE'S, EXCEPT WHERE THE FINGER IS ON THE WORDS: ANDROID'S OWN TEXT SELECTION
+        //IS A HOLD TOO, AND TWO MENUS OVER ONE PRESS IS NEITHER OF THEM WORKING. SELECTING A SENTENCE IS
+        //WHAT SOMEBODY MEANT BY HOLDING IT, AND COPYING THE WHOLE LINE IS WHAT THEY MEANT BY HOLDING THE
+        //ROOM AROUND IT
+        hold: (text: string) =>
+        {
+            const bound = lineHold.bind(text);
+
+            return {
+                ...bound,
+
+                onTouchStart: (event: React.TouchEvent) =>
+                {
+                    const touch = event.touches[0];
+
+                    if (touch && overText(touch.clientX, touch.clientY)) return;
+
+                    bound.onTouchStart(event);
+                },
+            };
+        },
+
         held: lineHold.held,
     };
 
