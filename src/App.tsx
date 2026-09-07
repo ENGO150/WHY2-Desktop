@@ -65,7 +65,7 @@ import { PALETTE_ROWS, analyze, entryTyped, formatArg } from "./palette";
 import { hasMarkup } from "./markup";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
-import { useNarrow, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
+import { useNarrow, useTouch, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
 import { TofuDialog, CHALLENGE } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
@@ -216,12 +216,10 @@ function App()
     const pictureRef = useRef<HTMLImageElement | null>(null);
     const pinchRef = useRef<Pinch | null>(null);
 
-    //THE TAP BEFORE THIS ONE, WHILE IT IS STILL RECENT ENOUGH TO BE HALF OF A PAIR; WHETHER THE PRESS
-    //BEING ANSWERED CAME FROM A FINGER, SINCE A TOUCH SYNTHESIZES A CLICK AFTERWARDS AND THAT ONE IS NOT
-    //A SECOND GESTURE; AND WHETHER TWO FINGERS WERE EVER DOWN, WHICH MAKES THE WHOLE THING A PINCH AND
-    //NOT A TAP - onPinchEnd HAS ALREADY DROPPED ITS OWN STATE BY THE TIME THE LAST FINGER LEAVES
+    //THE TAP BEFORE THIS ONE, WHILE IT IS STILL RECENT ENOUGH TO BE HALF OF A PAIR, AND WHETHER TWO
+    //FINGERS WERE EVER DOWN - WHICH MAKES THE WHOLE GESTURE A PINCH AND NOT A TAP, AND WHICH onPinchEnd
+    //CANNOT ANSWER SINCE IT HAS DROPPED ITS OWN STATE BY THE TIME ANYTHING ELSE IS ASKED
     const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
-    const touchedRef = useRef(false);
     const pinchedRef = useRef(false);
 
     //WHETHER THIS PLATFORM HAS A CLIPBOARD THAT TAKES PIXELS AND A DIALOG TO ASK "WHERE" WITH. A PHONE
@@ -248,6 +246,10 @@ function App()
     //THE PHONE LAYOUT, AND WHICHEVER SIDEBAR IS SLID OVER THE CONVERSATION RIGHT NOW. NEITHER OF THEM
     //MEANS ANYTHING ON A WIDE WINDOW, WHERE BOTH COLUMNS SIMPLY STAND WHERE THEY ARE
     const narrow = useNarrow();
+
+    //AND WHETHER WHAT IS POINTING AT THE WINDOW CAN HOVER, WHICH IS WHAT DECIDES A GESTURE RATHER THAN A
+    //LAYOUT - SEE zoomPicture. THE TWO ARE ALMOST ALWAYS THE SAME ANSWER AND ARE NOT THE SAME QUESTION
+    const touchPointer = useTouch();
     const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
 
     //THE LINES ALREADY SENT. IT IS A REF AND NOT STATE BECAUSE NOTHING IS DRAWN FROM IT - IT IS READ AND
@@ -1385,39 +1387,28 @@ function App()
         });
     };
 
-    //A CLICK INTO THE PICTURE, WHICH IS THE MAGNIFYING GLASS THE CURSOR IS ALREADY DRAWN AS. IT IS THE
-    //MOUSE'S GESTURE ALONE: A FINGER LANDS ON A PICTURE TO SCROLL PAST IT, TO HOLD IT OR TO PINCH IT FAR
-    //MORE OFTEN THAN TO ZOOM IT, SO A TOUCH THAT SYNTHESIZED THIS CLICK IS ANSWERED BY tapPicture INSTEAD
+    //THE PRESS THAT ASKS FOR IT. A MOUSE ASKS ONCE - IT IS THE MAGNIFYING GLASS THE CURSOR IS ALREADY
+    //DRAWN AS - AND A FINGER ASKS TWICE, WHICH IS WHAT EVERY PHONE GALLERY DOES: A TAP ON A PICTURE IS
+    //SOMEBODY PUTTING THE ROOM AWAY OR MISSING THE PICTURE AS OFTEN AS IT IS SOMEBODY ZOOMING, AND A
+    //LIGHTBOX THAT JUMPED ON THE FIRST OF THEM IS ONE NOBODY CAN LOOK AT.
+    //IT IS COUNTED ON THE CLICK AND NOT ON THE touchend BEHIND IT, BECAUSE THE CLICK IS THE EVENT BOTH
+    //POINTERS ACTUALLY ARRIVE AS - A TAP SYNTHESIZES ONE - SO THERE IS ONE PATH HERE AND NOT TWO
     const zoomPicture = (event: React.MouseEvent<HTMLImageElement>) =>
     {
-        if (touchedRef.current)
+        const box = event.currentTarget.getBoundingClientRect();
+
+        //A PINCH IS NOT A TAP, AND ANY CLICK IT LEAVES BEHIND IS NOT ONE EITHER
+        if (pinchedRef.current)
         {
-            touchedRef.current = false;
+            pinchedRef.current = false;
+            tapRef.current = null;
 
             return;
         }
 
-        zoomAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
-    };
-
-    //AND THE FINGER'S, WHICH IS TWO TAPS AND NOT ONE - THE SAME PAIR EVERY PHONE GALLERY IS ZOOMED WITH.
-    //A HOLD IS NOT A TAP, A PINCH IS NOT A TAP, AND A SECOND TAP THAT LANDED SOMEWHERE ELSE OR ARRIVED TOO
-    //LATE IS THE FIRST TAP OF THE NEXT PAIR RATHER THAN THE END OF THIS ONE
-    const tapPicture = (event: React.TouchEvent<HTMLImageElement>) =>
-    {
-        const fired = pictureHold.held();
-
-        //THE LAST FINGER OF THE GESTURE IS THE ONLY ONE THAT COULD HAVE BEEN A TAP
-        if (event.touches.length > 0) return;
-
-        const touch = event.changedTouches[0];
-        const pinched = pinchedRef.current;
-
-        pinchedRef.current = false;
-
-        if (fired || pinched || !touch)
+        if (!touchPointer)
         {
-            tapRef.current = null;
+            zoomAt(box, event.clientX, event.clientY);
 
             return;
         }
@@ -1425,14 +1416,15 @@ function App()
         const now = performance.now();
         const last = tapRef.current;
 
-        tapRef.current = { at: now, x: touch.clientX, y: touch.clientY };
+        //A SECOND TAP THAT LANDED SOMEWHERE ELSE OR ARRIVED TOO LATE IS THE FIRST OF THE NEXT PAIR
+        tapRef.current = { at: now, x: event.clientX, y: event.clientY };
 
         if (!last || now - last.at > TAP_AGAIN) return;
-        if (Math.hypot(touch.clientX - last.x, touch.clientY - last.y) > TAP_SLOP) return;
+        if (Math.hypot(event.clientX - last.x, event.clientY - last.y) > TAP_SLOP) return;
 
         tapRef.current = null;
 
-        zoomAt(event.currentTarget.getBoundingClientRect(), touch.clientX, touch.clientY);
+        zoomAt(box, event.clientX, event.clientY);
     };
 
     //AND TWO FINGERS, WHICH IS THE SAME THING WITHOUT THE STEPS. THE SPAN BETWEEN THEM IS THE FACTOR AND
@@ -2605,23 +2597,28 @@ function App()
                     onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
                     onTouchStart={(event) =>
                     {
-                        touchedRef.current = true;
-
                         //TWO FINGERS ARE A PINCH AND NEVER A HOLD, SO THE TIMER THE FIRST ONE STARTED
                         //IS PUT OUT RATHER THAN LEFT TO OPEN A MENU IN THE MIDDLE OF A ZOOM - AND NEVER
-                        //A TAP EITHER, WHICH IS WHAT THE SECOND FLAG IS FOR
+                        //A TAP EITHER, WHICH IS WHAT THE FLAG IS FOR. ONE FINGER LANDING STARTS A FRESH
+                        //GESTURE AND CLEARS IT, SINCE A PINCH THAT LEFT NO CLICK BEHIND WOULD OTHERWISE
+                        //SWALLOW THE NEXT TAP
                         if (event.touches.length > 1)
                         {
                             pinchedRef.current = true;
 
                             holdPicture.onTouchEnd();
                         }
-                        else holdPicture.onTouchStart(event);
+                        else
+                        {
+                            pinchedRef.current = false;
+
+                            holdPicture.onTouchStart(event);
+                        }
 
                         onPinchStart(event);
                     }}
                     onTouchMove={(event) => { holdPicture.onTouchMove(); onPinchMove(event); }}
-                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); tapPicture(event); }}
+                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); }}
                     style={zoom
                         ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
                         : undefined}

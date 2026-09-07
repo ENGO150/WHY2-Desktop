@@ -35,16 +35,16 @@ export const SWIPE_SLOP = 10;
 //SINCE THIS IS WHEN THE INLINE POSITION IS HANDED BACK TO THEM
 export const DRAWER_MS = 180;
 
-export function useNarrow(): boolean
+//ONE MEDIA QUERY, WATCHED. BOTH QUESTIONS BELOW ARE THAT AND NOTHING ELSE, AND NEITHER OF THEM IS
+//ANSWERED ONCE AT STARTUP: A WINDOW IS DRAGGED NARROWER AND A TABLET HAS A KEYBOARD PLUGGED INTO IT
+function useMedia(query: string): boolean
 {
-    const query = `(max-width: ${NARROW}px)`;
-
-    const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
+    const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
 
     useEffect(() =>
     {
         const media = window.matchMedia(query);
-        const onChange = () => setNarrow(media.matches);
+        const onChange = () => setMatches(media.matches);
 
         onChange();
         media.addEventListener("change", onChange);
@@ -52,5 +52,19 @@ export function useNarrow(): boolean
         return () => media.removeEventListener("change", onChange);
     }, [query]);
 
-    return narrow;
+    return matches;
+}
+
+export function useNarrow(): boolean
+{
+    return useMedia(`(max-width: ${NARROW}px)`);
+}
+
+//WHETHER THE THING POINTING AT THE WINDOW CAN HOVER OVER IT. IT IS A DIFFERENT QUESTION FROM THE WIDTH -
+//A PHONE IS BOTH AND A NARROW DESKTOP WINDOW IS ONLY THE FIRST - AND IT IS THE ONE TO ASK WHERE A GESTURE
+//DIFFERS RATHER THAN A LAYOUT: A CLICK FROM SOMETHING THAT CANNOT HOVER IS A TAP, AND A TAP IS CHEAP
+//ENOUGH TO MAKE BY ACCIDENT THAT IT SHOULD NOT MOVE THE PICTURE SOMEBODY IS LOOKING AT
+export function useTouch(): boolean
+{
+    return useMedia("(hover: none)");
 }

@@ -792,9 +792,12 @@ whole gesture: a zoom anchored in the middle moves whatever was being looked at 
 asks for that same step **twice** (`TAP_AGAIN`, `TAP_SLOP` — close enough in time and in place to be one
 gesture, which is what every phone gallery does): a single tap on a picture is somebody putting the room
 away or missing the picture as often as it is somebody zooming, and a lightbox that jumped on the first of
-them was one nobody could look at. `touchedRef` is what keeps the two apart — a touch synthesizes a click
-afterwards, and that click is not a second gesture — while a hold and a pinch are neither, so `tapPicture`
-drops the pair for both. Two **fingers** are the same thing without the steps, between the picture as it
+them was one nobody could look at. Which of the two a press is comes from **`useTouch`** (`hover: none`) and
+not from the width — a desktop window dragged narrow still has a mouse in it — and the pair is counted on
+the **click**, not on the `touchend` behind it: a tap synthesizes a click, so both pointers arrive as the
+same event and there is one path here rather than two. A pinch is neither, and `pinchedRef` (set when a
+second finger lands, cleared when a fresh single-finger gesture starts) is what drops any click it leaves
+behind. Two **fingers** are the same thing without the steps, between the picture as it
 arrived and `ZOOM_MAX`; the
 floor is 1 because the lightbox already fits the picture to the glass and there is nothing below all of it.
 While the fingers are down the transform is written **straight onto the element** and handed back to React
