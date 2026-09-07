@@ -440,13 +440,14 @@ A pointer gets a button floating at the row's top-right, drawn only while the ro
 every line of a conversation is a column of buttons and not a conversation. A finger gets **a hold on the
 row**, which opens `MessageMenu`: the same `useHoldMenu` the pictures and the server lists use, at the
 pointer rather than beside the row, since a message row is the width of the pane and a menu beside one
-would open off the edge. **A hold on the words themselves is not ours** — that gesture is already
-Android's text selection, and two menus over one press is neither of them working — so `overText` asks the
-document what is under the finger and the binder stands aside when the answer is a letter. The caret alone
-does not settle it: `caretRangeFromPoint` snaps to the nearest text wherever it is asked from, so a press
-in the blank half of a short line still comes back with a text node, and what decides is whether the point
-is inside one of that node's own client rectangles (one per wrapped row). Selecting a sentence is what
-somebody meant by holding it; copying the whole line is what they meant by holding the room around it. Where there is nothing to hover with the button is **not drawn at all**
+would open off the edge. **A hold anywhere on the row is ours, the words included** — and the way that is
+made true is that a phone has **no text selection in a message** at all (`.message-body` and its children
+are `user-select: none` and `-webkit-touch-callout: none` under `@media (hover: none)`). Android's own
+selection is a hold too, and the two are not separable by where the finger landed: standing aside for the
+letters — which is what `overText` did, asking `caretRangeFromPoint` and testing the text node's own client
+rectangles — meant that a press on a word raised the selection handles *and* our menu together, which is
+neither of them working. What the selection was being dragged out to get is what the menu does in one
+press: the whole line, as it was typed. Where there is nothing to hover with the button is **not drawn at all**
 (`.row-action` under `@media (hover: none)`) — standing on every row, it sat on the end of somebody's first
 line and made the pane a column of buttons, which is exactly what the hover rule exists to prevent. The
 click that ends a hold is swallowed on the way **down** (`onClickCapture`, `lines.held()`), because a line

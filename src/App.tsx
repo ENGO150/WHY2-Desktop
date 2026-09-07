@@ -78,7 +78,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines } from "./messages";
-import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview, overText } from "./messages";
+import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
 import { markWaiting, deliverPicture, pictureName } from "./pictures";
 import
 {
@@ -1643,27 +1643,12 @@ function App()
     {
         copy: copyMessage,
 
-        //THE HOLD IS THE GESTURE'S, EXCEPT WHERE THE FINGER IS ON THE WORDS: ANDROID'S OWN TEXT SELECTION
-        //IS A HOLD TOO, AND TWO MENUS OVER ONE PRESS IS NEITHER OF THEM WORKING. SELECTING A SENTENCE IS
-        //WHAT SOMEBODY MEANT BY HOLDING IT, AND COPYING THE WHOLE LINE IS WHAT THEY MEANT BY HOLDING THE
-        //ROOM AROUND IT
-        hold: (text: string) =>
-        {
-            const bound = lineHold.bind(text);
-
-            return {
-                ...bound,
-
-                onTouchStart: (event: React.TouchEvent) =>
-                {
-                    const touch = event.touches[0];
-
-                    if (touch && overText(touch.clientX, touch.clientY)) return;
-
-                    bound.onTouchStart(event);
-                },
-            };
-        },
+        //THE HOLD IS THE GESTURE'S, ANYWHERE ON THE ROW - THE WORDS INCLUDED. ANDROID'S OWN TEXT SELECTION
+        //IS A HOLD TOO, AND STANDING ASIDE FOR IT MEANT THE TWO CAME UP TOGETHER WHENEVER THE FINGER WAS
+        //ON A LETTER, WHICH IS NEITHER OF THEM WORKING; THE SELECTION IS TURNED OFF INSTEAD, IN
+        //widgets.css UNDER (hover: none). WHAT IT WAS FOR IS WHAT THE MENU DOES - THE WHOLE LINE, AS IT
+        //WAS TYPED
+        hold: lineHold.bind,
 
         held: lineHold.held,
     };

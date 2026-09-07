@@ -400,4 +400,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     {
         display: none;
     }
+
+    /* AND THE WORDS THEMSELVES STOP BEING SELECTABLE THERE, BECAUSE ANDROID'S OWN SELECTION IS A HOLD TOO
+       AND TWO GESTURES ON ONE PRESS IS NEITHER OF THEM WORKING: THE HANDLES AND THE SYSTEM'S COPY BAR
+       CAME UP THROUGH OUR OWN MENU. THE MENU IS THE ANSWER TO BOTH - WHAT IT COPIES IS THE WHOLE LINE AS
+       IT WAS TYPED, WHICH IS WHAT A SELECTION ON A PHONE WAS BEING DRAGGED OUT TO GET.
+       -webkit-touch-callout IS THE OTHER HALF OF IT: WITHOUT IT A HOLD ON A LINK STILL OPENS THE SYSTEM
+       SHEET */
+    .message-body,
+    .message-body *
+    {
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+    }
 }

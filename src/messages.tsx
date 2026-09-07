@@ -43,28 +43,6 @@ export interface Pictures
     held: () => boolean;
 }
 
-//WHETHER A POINT IS ON A LETTER OR ON THE ROOM AROUND ONE. A HOLD IS TWO GESTURES AT ONCE ON ANDROID -
-//OURS AND THE SYSTEM'S TEXT SELECTION - AND THE HONEST SPLIT IS WHERE THE FINGER LANDED: ON THE WORDS IT
-//IS A SELECTION AND THIS STANDS ASIDE, IN THE MARGIN, THE GUTTER OR PAST THE END OF THE LAST LINE IT IS
-//THE MESSAGE'S OWN MENU.
-//THE CARET ALONE IS NOT THE ANSWER: IT SNAPS TO THE NEAREST TEXT WHEREVER IT IS ASKED FROM, SO A PRESS IN
-//THE BLANK HALF OF A SHORT LINE STILL COMES BACK WITH A TEXT NODE. WHAT SETTLES IT IS THAT NODE'S OWN
-//RECTANGLES - ONE PER WRAPPED ROW - AND WHETHER THE POINT IS INSIDE ONE OF THEM
-export function overText(x: number, y: number): boolean
-{
-    const caret = document.caretRangeFromPoint?.(x, y) ?? null;
-    const node = caret?.startContainer;
-
-    if (!node || node.nodeType !== Node.TEXT_NODE) return false;
-
-    const range = document.createRange();
-
-    range.selectNodeContents(node);
-
-    return Array.from(range.getClientRects())
-        .some((box) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom);
-}
-
 //AND THE SAME THREE THINGS FOR A LINE OF TEXT: WHAT COPYING ONE DOES, AND THE GESTURE THAT ASKS FOR IT
 export interface Lines
 {
