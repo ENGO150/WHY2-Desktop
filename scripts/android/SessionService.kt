@@ -46,14 +46,15 @@ class SessionService : Service() {
     private const val CHANNEL = "why2.session"
     private const val NOTIFICATION = 0x574859 // "WHY"
     private const val CALL = "call"
+    private const val SERVER = "server"
 
     // THE CONTEXT IS HANDED IN RATHER THAN HELD: THE ONE android.rs HAS IS THE APPLICATION, WHICH IS THE
     // ONLY CONTEXT THAT IS STANDING WHETHER OR NOT THERE IS AN ACTIVITY LEFT TO ASK
     @JvmStatic
-    fun start(context: Context, call: Boolean): Boolean =
+    fun start(context: Context, call: Boolean, server: String): Boolean =
       try {
         context.startForegroundService(
-          Intent(context, SessionService::class.java).putExtra(CALL, call)
+          Intent(context, SessionService::class.java).putExtra(CALL, call).putExtra(SERVER, server)
         )
 
         true
@@ -79,6 +80,11 @@ class SessionService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val call = intent?.getBooleanExtra(CALL, false) ?: false
 
+    // AND WHICH SERVER IT IS A SESSION ON, WHICH IS THE WHOLE OF WHAT THIS NOTIFICATION HAS TO SAY THAT
+    // THE ICON BESIDE IT DOES NOT. IT ARRIVES EMPTY UNTIL THE SERVER HAS SAID WHAT IT IS CALLED, SO THE
+    // LINE IS WRITTEN BOTH WAYS RATHER THAN LEFT SAYING `Connected to `
+    val server = intent?.getStringExtra(SERVER).orEmpty()
+
     // FROM 14 THE TYPE HAS TO BE NAMED IN THE CALL AS WELL AS IN THE MANIFEST, AND microphone IS ONE THE
     // SYSTEM CAN REFUSE - THE SOCKET IS WORTH HOLDING EVEN WHERE THE CALL IS NOT, SO A REFUSAL FALLS BACK
     // TO THE HALF THAT IS ALWAYS ALLOWED RATHER THAN TAKING THE WHOLE SERVICE DOWN WITH IT.
@@ -88,14 +94,14 @@ class SessionService : Service() {
 
       try {
         startForeground(
-          NOTIFICATION, notification(call),
+          NOTIFICATION, notification(call, server),
           if (call) held or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else held
         )
       } catch (error: Throwable) {
-        startForeground(NOTIFICATION, notification(false), held)
+        startForeground(NOTIFICATION, notification(false, server), held)
       }
     } else {
-      startForeground(NOTIFICATION, notification(call))
+      startForeground(NOTIFICATION, notification(call, server))
     }
 
     // A SESSION IS SOMETHING SOMEBODY OPENED, AND A SERVICE ANDROID BROUGHT BACK BY ITSELF WOULD HAVE NO
@@ -109,7 +115,7 @@ class SessionService : Service() {
     super.onDestroy()
   }
 
-  private fun notification(call: Boolean): Notification {
+  private fun notification(call: Boolean, server: String): Notification {
     val manager = getSystemService(NotificationManager::class.java)
 
     // LOW, BECAUSE THIS IS A STATUS LINE AND NOT NEWS: IT MUST NOT MAKE A SOUND IN THE MIDDLE OF THE
@@ -128,7 +134,14 @@ class SessionService : Service() {
 
     return Notification.Builder(this, CHANNEL)
       .setContentTitle(applicationInfo.loadLabel(packageManager))
-      .setContentText(if (call) "In a voice call" else "Connected")
+      .setContentText(
+        when {
+          call && server.isEmpty() -> "In a voice call"
+          call -> "In a voice call on $server"
+          server.isEmpty() -> "Connected"
+          else -> "Connected to $server"
+        }
+      )
       .setSmallIcon(if (call) android.R.drawable.ic_btn_speak_now else android.R.drawable.stat_notify_chat)
       .setContentIntent(back)
       .setOngoing(true)

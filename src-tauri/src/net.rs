@@ -193,7 +193,7 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     //FOR HERE BECAUSE THIS IS WHERE THE WINDOW STILL HAS THE SCREEN: 14 REFUSES A FOREGROUND SERVICE
     //STARTED FROM THE BACKGROUND, WHICH IS EXACTLY WHERE ASKING ANY LATER WOULD BE FROM
     #[cfg(target_os = "android")]
-    crate::android::hold_session(true);
+    crate::android::hold_session(true, &connecting_addr);
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
 

@@ -210,6 +210,21 @@ pub(crate) fn emit_screen(app: &AppHandle)
     emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
 }
 
+//A LINE PUT IN THE PHONE'S SHADE, ASKED FOR BY THE WINDOW. **WHETHER** IT IS WORTH ONE IS THE WINDOW'S
+//QUESTION AND ONLY THE WINDOW'S: WHICH CHANNEL A LINE WAS FILED INTO, WHICH CONVERSATION IS OPEN AND
+//WHETHER ANYBODY IS LOOKING AT THE GLASS ARE ALL THINGS THIS SIDE HAS NEVER KNOWN (SEE **Channels and
+//message routing**). SO THIS IS THE ASKING AND NOTHING ELSE - AND EVERYWHERE THAT IS NOT A PHONE IT IS
+//NOTHING AT ALL, SINCE A DESKTOP THAT CLOSED ITS WINDOW IS IN THE TRAY WITH THE PROGRAM STILL ON SCREEN
+#[tauri::command]
+pub(crate) fn notify_message(key: String, title: String, body: String)
+{
+    #[cfg(target_os = "android")]
+    crate::android::notify(&key, &title, &body);
+
+    #[cfg(not(target_os = "android"))]
+    let _ = (key, title, body);
+}
+
 //ONE ROW OF THE ACTIVITY - WHO WE ARE HEARING, WHICH IS HALF OF WHAT THE PANEL IS BUILT FROM. THE MUTE
 //IS FILLED IN BY voice_rows AT THE MOMENT IT DRAWS, SINCE THAT IS THE ONE THAT KNOWS WHETHER WE ARE IN
 //THE CALL AT ALL - AND IT IS ALSO WHAT KEEPS A MUTE FROM HAVING TO REACH BACK INTO WHAT IS STORED HERE

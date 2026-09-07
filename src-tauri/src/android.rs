@@ -52,20 +52,23 @@ use why2_chat::
 use crate::types::ChatMessage;
 use crate::emit::say;
 
-//THE FOUR CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
+//THE FIVE CLASSES THE KOTLIN HALF LIVES IN, AS BINARY NAMES (DOTS), WHICH ARE THE IDENTIFIER FROM
 //tauri.conf.json - build.rs READS IT THERE SO THEY CANNOT DRIFT, SINCE A WRONG NAME HERE IS A RUNTIME
 //NOTHING RATHER THAN A BUILD ERROR. THE ACTIVITY ASKS FOR THE MICROPHONE; THE SERVICE IS WHAT KEEPS THE
 //SESSION - SOCKET AND CALL BOTH - ALIVE ONCE THE WINDOW IS GONE; THE ROUTE IS WHICH OF THE PHONE'S
-//TWO SPEAKERS THE CALL COMES OUT OF; AND THE STORE IS WHERE A PICTURE GOES WHEN SOMEBODY KEEPS ONE
+//TWO SPEAKERS THE CALL COMES OUT OF; THE STORE IS WHERE A PICTURE GOES WHEN SOMEBODY KEEPS ONE; AND THE
+//NOTIFIER IS HOW A LINE REACHES SOMEBODY WHO IS NOT LOOKING AT THE WINDOW
 const ACTIVITY: &str = env!("ANDROID_ACTIVITY_CLASS");
 const SERVICE: &str = env!("ANDROID_SERVICE_CLASS");
 const ROUTE: &str = env!("ANDROID_ROUTE_CLASS");
 const STORE: &str = env!("ANDROID_STORE_CLASS");
+const NOTIFIER: &str = env!("ANDROID_NOTIFIER_CLASS");
 
 static ACTIVITY_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static SERVICE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static ROUTE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static STORE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
+static NOTIFIER_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
 static CONTEXT: Once = Once::new();
@@ -76,6 +79,11 @@ static PREPARED: OnceLock<()> = OnceLock::new();
 //ALWAYS INSIDE ONE. WHAT ANDROID ACTUALLY HAS IS HELD, WHICH IS NOT THE SAME THING AS WHAT WE ASKED FOR
 static SESSION: AtomicBool = AtomicBool::new(false);
 static CALL: AtomicBool = AtomicBool::new(false);
+
+//AND WHAT THE SESSION IS A SESSION *ON*, WHICH IS THE ONE THING THAT NOTIFICATION HAS TO SAY THAT THE
+//ICON BESIDE IT DOES NOT. IT IS THE ADDRESS WHEN THE SOCKET OPENS AND THE SERVER'S OWN NAME ONCE IT HAS
+//SAID ONE, SO IT IS A STRING AND NOT A FLAG - AND CHANGING IT IS A REASON TO ASK ANDROID AGAIN
+static SERVER_NAME: Mutex<String> = Mutex::new(String::new());
 
 static HELD: AtomicU8 = AtomicU8::new(DOWN);
 
@@ -155,7 +163,7 @@ fn ready() -> Option<()>
         let mut missing = Vec::new();
 
         for (name, cell) in [(ACTIVITY, &ACTIVITY_CLASS), (SERVICE, &SERVICE_CLASS), (ROUTE, &ROUTE_CLASS),
-            (STORE, &STORE_CLASS)]
+            (STORE, &STORE_CLASS), (NOTIFIER, &NOTIFIER_CLASS)]
         {
             //EACH ONE ON ITS OWN, BECAUSE A CLASS THAT WILL NOT LOAD IS ONE THING MISSING AND NOT ALL OF
             //THEM: A `?` HERE LEFT THE LOOP, SO A SINGLE ClassNotFoundException TOOK EVERY LOOKUP BEHIND
@@ -264,6 +272,38 @@ pub(crate) fn save_picture(filename: &str, mime: &str, bytes: &[u8]) -> Result<S
         //IS AN Error (A MISSING METHOD ON A CLASS THAT SURVIVED, MEMORY) OR A THREAD THAT WOULD NOT ATTACH
         Err(_) => Err(unreachable("ImageStore.save would not run")),
     }
+}
+
+//A LINE SAID WHERE SOMEBODY WILL SEE IT, WHICH IS THE OTHER HALF OF A SESSION THAT SURVIVES THE HOME
+//BUTTON: A SOCKET HELD OPEN BEHIND A PHONE'S BACK IS WORTH NOTHING IF WHAT ARRIVES ON IT IS ONLY FOUND BY
+//OPENING THE APP AGAIN. **WHETHER** A LINE DESERVES ONE IS THE WINDOW'S QUESTION AND NOT THIS ONE'S - THE
+//PANE IT LANDED IN AND THE PANE SOMEBODY IS READING ARE BOTH THE FRONTEND'S (SEE notify_message) - SO
+//EVERYTHING HERE IS THE ASKING. A FAILURE IS THE LINE IN THE SHADE AND NOTHING ELSE, SO IT IS NOT SAID
+//OUT LOUD ANYWHERE BUT logcat: A TOAST ABOUT A MISSING NOTIFICATION IS THE NOTIFICATION, TWICE, IN THE
+//ONE PLACE THE USER WAS ALREADY LOOKING
+pub(crate) fn notify(key: &str, title: &str, text: &str)
+{
+    prepare();
+
+    let Some(vm) = VM.get() else { return };
+    let Some(class) = NOTIFIER_CLASS.get() else { return warn("Notifier is not in this build") };
+    let Some(application) = APPLICATION.get() else { return };
+
+    let posted = vm.attach_current_thread(|env| -> jni::errors::Result<bool>
+    {
+        let key = env.new_string(key)?;
+        let title = env.new_string(title)?;
+        let text = env.new_string(text)?;
+
+        env.call_static_method(&**class, JNIString::new("post"),
+            jni_sig!("(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
+            &[JValue::Object(&**application), JValue::Object(&key), JValue::Object(&title),
+              JValue::Object(&text)])?.z()
+    });
+
+    //FALSE IS ANDROID REFUSING IT, WHICH SINCE 13 IS ORDINARILY POST_NOTIFICATIONS NEVER HAVING BEEN
+    //GRANTED - IT COSTS THE LINE IN THE SHADE AND NOT THE MESSAGE, WHICH IS IN THE PANE EITHER WAY
+    if !matches!(posted, Ok(true)) { warn("the notification was not posted"); }
 }
 
 //A FILENAME AND NOT A PATH. IT WAS TYPED BY WHOEVER SENT THE PICTURE, SO A SLASH IN IT IS A DIRECTORY
@@ -413,8 +453,17 @@ fn service(method: &str, call: Option<bool>) -> Option<bool>
 
         match call
         {
-            Some(call) => env.call_static_method(&**class, JNIString::new(method),
-                jni_sig!("(Landroid/content/Context;Z)Z"), &[context, JValue::Bool(call.into())])?.z(),
+            Some(call) =>
+            {
+                //THE NAME IS COPIED OUT FROM UNDER THE LOCK FIRST: NOTHING HOLDS A MUTEX ACROSS A CALL
+                //INTO JAVA, WHICH CAN BLOCK ON WHATEVER ANDROID FEELS LIKE
+                let name = SERVER_NAME.lock().unwrap().clone();
+                let server = env.new_string(&name)?;
+
+                env.call_static_method(&**class, JNIString::new(method),
+                    jni_sig!("(Landroid/content/Context;ZLjava/lang/String;)Z"),
+                    &[context, JValue::Bool(call.into()), JValue::Object(&server)])?.z()
+            },
 
             None => env.call_static_method(&**class, JNIString::new(method),
                 jni_sig!("(Landroid/content/Context;)Z"), &[context])?.z(),
@@ -448,11 +497,31 @@ fn apply()
 //AND THEN KILLS, WHICH IS WHAT USED TO END THE SOCKET THE MOMENT THE WINDOW WENT AWAY - A FOREGROUND
 //SERVICE IS THE ONLY THING THAT SAYS OTHERWISE. IT IS SET WHERE THE SOCKET IS, AND reset_session TAKES IT
 //DOWN WITH EVERYTHING ELSE THE SESSION OWNED
-pub(crate) fn hold_session(on: bool)
+pub(crate) fn hold_session(on: bool, server: &str)
 {
+    *SERVER_NAME.lock().unwrap() = server.to_owned();
+
     SESSION.store(on, Ordering::Relaxed);
 
     apply();
+}
+
+//AND THE SERVER SAYING WHAT IT IS ACTUALLY CALLED, WHICH ARRIVES A HANDSHAKE AFTER THE SOCKET DID. THE
+//NOTIFICATION IS REDRAWN BY STARTING THE SERVICE AGAIN ON THE SAME ID - THE SAME THING THE CALL COMING
+//AND GOING DOES - AND ONLY WHERE THERE IS ONE STANDING TO REDRAW
+pub(crate) fn name_session(server: &str)
+{
+    {
+        let mut held = SERVER_NAME.lock().unwrap();
+
+        if *held == server { return }
+
+        *held = server.to_owned();
+    }
+
+    if HELD.load(Ordering::Relaxed) == DOWN { return }
+
+    service("start", Some(CALL.load(Ordering::Relaxed)));
 }
 
 //AND THE CALL INSIDE IT, WHICH IS THE SAME HOLD SAYING A SECOND THING: SINCE 9 A BACKGROUND PROCESS IS
@@ -470,6 +539,8 @@ pub(crate) fn hold_call(on: bool)
 //OF THE SERVICE, AND ONE LEFT STANDING OVER A DEAD SOCKET IS A LIE
 pub(crate) fn release()
 {
+    SERVER_NAME.lock().unwrap().clear();
+
     SESSION.store(false, Ordering::Relaxed);
     CALL.store(false, Ordering::Relaxed);
 

@@ -66,4 +66,5 @@ fn activity_class()
     println!("cargo::rustc-env=ANDROID_SERVICE_CLASS={package}.SessionService");
     println!("cargo::rustc-env=ANDROID_ROUTE_CLASS={package}.AudioRoute");
     println!("cargo::rustc-env=ANDROID_STORE_CLASS={package}.ImageStore");
+    println!("cargo::rustc-env=ANDROID_NOTIFIER_CLASS={package}.Notifier");
 }

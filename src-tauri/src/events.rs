@@ -89,6 +89,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         ClientEvent::Connected(server) =>
         {
             say(app, ChatMessage::ok(format!("Successfully connected to {server}.")));
+
+            //THE SESSION IS HELD FROM THE MOMENT THERE IS A SOCKET, WHICH IS BEFORE ANYBODY HAS SAID WHAT
+            //THE SERVER IS CALLED - SO THE NOTIFICATION STARTS OUT NAMING THE ADDRESS AND IS REDRAWN HERE
+            #[cfg(target_os = "android")]
+            crate::android::name_session(&server);
+
             emit(app, UiEvent::Connected { server });
         },
 

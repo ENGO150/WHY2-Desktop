@@ -1088,6 +1088,11 @@ this app that speaks JNI:
   because a session is something somebody opened and a service Android brought back by itself would have no
   socket under it. Both statics take a `Context` rather than holding one — the application, which is the
   context still standing when the activity is not, and that is exactly the moment the service matters.
+  The notification says **which server** it is a session on — `Connected to <name>`, the one thing it has to
+  say that the icon beside it does not. `hold_session` starts it naming the address, because a socket
+  exists a handshake before anybody has said what the server is called, and `name_session` (off
+  `ClientEvent::Connected`) redraws it by starting the service again on the same id — the same move the
+  call coming and going makes.
   Two flags, because the two are set from two places: `hold_session` from `connect_to_server`, the moment
   there is a socket **and while the window still has the screen** (14 refuses a foreground service started
   from the background, which is where asking any later would be from), and `hold_call` from **`emit_voice`**,
@@ -1124,6 +1129,24 @@ this app that speaks JNI:
   that matches nothing is not a call on the default device but a call with no streams at all — so
   `forget_devices()` drops both `aaudio:` device keys at every launch, which is also all a device picked in
   `/settings` could honestly be worth on a phone.
+
+- **A line said where somebody will see it.** A held socket behind a phone's back is worth nothing if what
+  arrives on it is only ever found by opening the app again, so `scripts/android/Notifier.kt` posts one.
+  It is **its own channel** (`why2.messages`, `IMPORTANCE_HIGH`) and not the session's: that one is a
+  status line that must never make a sound in the middle of the conversation it is about, and two channels
+  are also two things Android's own settings let somebody turn off separately. The key is **where the line
+  landed** — one conversation, one notification — so somebody writing five times replaces their own line in
+  the shade rather than stacking five, and the tap is the launcher's own intent, which with the app already
+  running behind it is simply the activity coming back. `POST_NOTIFICATIONS` refused costs the line and
+  nothing else.
+  **Whether a line deserves one is the window's question and only the window's**, which is why
+  `notify_message` (`emit.rs`, nothing off Android) is the asking and nothing more: the bridge files every
+  message into whatever pane is current and has no idea which that is (see **Channels and message
+  routing**). Two things earn one — the window is away, or the line landed somewhere other than the pane
+  being read: a DM while a channel is open, a channel line while a conversation is. What nobody said is not
+  news, an outgoing echo is not either, and neither is our own channel line, which the server broadcasts
+  back to us like everybody else's. Away is `awayRef`, fed by `visibilitychange` **and** `blur`, since the
+  two are not the same event everywhere and a notification missed is worse than one too many.
 
 - **Somewhere to keep a picture.** A desktop asks with a file dialog; a phone has none, and no path worth
   asking about either — the one answer every Android user already knows is the gallery, which is a
@@ -1169,7 +1192,8 @@ no idea the app records audio, still less that it goes on doing so behind the ho
 `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE` and
 `POST_NOTIFICATIONS` into the manifest (each only where it is missing, and in the order written there) along
 with the `<service android:name=".SessionService">` element and its special-use subtype, writes
-`MainActivity.kt`, `SessionService.kt`, `AudioRoute.kt` and `ImageStore.kt` from `scripts/android/`, keeping
+`MainActivity.kt`, `SessionService.kt`, `AudioRoute.kt`, `ImageStore.kt` and `Notifier.kt` from
+`scripts/android/`, keeping
 the package line the generated activity already had, copies the launcher out of `scripts/android/res/` over the template icons
 `init` put there, and points the theme's `windowBackground` at the splash drawable that came with it (see
 **The name and the mark**). It runs after every `init` and again in front of every build, and a **missing anchor
@@ -1181,13 +1205,13 @@ then parsed back as XML before it is written, because a half-removed element fai
 the manifest merger, saying nothing about where it came from.
 
 It also writes **`scripts/android/why2.pro`** into the project as `app/proguard-why2.pro`, package
-substituted, which is what keeps those four classes in a **release** build: `isMinifyEnabled` is on there,
-R8 shrinks the Kotlin half down to what references it, and every reference to `AudioRoute` and `ImageStore`
-is a *string* inside `android.rs`. The activity and the service survive on the manifest naming them; the
-other two were simply deleted, and a release APK's speaker button and saved picture then both answered
-`WHY2 could not reach Android.` while a debug build — where nothing is shrunk — was perfect. The generated
-`build.gradle.kts` feeds ProGuard every `.pro` under `app/`, so the file is picked up without that
-generated Gradle being patched at all. On this side, `ready()` loads the four **one at a time**: a `?` in
+substituted, which is what keeps those five classes in a **release** build: `isMinifyEnabled` is on there,
+R8 shrinks the Kotlin half down to what references it, and every reference to `AudioRoute`, `ImageStore`
+and `Notifier` is a *string* inside `android.rs`. The activity and the service survive on the manifest
+naming them; the others were simply deleted, and a release APK's speaker button and saved picture then both
+answered `WHY2 could not reach Android.` while a debug build — where nothing is shrunk — was perfect. The
+generated `build.gradle.kts` feeds ProGuard every `.pro` under `app/`, so the file is picked up without
+that generated Gradle being patched at all. On this side, `ready()` loads them **one at a time**: a `?` in
 that loop meant one missing class took every lookup behind it down with it, so a shrunk `AudioRoute` was
 also a picture that could not be saved, and what is missing is named in logcat under `WHY2`.
 

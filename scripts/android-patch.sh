@@ -206,9 +206,9 @@ fi
 
 sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/MainActivity.kt" > "$ACTIVITY"
 
-# THE OTHER THREE ARE SIBLINGS OF THE ACTIVITY AND NOT GENERATED FILES AT ALL, SO THEY ARE SIMPLY WRITTEN
+# THE OTHER FOUR ARE SIBLINGS OF THE ACTIVITY AND NOT GENERATED FILES AT ALL, SO THEY ARE SIMPLY WRITTEN
 # BESIDE IT - THE PACKAGE IS THE ONE THE ACTIVITY DECLARED, WHICH IS ALSO THE DIRECTORY THEY SIT IN
-for CLASS in SessionService AudioRoute ImageStore; do
+for CLASS in SessionService AudioRoute ImageStore Notifier; do
     sed "s/^package PACKAGE$/package $PACKAGE/" "$ROOT/scripts/android/$CLASS.kt" > "$(dirname "$ACTIVITY")/$CLASS.kt"
 done
 

@@ -293,10 +293,41 @@ function App()
     //WHAT ARRIVES, WHICH IS WHAT THE "↓ n new" IN THE BOTTOM BORDER IS
     const pinnedRef = useRef(true);
 
+    //WHETHER ANYBODY IS ACTUALLY LOOKING AT THE GLASS. ON A PHONE THAT IS THE ACTIVITY BEING BACKGROUNDED,
+    //WHICH REACHES THE PAGE AS visibilitychange - AND blur IS WATCHED BESIDE IT BECAUSE THE TWO ARE NOT
+    //THE SAME EVENT EVERYWHERE, AND A NOTIFICATION MISSED IS WORSE THAN ONE TOO MANY
+    const awayRef = useRef(false);
+
+    //AND OUR OWN NAME, WHICH THE LISTENER NEEDS FOR THE SAME REASON: THE SERVER BROADCASTS A CHANNEL LINE
+    //TO EVERYBODY IN IT, THE ONE WHO SAID IT INCLUDED, AND NOBODY WANTS TO BE TOLD WHAT THEY JUST TYPED
+    const usernameRef = useRef("");
+
     useEffect(() =>
     {
         currentChannelRef.current = currentChannel;
     }, [currentChannel]);
+
+    //AND THE FLAG THAT SAYS WHETHER THE WINDOW IS BEING LOOKED AT, KEPT AS A REF FOR THE SAME REASON THE
+    //CHANNEL IS: THE EVENT LISTENER IS REGISTERED ONCE AND WOULD CAPTURE A STALE ANSWER OTHERWISE
+    useEffect(() =>
+    {
+        const hidden = () => { awayRef.current = document.hidden; };
+        const blur = () => { awayRef.current = true; };
+        const focus = () => { awayRef.current = false; };
+
+        hidden();
+
+        document.addEventListener("visibilitychange", hidden);
+        window.addEventListener("blur", blur);
+        window.addEventListener("focus", focus);
+
+        return () =>
+        {
+            document.removeEventListener("visibilitychange", hidden);
+            window.removeEventListener("blur", blur);
+            window.removeEventListener("focus", focus);
+        };
+    }, []);
 
     //A DRAWER IS A NARROW WINDOW'S IDEA ONLY. DRAGGING THE WINDOW WIDE PUTS THE COLUMNS BACK WHERE THEY
     //BELONG, AND A DRAWER LEFT OPEN BEHIND THEM WOULD BE A PANEL FLOATING OVER ITS OWN TWIN
@@ -306,6 +337,11 @@ function App()
     {
         openDmRef.current = openDm;
     }, [openDm]);
+
+    useEffect(() =>
+    {
+        usernameRef.current = username;
+    }, [username]);
 
     useEffect(() =>
     {
@@ -429,6 +465,38 @@ function App()
         });
 
         if (reading && !pinnedRef.current) setUnread((previous) => previous + 1);
+    };
+
+    //A LINE NOBODY IS LOOKING AT, PUT WHERE THEY WILL SEE IT. IT IS A PHONE'S QUESTION - notify_message IS
+    //NOTHING ANYWHERE ELSE, SINCE A DESKTOP THAT CLOSED ITS WINDOW LEFT THE PROGRAM IN THE TRAY - AND IT IS
+    //ASKED HERE BECAUSE THIS SIDE IS THE ONLY ONE THAT KNOWS **WHERE** A LINE LANDED AND WHERE ANYBODY IS
+    //READING: THE BRIDGE FILES EVERY MESSAGE INTO WHATEVER PANE IS CURRENT AND HAS NO IDEA WHICH THAT IS.
+    //TWO THINGS EARN ONE: THE WINDOW IS AWAY, OR THE LINE LANDED SOMEWHERE ELSE THAN THE PANE BEING READ -
+    //A DM WHILE A CHANNEL IS OPEN, A CHANNEL WHILE A CONVERSATION IS. WHAT NOBODY SAID (A JOIN, A NOTICE,
+    //THIS CLIENT'S OWN NARRATION) IS NOT NEWS, AND NEITHER IS THE ECHO OF SOMETHING WE SENT OURSELVES
+    const notifyMessage = (message: ChatMessage) =>
+    {
+        if (message.kind !== "user" && message.kind !== "private") return;
+        if (message.direct?.outgoing) return;
+
+        const peer = message.direct;
+
+        //THE SERVER BROADCASTS A CHANNEL LINE TO THE WHOLE CHANNEL, INCLUDING WHOEVER SENT IT
+        if (!peer && message.username === usernameRef.current) return;
+
+        const reading = peer ? openDmRef.current === peer.id : openDmRef.current === null;
+
+        if (reading && !awayRef.current) return;
+
+        const channel = currentChannelRef.current || "lobby";
+
+        //ONE KEY PER CONVERSATION, SO SOMEBODY WRITING FIVE TIMES REPLACES THEIR OWN LINE IN THE SHADE
+        //RATHER THAN STACKING FIVE OF THEM
+        const key = peer ? `dm:${peer.id}` : `channel:${currentChannelRef.current}`;
+        const title = peer ? peer.username : `#${channel}`;
+        const body = peer ? message.text : `${message.username}: ${message.text}`;
+
+        invoke("notify_message", { key, title, body }).catch(() => {});
     };
 
     //THE COLUMN TURNS TO ONE PERSON, OR BACK TO THE CHANNEL. EITHER WAY IT IS ANOTHER PANE WITH ANOTHER
@@ -721,6 +789,8 @@ function App()
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
                     if (message.direct) pushDirect(message.direct, entryFor(message));
                     else push(entryFor(message));
+
+                    notifyMessage(message);
 
                     break;
                 }
