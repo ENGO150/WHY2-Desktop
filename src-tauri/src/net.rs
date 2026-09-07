@@ -67,33 +67,6 @@ pub(crate) async fn request_picture(state: &AppState, hash: [u8; 32])
     send_packet(state, &write_stream, PacketCode::ImageData { hash, data: None }).await;
 }
 
-//AND A WHOLE HISTORY'S WORTH OF THEM, WHICH IS auto_show_images MEANING WHAT IT SAYS: THE PICTURES THE
-//CACHE COULD NOT ANSWER ARE ASKED FOR WITHOUT ANYBODY CLICKING. THEY GO OUT **ONE AT A TIME**, SPACED BY
-//THE SERVER'S OWN IMAGE_REQUEST_DELAY - IT HOLDS ONE CLIENT TO ONE PICTURE PER DELAY AND SERVES THE REST
-//LATE RATHER THAN REFUSING THEM, AND IT DOES THAT BY SLEEPING IN FRONT OF THE PACKET IT IS ANSWERING, SO
-//A BURST OF TWENTY IS TWENTY SECONDS OF *THIS* CONNECTION NOT BEING READ. THE SESSION IS CHECKED BEFORE
-//EACH ONE, THE WAY THE EVENT PUMP CHECKS IT: A HISTORY BELONGS TO THE SOCKET THAT REPLAYED IT
-pub(crate) fn request_pictures(app: &AppHandle, session: u64, hashes: Vec<[u8; 32]>)
-{
-    if hashes.is_empty() { return }
-
-    let app = app.clone();
-
-    async_runtime::spawn(async move
-    {
-        for hash in hashes
-        {
-            let state = app.state::<AppState>();
-
-            if state.session.load(Ordering::Relaxed) != session { return }
-
-            request_picture(&state, hash).await;
-
-            time::sleep(consts::IMAGE_REQUEST_DELAY).await;
-        }
-    });
-}
-
 //ASK FOR THE ROSTER - EVENTUALLY. THE ROSTER IS ALSO THE CHANNEL LIST, SO IT HAS TO FOLLOW EVERY JOIN,
 //AND JOINS ARRIVE IN CLUMPS: LOGGING IN ALONE BRINGS Accept AND OUR OWN Join ONE AFTER THE OTHER, WHICH
 //AS TWO SEPARATE List PACKETS IS EXACTLY WHAT THE SERVER CALLS SPAM. ONE REQUEST ANSWERS THE WHOLE

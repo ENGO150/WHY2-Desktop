@@ -29,7 +29,6 @@ use tauri::{ Manager, AppHandle };
 use why2_chat::
 {
     role::Role,
-    config,
     options,
     network::
     {
@@ -49,7 +48,7 @@ use why2_chat::
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::net::{ refresh_online, request_picture, request_pictures };
+use crate::net::{ refresh_online, request_picture };
 use crate::picture;
 use crate::settings::client_settings;
 
@@ -205,44 +204,23 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN, AND WHICH OF THEIR PICTURES THE CACHE HOLDS
         ClientEvent::History(messages, cached) =>
         {
-            //auto_show_images IS THE ANSWER TO "IS A PICTURE SOMETHING THIS CLIENT ASKS FOR BY ITSELF", AND
-            //THE HISTORY IS THE OTHER HALF OF IT: A LIVE PICTURE THE CACHE COULD NOT ANSWER IS ALREADY
-            //ASKED FOR WITHOUT A CLICK (ImagePending), SO A REPLAYED ONE SITTING BEHIND A BUTTON WAS THE
-            //SETTING MEANING TWO DIFFERENT THINGS DEPENDING ON WHEN SOMEBODY LOGGED IN
-            let auto = config::read_config::<bool>("auto_show_images");
-
-            //WHAT WE DO NOT ALREADY HOLD. THE CRATE IS WALKING THE CACHE BEHIND THIS EVENT AND WILL FILL
-            //THE REST ITSELF - ASKING THE SERVER FOR ONE OF THOSE IS PAYING FOR A PICTURE TWICE
-            let mut wanted = Vec::new();
-
             let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }|
             {
                 //A PICTURE IS NAMED HERE AND NOT REPLAYED - THE HISTORY CARRIES ITS HASH, AND NOTHING GOES
                 //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME.
                 //ONE WE ALREADY HOLD IS THE EXCEPTION: THE CRATE IS WALKING THE CACHE BEHIND THIS EVENT
                 //AND WILL FILL THAT CAPTION ITSELF, SO IT SAYS SO INSTEAD OF OFFERING A BUTTON THAT WOULD
-                //ASK FOR WHAT IS ALREADY ON ITS WAY - AND WITH auto_show_images ON, SO IS EVERY OTHER ONE
+                //ASK FOR WHAT IS ALREADY ON ITS WAY
                 match image
                 {
-                    Some(hash) =>
-                    {
-                        let held = cached.contains(&hash);
-
-                        if auto && !held && !wanted.contains(&hash) { wanted.push(hash); }
-
-                        caption(username, text, hash, held || auto, colors.username_color)
-                    },
-
+                    Some(hash) => caption(username, text, hash, cached.contains(&hash),
+                        colors.username_color),
                     None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
                 }
             }).collect::<Vec<ChatMessage>>();
 
             say(app, ChatMessage::title(format!("Message history ({}):", messages.len())));
             emit(app, UiEvent::History { messages });
-
-            //AND THEY ARE ASKED FOR AFTER THE PANE HAS THE LINES THEY BELONG TO, ONE AT A TIME - A HISTORY
-            //IS A HUNDRED MESSAGES AND THE SERVER SERVES ONE PICTURE PER IMAGE_REQUEST_DELAY (SEE net.rs)
-            request_pictures(app, session, wanted);
         },
 
         ClientEvent::ServerSay(message) =>
