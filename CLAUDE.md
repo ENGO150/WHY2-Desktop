@@ -757,6 +757,17 @@ pictures we already hold**, and those captions go up as `waiting` rather than `a
 the cache behind that event and will fill them itself, so offering a button for a picture already on its way
 is the one thing they must not do.
 
+**With `auto_show_images` on, the rest are asked for too** — that is the setting meaning the same thing
+whenever somebody logged in. A live picture the cache cannot answer is already fetched without a click
+(`ImagePending`), so a replayed one sitting behind a button was the same switch answering two different
+ways; the History arm collects the hashes `cached` does not name and hands them to
+**`net.rs::request_pictures`**, whose captions therefore go up `waiting` like the held ones. They go out
+**one at a time, spaced by the crate's own `IMAGE_REQUEST_DELAY`**, and that spacing is not politeness: the
+server holds one client to one picture per delay by *sleeping in front of the packet it is answering*, so a
+burst of twenty is twenty seconds of this connection not being read. The session counter is checked before
+each one, the way the event pump checks it — a history belongs to the socket that replayed it. This is a
+deliberate step past the TUI, which offers the button either way.
+
 The caption's `pending` flag (`MessageImage`) is the whole of what the bridge says about that — it is
 `tui/state.rs::push_caption`'s own parameter, and `entryFor` in `App.tsx` is where it becomes a
 `PictureStatus`. The state of a caption is otherwise the **frontend's**, since the pane is: `PaneEntry`
