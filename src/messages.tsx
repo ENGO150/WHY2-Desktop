@@ -196,6 +196,27 @@ export function markup(text: string, render_math: boolean): React.ReactNode
     });
 }
 
+//THE LINE BEING TYPED, AS THE PANE WILL DRAW IT. A FORMULA IS THE ONE THING IN A MESSAGE NOBODY CAN READ
+//BACK IN THE SOURCE THEY WROTE IT IN - \frac{1}{2} IS NOT A FRACTION UNTIL SOMETHING SETS IT - SO THE
+//COMPOSER SHOWS IT BEFORE IT GOES, THE WAY EVERY OTHER EDITOR THAT TAKES TeX DOES. IT IS THE SAME markup
+//THE PANE CALLS AND NOT A SECOND RENDERER: A PREVIEW THAT COULD DISAGREE WITH THE MESSAGE IS WORSE THAN
+//NONE. IT STANDS WHERE THE PALETTE STANDS, WHICH IS FREE BY CONSTRUCTION - THE PALETTE ANSWERS A LINE
+//STARTING WITH '/', AND A COMMAND IS NOT SOMETHING THE MARKUP EVER TOUCHES
+export function MarkupPreview({ text, config, narrow }: { text: string; config: ClientConfig; narrow: boolean })
+{
+    return (
+        <div className={`rise absolute bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl ${narrow ? "inset-x-2" : "inset-x-4"}`}>
+            <div className="border-b border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Preview
+            </div>
+
+            <div className="scroller select-text whitespace-pre-wrap break-words px-3 py-2 text-[15px] leading-relaxed" style={{ maxHeight: "40vh" }}>
+                {markup(text, config.render_math)}
+            </div>
+        </div>
+    );
+}
+
 //WHAT A LINE IS PAINTED IN, WHERE ANYTHING IS: THE PROTOCOL'S SIXTEEN, AND NOTHING AT ALL WHERE THE
 //CONFIG TURNED THE MESSAGE COLORS OFF
 export function messageColor(config: ClientConfig, code: number | null): string | undefined

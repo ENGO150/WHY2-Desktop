@@ -62,6 +62,7 @@ import { ANSI_TRUE } from "./theme";
 import { Icon, IconButton } from "./icons";
 import { isKeyFrame, h264Config } from "./video";
 import { PALETTE_ROWS, analyze, entryTyped, formatArg } from "./palette";
+import { hasMarkup } from "./markup";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
 import { useNarrow, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
@@ -77,7 +78,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures } from "./messages";
-import { renderNotice, renderChat, renderBlock, PictureMenu } from "./messages";
+import { renderNotice, renderChat, renderBlock, PictureMenu, MarkupPreview } from "./messages";
 import { markWaiting, deliverPicture, pictureName } from "./pictures";
 import
 {
@@ -2851,6 +2852,14 @@ function App()
                             className={`relative shrink-0 pt-1 ${narrow ? "px-2 pb-2" : "px-4 pb-5"} ${theater ? "hidden" : ""}`}
                             onMouseDown={(event) => event.stopPropagation()}
                         >
+                            {/* AND THE PREVIEW STANDS IN THE SAME PLACE, WHICH THE TWO NEVER WANT AT ONCE:
+                                THE PALETTE IS UP FOR A LINE STARTING WITH '/', AND A COMMAND IS NOT
+                                SOMETHING THE MARKUP TOUCHES. IT IS DRAWN ONLY WHERE THERE IS SOMETHING IN
+                                THE LINE TO SHOW - A LINE OF PLAIN TEXT PREVIEWED IS THE SAME LINE TWICE */}
+                            {palette.mode === "hidden" && hasMarkup(chatInput, config.render_math) && (
+                                <MarkupPreview text={chatInput} config={config} narrow={narrow} />
+                            )}
+
                             {/* THE PALETTE SITS ON THE COMPOSER, WHICH IS WHERE THE LINE IT IS TALKING ABOUT IS */}
                             {palette.mode !== "hidden" && (
                                 <div className={`rise absolute bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl ${narrow ? "inset-x-2" : "inset-x-4"}`}>

@@ -199,3 +199,10 @@ function seen(found: number | null, missing: boolean[], kind: number): number | 
 
     return found;
 }
+
+//WHETHER THERE IS ANYTHING IN A LINE FOR THE MARKUP TO DO. THE COMPOSER ASKS BEFORE IT DRAWS A PREVIEW:
+//A LINE OF PLAIN TEXT PREVIEWED IS THE SAME LINE TWICE, WHICH IS A PANEL IN THE WAY AND NOTHING ELSE
+export function hasMarkup(text: string, math: boolean): boolean
+{
+    return parse(text, math).some((segment) => segment.kind !== "text");
+}

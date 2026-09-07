@@ -505,6 +505,16 @@ and the reason is the same as the other two: it changes how a line **already in 
 flipping the row repaints the conversation. The code markup deliberately has no such switch — a fenced block
 is what the sender meant either way.
 
+**The composer previews what it is about to send** (`MarkupPreview`). A formula is the one thing in a
+message nobody can read back in the source they wrote it in — `\frac{1}{2}` is not a fraction until
+something sets it — so the line is drawn as the pane will draw it before it goes, through the same `markup`
+call and not a second renderer: a preview that could disagree with the message is worse than none. It stands
+where the palette stands, which is free by construction — **the palette answers a line starting with `/`,
+and a command is never parsed for markup**, so the two cannot want that space at once. It is drawn only when
+`hasMarkup` says there is something in the line to show, since a line of plain text previewed is the same
+line twice. An unclosed `$` shows nothing, which is the honest answer: the preview appearing *is* the signal
+that the formula will render.
+
 **Both of the expensive halves are memoized, and neither of them is optional.** `App.tsx` owns every piece
 of state in the window, so a keystroke in the composer re-renders the whole pane — and highlighting and
 typesetting on every one of them is what would make typing feel slow with a long conversation behind it.
