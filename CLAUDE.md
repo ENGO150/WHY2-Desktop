@@ -649,6 +649,34 @@ Linux-only dependency for that one call, and it is already in the graph under `g
 the **project's** name is used rather than the product's: a tray sits in a bar full of other programs, with
 no mark beside it to finish the thought.
 
+### Notifications
+
+**A line said while nobody is looking is put where they will see it, and that is not a phone's question.**
+The window goes to the tray rather than quitting (see **The tray**), which is exactly a session running with
+nobody watching it — so the desktop posts one too, through the same `notify_message` the phone does.
+
+The **whether** is the window's and is written once, in `App.tsx::notifyMessage`: nothing on the frontend is
+told which platform it is on, and nothing needs to be. Two things earn a notification — the window is away
+(`awayRef`, fed by `visibilitychange` **and** `blur`), or the line landed somewhere other than the pane being
+read. What nobody said is not news, an outgoing echo is not either, and neither is our own channel line the
+server broadcast back to us. That paragraph is the whole policy, on both targets.
+
+The **how** is `notify_message` in `emit.rs`, and it is the one place the two differ. Android hands the key,
+the title and the body to `Notifier.kt`, which files the line under the key and points a tap back at that
+pane (see **Android**). A desktop hands the title and the body to **`tauri-plugin-notification`**, which is
+the system's own notification server on all three platforms — and there the **key is unused**: the plugin's
+desktop path takes a title, a body, an icon and a sound, hands back no handle to replace a line with and
+reports no click, so a second line from the same person stacks rather than replacing, and
+`notification_target` still answers `None` off Android. That is the **plugin's** ceiling rather than the
+platform's — a Linux server takes a replaces-id and reports a click, and `notify-rust` hands both back —
+and closing it means calling that crate directly and writing the Windows app-id and macOS `set_application`
+halves the plugin already carries, per platform, for the two of them that have anything to give.
+
+The dependency and the `.plugin(…)` are **desktop-only** — Android's half is ours already, and two
+notification paths on one platform would be the line posted twice. It needs no entry in
+`capabilities/default.json` for the same reason `tauri-plugin-clipboard-manager` needs none: nothing in the
+webview names the plugin, `notify_message` being a command of ours (see **Adding a Tauri plugin**).
+
 ### The command path
 
 Everything the user types goes through `send_input`, which mirrors `submit` in the TUI:
@@ -1183,7 +1211,8 @@ this app that speaks JNI:
   running behind it is simply the activity coming back. `POST_NOTIFICATIONS` refused costs the line and
   nothing else.
   **Whether a line deserves one is the window's question and only the window's**, which is why
-  `notify_message` (`emit.rs`, nothing off Android) is the asking and nothing more: the bridge files every
+  `notify_message` (`emit.rs`, the one command both targets answer — see **Notifications**) is the asking
+  and nothing more: the bridge files every
   message into whatever pane is current and has no idea which that is (see **Channels and message
   routing**). Two things earn one — the window is away, or the line landed somewhere other than the pane
   being read: a DM while a channel is open, a channel line while a conversation is. What nobody said is not

@@ -135,6 +135,12 @@ pub fn run()
     //(clipboard.rs); ONLY THE PICTURE HALF IS A DESKTOP QUESTION, AND picture.rs IS WHERE THAT IS ANSWERED
     let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
 
+    //A LINE SAID WHILE NOBODY IS LOOKING, PUT IN THE SYSTEM'S OWN SHADE. IT IS THE DESKTOP'S HALF OF
+    //notify_message AND ONLY THE DESKTOP'S - ANDROID POSTS ITS OWN THROUGH Notifier.kt, WHICH IS THE ONE
+    //THAT KNOWS ABOUT CHANNELS, A TAP THAT OPENS THE PANE AND THE SERVICE THE SESSION IS HELD BY
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+
     //AND THE WINDOW BEING CLOSED IS NOT THE PROGRAM BEING QUIT WHERE THERE IS A TRAY TO GO INTO: THE
     //SESSION, THE CALL AND THE SHARE ALL OUTLIVE THE GLASS. IT IS THE ONLY WINDOW EVENT THIS APP ANSWERS
     #[cfg(desktop)]
