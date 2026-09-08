@@ -672,6 +672,15 @@ platform's — a Linux server takes a replaces-id and reports a click, and `noti
 and closing it means calling that crate directly and writing the Windows app-id and macOS `set_application`
 halves the plugin already carries, per platform, for the two of them that have anything to give.
 
+**The mark beside the line is a path and not a name.** A Linux notification server looks an icon up by
+**name** in the icon theme, which is something only an installed app has — and the plugin's default,
+`auto_icon()`, asks for the **binary's** name, `why2-desktop`, which no theme calls this or anything else:
+what a daemon draws for that is its broken-image glyph. A path is the answer all three platforms take, so
+`notify_icon` carries `icons/128x128.png` **in the binary** (`include_bytes!`) and lays it down in the app's
+own cache the first time there is a line to put it beside — written rather than looked for, since a copy
+left by an older build is an old mark, and once per process, since that is as often as it can change. macOS
+ignores it and draws the bundle's own icon, which is the same picture by another route.
+
 The dependency and the `.plugin(…)` are **desktop-only** — Android's half is ours already, and two
 notification paths on one platform would be the line posted twice. It needs no entry in
 `capabilities/default.json` for the same reason `tauri-plugin-clipboard-manager` needs none: nothing in the

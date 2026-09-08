@@ -19,6 +19,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #[cfg(voice)]
 use std::sync::atomic::Ordering;
 
+//WHERE THE MARK A DESKTOP NOTIFICATION IS DRAWN WITH IS PUT, AND THE ONCE THAT PUTS IT THERE
+#[cfg(desktop)]
+use std::{ path::PathBuf, sync::OnceLock };
+
 use tauri::{ Emitter, AppHandle, Manager };
 
 #[cfg(voice)]
@@ -210,6 +214,30 @@ pub(crate) fn emit_screen(app: &AppHandle)
     emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
 }
 
+//THE MARK BESIDE THE LINE, AND THE ONE THING A DESKTOP NOTIFICATION NEEDS SAYING ABOUT. A LINUX
+//NOTIFICATION SERVER LOOKS AN ICON UP **BY NAME** IN THE ICON THEME, WHICH IS SOMETHING ONLY AN INSTALLED
+//APP HAS - AND THE PLUGIN'S DEFAULT (auto_icon) ASKS FOR THE **BINARY'S** NAME, `why2-desktop`, WHICH IS
+//NOT WHAT ANY THEME CALLS THIS OR ANYTHING ELSE. WHAT COMES BACK IS THE BROKEN-IMAGE GLYPH. A **PATH** IS
+//THE ANSWER ALL THREE TAKE, SO THE MARK IS CARRIED IN THE BINARY AND LAID DOWN IN THE APP'S OWN CACHE THE
+//FIRST TIME THERE IS A LINE TO PUT IT BESIDE - WRITTEN RATHER THAN LOOKED FOR, SINCE A COPY LEFT BY AN
+//OLDER BUILD IS AN OLD MARK, AND ONCE PER PROCESS, SINCE THAT IS AS OFTEN AS IT CAN CHANGE
+#[cfg(desktop)]
+fn notify_icon(app: &AppHandle) -> Option<PathBuf>
+{
+    static ICON: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+    ICON.get_or_init(||
+    {
+        let path = app.path().app_cache_dir().ok()?.join("why2.png");
+
+        std::fs::create_dir_all(path.parent()?).ok()?;
+        std::fs::write(&path, include_bytes!("../icons/128x128.png")).ok()?;
+
+        Some(path)
+    })
+    .clone()
+}
+
 //A LINE PUT WHERE SOMEBODY WILL SEE IT, ASKED FOR BY THE WINDOW. **WHETHER** IT IS WORTH ONE IS THE
 //WINDOW'S QUESTION AND ONLY THE WINDOW'S: WHICH CHANNEL A LINE WAS FILED INTO, WHICH CONVERSATION IS OPEN
 //AND WHETHER ANYBODY IS LOOKING AT THE GLASS ARE ALL THINGS THIS SIDE HAS NEVER KNOWN (SEE **Channels and
@@ -237,7 +265,12 @@ pub(crate) fn notify_message(app: AppHandle, key: String, title: String, body: S
 
         let _ = key;
 
-        app.notification().builder().title(title).body(body).show().ok();
+        let mut line = app.notification().builder().title(title).body(body);
+
+        //AND WITHOUT ONE IT IS STILL A LINE WORTH SAYING - THE PLUGIN THEN ASKS FOR THE NAME NOBODY HAS
+        if let Some(icon) = notify_icon(&app) { line = line.icon(icon.to_string_lossy()); }
+
+        line.show().ok();
     }
 }
 
