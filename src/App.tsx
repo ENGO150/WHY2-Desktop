@@ -85,6 +85,7 @@ import
     RESTART_LABEL,
     NO_DEVICES,
     deviceEntries,
+    choiceEntries,
     clientRows,
     serverRows,
     stepRow,
@@ -683,11 +684,21 @@ function App()
         //SERVER THIS IS GOING TO BE IS THE ONE QUESTION A LIST CANNOT ANSWER BY ITSELF, AND A SESSION
         //THAT STARTED WITHOUT BEING ASKED FOR IS ONE TO BE LEFT AGAIN. AN EMPTY LIST HAS NOTHING TO PICK
         //FROM, SO IT OPENS ON THE FORM THAT ADDS THE FIRST ONE
-        invoke<StoredServer[]>("get_servers").then((list) =>
+        //...AND, WHERE THE SETTINGS ROW NAMES ONE, THE SERVER TO OPEN ON. THE TWO ARE ASKED FOR TOGETHER
+        //BECAUSE THE ANSWER IS AN id INTO THE LIST AND IS WORTH NOTHING WITHOUT IT; THE BRIDGE ALREADY
+        //ANSWERS None FOR A ROW THAT HAS SINCE BEEN FORGOTTEN, SO A MISS HERE IS SIMPLY THE LIST
+        Promise.all([
+            invoke<StoredServer[]>("get_servers"),
+            invoke<string | null>("get_auto_connect"),
+        ]).then(([list, auto]) =>
         {
             setServers(list);
 
-            if (!list.length) setAdding(true);
+            if (!list.length) { setAdding(true); return }
+
+            const opening = auto ? list.find((server) => server.id === auto) : undefined;
+
+            if (opening) dial(opening);
         }).catch(console.error);
 
         const unlisten = listen<BridgeEvent>("why2-event", ({ payload }) =>
@@ -2162,22 +2173,28 @@ function App()
             .catch((error: unknown) => setPopupMessage(String(error)));
     };
 
-    //POINT ONE OF THE TWO DEVICE KEYS SOMEWHERE ELSE. A RUNNING CALL REBUILDS ITS STREAMS ON THIS WITHOUT
-    //BEING DROPPED, WHICH IS WHY THE ROW MAY BE TOUCHED MID-SESSION AT ALL
-    const setDevice = (index: number, id: string) =>
+    //ANSWER THE ROW THE PICKER WAS OPENED BY - A DEVICE OR THE SERVER TO OPEN ON, WHICH IS ONE LIST OF
+    //id/label PAIRS EITHER WAY AND TWO DIFFERENT PLACES TO WRITE IT. A RUNNING CALL REBUILDS ITS STREAMS
+    //ON A DEVICE WITHOUT BEING DROPPED, WHICH IS WHY THAT ROW MAY BE TOUCHED MID-SESSION AT ALL
+    const setPicked = (index: number, id: string) =>
     {
         const box = settings;
         if (!box) return;
 
         const row = box.rows[index];
-        if (row.row !== "item" || row.item.value.kind !== "device" || row.item.value.value.id === id) return;
+        if (row.row !== "item") return;
 
-        const input = row.item.value.value.input;
+        const value = row.item.value;
+        if ((value.kind !== "device" && value.kind !== "choice") || value.value.id === id) return;
 
-        invoke("set_client_device", { key: row.item.key, id }).catch((error: unknown) => setPopupMessage(String(error)));
+        const command = value.kind === "device" ? "set_client_device" : "set_client_choice";
+
+        invoke(command, { key: row.item.key, id }).catch((error: unknown) => setPopupMessage(String(error)));
 
         editSettings((current) => withRow({ ...current, selected: index, confirm: false }, index,
-            (item) => ({ ...item, value: { kind: "device", value: { id, input } } })));
+            (item) => (value.kind === "device"
+                ? { ...item, value: { kind: "device", value: { id, input: value.value.input } } }
+                : { ...item, value: { kind: "choice", value: { id, options: value.value.options } } })));
     };
 
     //LEFT/RIGHT: FLIP A TOGGLE, SLIDE A VOLUME, STEP A NUMBER, OR CYCLE A DEVICE WITHOUT OPENING THE PICKER
@@ -2212,7 +2229,20 @@ function App()
             const current = Math.max(entries.findIndex((entry) => entry.id === id), 0);
             const next = (current + direction + entries.length) % entries.length;
 
-            setDevice(box.selected, entries[next].id);
+            setPicked(box.selected, entries[next].id);
+            return;
+        }
+
+        //THE SAME CYCLE OVER THE SERVER LIST, None INCLUDED - IT IS THE FIRST ENTRY AND NOT A SPECIAL CASE
+        if (row.item.value.kind === "choice")
+        {
+            const { id, options } = row.item.value.value;
+            const entries = choiceEntries(options);
+
+            const current = Math.max(entries.findIndex((entry) => entry.id === id), 0);
+            const next = (current + direction + entries.length) % entries.length;
+
+            setPicked(box.selected, entries[next].id);
             return;
         }
 
@@ -2319,6 +2349,22 @@ function App()
             return;
         }
 
+        //AND SO HAS THE SERVER LIST
+        if (row.item.value.kind === "choice")
+        {
+            const { id, options } = row.item.value.value;
+            const entries = choiceEntries(options);
+
+            editSettings((current) => ({
+                ...current,
+                selected: index,
+                confirm: false,
+                picker: { title: ` ${row.item.label} `, entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
+            }));
+
+            return;
+        }
+
         //A NUMBER OR A STRING IS TYPED INTO THE ROW ITSELF
         editSettings((current) => ({ ...current, selected: index, confirm: false, edit: String(row.item.value.value) }));
     };
@@ -2371,7 +2417,7 @@ function App()
             {
                 const chosen = picker.entries[picker.selected];
 
-                if (chosen) setDevice(picker.row, chosen.id);
+                if (chosen) setPicked(picker.row, chosen.id);
 
                 editSettings((current) => ({ ...current, picker: null }));
                 break;
@@ -2705,7 +2751,7 @@ function App()
             onKeyDown={handleSettingsKey}
             setToggle={setToggle}
             setVolume={setVolume}
-            setDevice={setDevice}
+            setPicked={setPicked}
             activateRow={activateRow}
             commitEdit={commitEdit}
             editSettings={editSettings}

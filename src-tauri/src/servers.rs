@@ -50,10 +50,18 @@ pub(crate) struct StoredServer
     pub(crate) name: Option<String>,      //WHAT THE SERVER LAST CALLED ITSELF
 }
 
-//THE FILE IS AN ARRAY OF TABLES AND NOT A BARE ARRAY, BECAUSE TOML HAS NO TOP-LEVEL ARRAY TO BE
+//THE FILE IS AN ARRAY OF TABLES AND NOT A BARE ARRAY, BECAUSE TOML HAS NO TOP-LEVEL ARRAY TO BE.
+//auto_connect IS THE ONE THING IN HERE THAT IS NOT A SERVER: WHICH OF THEM THE WINDOW DIALS BY ITSELF AT
+//STARTUP, KEPT AS THE ROW'S OWN id AND None FOR "ASK ME, THE WAY IT ALWAYS DID". IT LIVES BESIDE THE LIST
+//AND NOT IN client.toml, BECAUSE client.toml IS SHARED WITH THE TERMINAL CLIENT, WHICH HAS NO LIST TO
+//POINT AT - AND THE KEY IS WRITTEN AHEAD OF THE ARRAY, SINCE A BARE KEY AFTER AN [[server]] TABLE WOULD
+//BELONG TO THAT TABLE
 #[derive(Serialize, Deserialize, Default)]
 struct ServerFile
 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto_connect: Option<String>,
+
     #[serde(default)]
     server: Vec<StoredServer>,
 }
@@ -65,11 +73,16 @@ fn path() -> String
 
 //A LIST NOBODY HAS WRITTEN YET IS AN EMPTY ONE, AND SO IS ONE THAT CAME BACK UNREADABLE: THE WINDOW'S
 //ANSWER TO EITHER IS THE SAME SCREEN THAT ASKS FOR THE FIRST SERVER
+fn read_file() -> ServerFile
+{
+    let Ok(text) = fs::read_to_string(path()) else { return ServerFile::default() };
+
+    toml::from_str::<ServerFile>(&text).unwrap_or_default()
+}
+
 pub(crate) fn load() -> Vec<StoredServer>
 {
-    let Ok(text) = fs::read_to_string(path()) else { return Vec::new() };
-
-    toml::from_str::<ServerFile>(&text).map(|file| file.server).unwrap_or_default()
+    read_file().server
 }
 
 //NOBODY BUT THIS USER READS THIS FILE. THE MODE IS SET ON THE FILE THAT IS ALREADY THERE AS WELL AS ON
@@ -86,12 +99,11 @@ fn protect(path: &str)
 #[cfg(not(unix))]
 fn protect(_path: &str) {}
 
-fn store(servers: &[StoredServer]) -> Result<(), String>
+fn store(file: &ServerFile) -> Result<(), String>
 {
     let path = path();
 
-    let file = ServerFile { server: servers.to_vec() };
-    let text = toml::to_string_pretty(&file).map_err(|error| error.to_string())?;
+    let text = toml::to_string_pretty(file).map_err(|error| error.to_string())?;
 
     //THE MODE IS SET BEFORE THE PASSWORDS GO IN, SO THERE IS NO MOMENT WHERE THEY ARE WORLD-READABLE
     if !std::path::Path::new(&path).exists()
@@ -118,27 +130,60 @@ pub(crate) fn get_servers() -> Vec<StoredServer>
 #[tauri::command]
 pub(crate) fn save_server(server: StoredServer) -> Result<Vec<StoredServer>, String>
 {
-    let mut servers = load();
+    let mut file = read_file();
 
-    match servers.iter_mut().find(|stored| stored.id == server.id)
+    match file.server.iter_mut().find(|stored| stored.id == server.id)
     {
         Some(stored) => *stored = server,
-        None => servers.push(server),
+        None => file.server.push(server),
     }
 
-    store(&servers)?;
+    store(&file)?;
 
-    Ok(servers)
+    Ok(file.server)
 }
 
 #[tauri::command]
 pub(crate) fn remove_server(id: String) -> Result<Vec<StoredServer>, String>
 {
-    let mut servers = load();
+    let mut file = read_file();
 
-    servers.retain(|stored| stored.id != id);
+    file.server.retain(|stored| stored.id != id);
 
-    store(&servers)?;
+    //A SERVER THAT IS GONE IS NOT ONE TO OPEN ON: FORGETTING THE ROW THE WINDOW DIALS BY ITSELF PUTS THE
+    //ANSWER BACK TO None RATHER THAN LEAVING AN id BEHIND THAT MATCHES NOTHING
+    if file.auto_connect.as_deref() == Some(id.as_str()) { file.auto_connect = None }
 
-    Ok(servers)
+    store(&file)?;
+
+    Ok(file.server)
+}
+
+//WHICH ROW THE WINDOW OPENS ON, AND None WHERE THERE IS NONE OR WHERE THE ONE WRITTEN DOWN HAS SINCE BEEN
+//FORGOTTEN - AN id THAT MATCHES NOTHING IS THE SAME ANSWER AS NO id AT ALL, AND SAYING SO HERE KEEPS THE
+//SETTINGS ROW AND THE STARTUP FROM DISAGREEING ABOUT IT
+pub(crate) fn auto_connect() -> Option<String>
+{
+    let file = read_file();
+    let wanted = file.auto_connect?;
+
+    file.server.iter().any(|stored| stored.id == wanted).then_some(wanted)
+}
+
+#[tauri::command]
+pub(crate) fn get_auto_connect() -> Option<String>
+{
+    auto_connect()
+}
+
+//AN EMPTY id IS None, WHICH IS THE ROW'S FIRST ENTRY AND WHAT THE PROGRAM SHIPS WITH: OPENING ON THE LIST
+//AND DIALLING NOTHING. IT IS NOT A COMMAND OF ITS OWN - THE WINDOW ASKS FOR IT THROUGH THE SETTINGS ROW
+//IT IS DRAWN AS (settings.rs::set_client_choice), WHICH IS THE ONE PLACE THAT KNOWS THE KEY
+pub(crate) fn set_auto_connect(id: String) -> Result<(), String>
+{
+    let mut file = read_file();
+
+    file.auto_connect = file.server.iter().any(|stored| stored.id == id).then_some(id);
+
+    store(&file)
 }

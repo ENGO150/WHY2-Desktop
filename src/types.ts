@@ -177,7 +177,16 @@ export interface CommandInfo
 export type ClientValueInfo =
     | { kind: "toggle"; value: boolean }
     | { kind: "volume"; value: { percent: number; max: number; step: number } }
-    | { kind: "device"; value: { id: string; input: boolean } }; //EMPTY ID = WHATEVER THE SYSTEM PICKS
+    | { kind: "device"; value: { id: string; input: boolean } } //EMPTY ID = WHATEVER THE SYSTEM PICKS
+    | { kind: "choice"; value: { id: string; options: ChoiceOption[] } }; //EMPTY ID = NONE, THE DEFAULT
+
+//ONE ANSWER A CHOICE ROW OFFERS - THE SERVER TO OPEN ON, AND NOTHING ELSE YET. IT IS THE SHAPE A DEVICE
+//HAS, AND DELIBERATELY SO: THE PICKER IS ONE LIST OF id/label PAIRS AND DOES NOT CARE WHO OPENED IT
+export interface ChoiceOption
+{
+    id: string;
+    label: string;
+}
 
 //ONE ROW OF client.toml THE SETTINGS DIALOG OFFERS. EVERY ONE OF THEM IS WRITTEN THROUGH THE MOMENT IT IS
 //TOUCHED - THIS CONFIG IS OURS, UNLIKE THE SERVER'S
@@ -216,7 +225,7 @@ export interface AudioDevices
 export interface Picker
 {
     title: string;
-    entries: AudioDevice[]; //ENTRY 0 IS ALWAYS THE SYSTEM DEFAULT
+    entries: ChoiceOption[]; //ENTRY 0 IS ALWAYS THE ABSENT ANSWER - THE SYSTEM DEFAULT, OR None
     selected: number;
     row: number;            //THE SETTINGS ROW THAT OPENED IT
 }

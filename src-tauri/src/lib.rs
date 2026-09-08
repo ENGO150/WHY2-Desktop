@@ -77,7 +77,7 @@ use why2_chat::network::screen::client as screen_client;
 use state::AppState;
 
 use net::{ connect_to_server, refresh_screens, answer_tofu };
-use servers::{ get_servers, save_server, remove_server };
+use servers::{ get_servers, save_server, remove_server, get_auto_connect };
 use input::{ send_input, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
 use clipboard::copy_text;
@@ -90,6 +90,7 @@ use settings::
     get_client_settings,
     get_audio_devices,
     set_client_setting,
+    set_client_choice,
     set_client_volume,
     set_client_device,
     set_voice_speaker,
@@ -230,6 +231,7 @@ pub fn run()
             get_client_settings,
             get_audio_devices,
             set_client_setting,
+            set_client_choice,
             set_client_volume,
             set_client_device,
             set_voice_speaker,
@@ -248,6 +250,7 @@ pub fn run()
             get_servers,
             save_server,
             remove_server,
+            get_auto_connect,
             window_chrome,
             notify_message,
             notification_target,

@@ -224,6 +224,15 @@ pub(crate) struct AudioDeviceInfo
     pub(crate) label: String,
 }
 
+//ONE ANSWER A Choice ROW OFFERS. IT IS THE SHAPE A DEVICE HAS, AND DELIBERATELY SO - THE PICKER IN THE
+//WINDOW IS ONE LIST OF id/label PAIRS AND DOES NOT CARE WHICH KIND OF ROW OPENED IT
+#[derive(Serialize, Clone)]
+pub(crate) struct ChoiceOption
+{
+    pub(crate) id: String,
+    pub(crate) label: String,
+}
+
 #[derive(Serialize, Clone, Default)]
 pub(crate) struct AudioDevices
 {
@@ -269,6 +278,7 @@ pub(crate) struct VocabularyValue
 pub(crate) enum ClientKind
 {
     Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
+    Choice,                  //ONE OF A LIST THE BRIDGE BUILDS - THE SERVER TO OPEN ON, AND NOTHING ELSE YET
     #[cfg(voice)] Volume,
     #[cfg(voice)] Device { input: bool },
 }
@@ -280,6 +290,11 @@ pub(crate) enum ClientKind
 pub(crate) enum ClientValue
 {
     Toggle(bool), //WHAT THE ROW SAYS, WHICH IS NOT ALWAYS WHAT THE KEY HOLDS
+
+    //THE ANSWERS COME WITH THE ROW RATHER THAN BEING ENUMERATED BESIDE IT THE WAY THE DEVICES ARE: THIS
+    //LIST IS THE SERVER LIST, WHICH IS OURS AND IS READ OFF THE DISK IN THE SAME BREATH AS THE VALUE
+    Choice { id: String, options: Vec<ChoiceOption> }, //EMPTY ID = NONE, THE DEFAULT
+
     #[cfg(voice)] Volume { percent: u32, max: u32, step: u32 },
     #[cfg(voice)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
 }

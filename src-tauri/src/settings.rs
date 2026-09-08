@@ -34,6 +34,7 @@ use why2_chat::network::voice::client::{ self as voice, options as voice_options
 
 use crate::types::*;
 use crate::state::AppState;
+use crate::servers::{ self, StoredServer };
 use crate::emit::say;
 
 #[cfg(voice)]
@@ -71,10 +72,18 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
+//THE ONE ROW IN THE BOX THAT IS NOT client.toml'S. THE WINDOW OPENS ON THE LIST AND DIALS NOTHING UNLESS
+//THIS SAYS OTHERWISE, WHICH IS WHY None IS WHAT IT SHIPS WITH: A SESSION NOBODY ASKED FOR IS ONE TO BE
+//LEFT AGAIN BY HAND
+pub(crate) const STARTUP_SETTINGS: &[SettingsKey] =
+&[
+    ("Startup", "Connect automatically to", "auto_connect", ClientKind::Choice),
+];
+
 //EVERY ROW THE BOX OFFERS, IN THE ORDER tui/settings.rs OPENS THEM
 pub(crate) fn client_keys() -> impl Iterator<Item = &'static SettingsKey>
 {
-    AUDIO_SETTINGS.iter().chain(INTERFACE_SETTINGS)
+    AUDIO_SETTINGS.iter().chain(INTERFACE_SETTINGS).chain(STARTUP_SETTINGS)
 }
 
 //CELLS OF VOLUME BAR AND THE STEP EITHER ARROW MOVES IT BY, BOTH AS tui/settings.rs HAS THEM. THE BAR IS
@@ -119,6 +128,18 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
                 ClientValue::Toggle(if *invert { !stored } else { stored })
             },
 
+            //THE ONLY ROW WHOSE ANSWER IS NOT IN THE CONFIG AT ALL: THE SERVER LIST IS OURS, AND SO IS
+            //THE KEY POINTING INTO IT (SEE servers.rs)
+            ClientKind::Choice => ClientValue::Choice
+            {
+                id: servers::auto_connect().unwrap_or_default(),
+                options: servers::load().into_iter().map(|server| ChoiceOption
+                {
+                    label: server_label(&server),
+                    id: server.id,
+                }).collect(),
+            },
+
             #[cfg(voice)]
             ClientKind::Volume => ClientValue::Volume
             {
@@ -135,6 +156,15 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
             },
         },
     }).collect()
+}
+
+//A ROW OF THE SERVER LIST AS THE PICKER SAYS IT: WHAT THE SERVER CALLS ITSELF WHERE WE HAVE HEARD IT SAY
+//SO, THE ADDRESS OTHERWISE - AND WHO WE ARE THERE, SINCE THE SAME ADDRESS TWICE IS TWO ACCOUNTS
+fn server_label(server: &StoredServer) -> String
+{
+    let name = server.name.as_deref().filter(|name| !name.is_empty()).unwrap_or(&server.address);
+
+    if server.username.is_empty() { name.to_string() } else { format!("{name} ({})", server.username) }
 }
 
 #[tauri::command]
@@ -184,6 +214,16 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
     }
 
     Ok(get_client_config())
+}
+
+//POINT A CHOICE ROW SOMEWHERE ELSE. THERE IS ONE OF THEM AND IT IS THE SERVER LIST'S, SO THE WRITE GOES
+//WHERE THE LIST LIVES RATHER THAN INTO client.toml - AN EMPTY ID IS None, WHICH IS OPENING ON THE LIST
+#[tauri::command]
+pub(crate) fn set_client_choice(key: String, id: String) -> Result<(), String>
+{
+    let Some(ClientKind::Choice) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+
+    servers::set_auto_connect(id)
 }
 
 //SLIDE ONE VOLUME. THE STORED VALUE COMES BACK BECAUSE THE CEILING IS THE VOICE CLIENT'S, NOT THE BOX'S -

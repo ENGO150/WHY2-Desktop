@@ -16,13 +16,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { AudioDevice, AudioDevices, ClientSetting, SettingRow, SettingsRow } from "./types";
+import type { AudioDevice, AudioDevices, ChoiceOption, ClientSetting, SettingRow, SettingsRow } from "./types";
 
 //STARTUP-ONLY ONES IN USE
 export const SAVE_LABEL = "Save";
 export const RESTART_LABEL = "Restart server";
 
 export const DEFAULT_DEVICE = "System default"; //SHOWN FOR AN EMPTY input_device/output_device
+
+export const NO_CHOICE = "None"; //SHOWN FOR AN EMPTY auto_connect - THE WINDOW OPENS ON THE LIST AND DIALS NOTHING
 
 export const NO_DEVICES: AudioDevices = { input: [], output: [] };
 
@@ -35,6 +37,13 @@ export function deviceEntries(devices: AudioDevices, id: string, input: boolean)
     if (id && !entries.some((entry) => entry.id === id)) entries.push({ id, label: id });
 
     return entries;
+}
+
+//None PLUS EVERY ANSWER THE BRIDGE SENT WITH THE ROW. A STORED ANSWER THAT IS NOT AMONG THEM IS NOT KEPT
+//THE WAY AN UNPLUGGED DEVICE IS: THE BRIDGE ALREADY ANSWERS None FOR A SERVER THAT HAS BEEN FORGOTTEN
+export function choiceEntries(options: ChoiceOption[]): ChoiceOption[]
+{
+    return [{ id: "", label: NO_CHOICE }, ...options];
 }
 
 //OUR OWN CONFIG, GROUPED THE WAY THE BRIDGE GROUPED IT

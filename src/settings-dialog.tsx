@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import type { SettingsBox, SettingsItem } from "./types";
 import { Icon, IconButton } from "./icons";
 import { Switch } from "./components";
-import { RESTART_LABEL, DEFAULT_DEVICE, unsavedRows } from "./settings";
+import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./settings";
 
 //tui/settings.rs WITH REAL CONTROLS IN IT. THE TWO HALVES ARE NOT SYMMETRICAL AND THAT IS THE WHOLE
 //SHAPE OF IT: client.toml IS OURS AND A ROW IS WRITTEN THROUGH THE MOMENT IT IS FLIPPED, WHILE
@@ -28,7 +28,7 @@ import { RESTART_LABEL, DEFAULT_DEVICE, unsavedRows } from "./settings";
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard, narrow,
-    onKeyDown, setToggle, setVolume, setDevice, activateRow, commitEdit, editSettings, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -40,7 +40,7 @@ export function SettingsDialog(
     onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
     setToggle: (index: number, on: boolean) => void;
     setVolume: (index: number, percent: number, max: number) => void;
-    setDevice: (index: number, id: string) => void;
+    setPicked: (index: number, id: string) => void; //A DEVICE OR A CHOICE - THE ROW SAYS WHICH
     activateRow: (index: number) => void;
     commitEdit: () => void;
     editSettings: (change: (box: SettingsBox) => SettingsBox | null) => void;
@@ -109,6 +109,24 @@ export function SettingsDialog(
                         className={`flex ${wide} items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
                     >
                         <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
+                        <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
+                    </button>
+                );
+            }
+
+            //THE SERVER LIST CAME WITH THE ROW, SO THE LABEL IS LOOKED UP IN IT THE SAME WAY A DEVICE'S IS
+            if (item.value.kind === "choice")
+            {
+                const { id, options } = item.value.value;
+                const found = options.find((option) => option.id === id);
+
+                return (
+                    <button
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); activateRow(index); }}
+                        className={`flex ${wide} items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
+                    >
+                        <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : NO_CHOICE}</span>
                         <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
                     </button>
                 );
@@ -274,7 +292,8 @@ export function SettingsDialog(
                     )}
 
                     {/* THE DEVICE LIST, ON TOP OF THE ROWS AND NOT BESIDE THEM - IT IS ANSWERING THE ROW
-                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE DIALOG UNTIL IT IS ANSWERED */}
+                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE DIALOG UNTIL IT IS ANSWERED.
+                        IT IS ONE LIST OF id/label PAIRS - A DEVICE ROW AND THE SERVER ROW BOTH OPEN IT */}
                     {box.picker && (
                         <div
                             onMouseDown={(event) =>
@@ -296,7 +315,9 @@ export function SettingsDialog(
                                     {
                                         const chosen = index === box.picker!.selected;
                                         const owner = box.rows[box.picker!.row];
-                                        const using = owner?.row === "item" && owner.item.value.kind === "device" && owner.item.value.value.id === entry.id;
+                                        const using = owner?.row === "item"
+                                            && (owner.item.value.kind === "device" || owner.item.value.kind === "choice")
+                                            && owner.item.value.value.id === entry.id;
 
                                         return (
                                             <div
@@ -305,7 +326,7 @@ export function SettingsDialog(
                                                 onMouseEnter={() => editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: index } } : current))}
                                                 onClick={() =>
                                                 {
-                                                    setDevice(box.picker!.row, entry.id);
+                                                    setPicked(box.picker!.row, entry.id);
                                                     editSettings((current) => ({ ...current, picker: null }));
                                                     settingsRef.current?.focus();
                                                 }}

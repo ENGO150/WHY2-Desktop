@@ -309,6 +309,15 @@ would be a session nobody asked for, to be left again by hand; which server this
 question a list cannot answer by itself. The startup read of `get_servers` therefore only fills the list —
 an empty one is the single case anything is asked, and what it asks is the form that adds the first server.
 
+**Unless somebody said which.** `auto_connect` is a row in the settings dialog (`Startup`, `None` by default)
+naming the one server the window dials by itself, and it is kept **beside the list rather than in
+`client.toml`** — it is an `id` into `desktop_servers.toml`, and the terminal client that shares that config
+has no list to point at. It sits as a bare key **ahead of** the `[[server]]` array, since a key written after
+a table belongs to it. The bridge answers `None` for an id that matches nothing, and forgetting a server
+clears it, so the row and the startup cannot disagree about a server that is gone. `App.tsx` asks for it in
+the same breath as the list — an id is worth nothing without the row it names — and hands what it finds to
+`dial`, which is the same dial a click on that row would have made, failures and all.
+
 `LoginScreen` is one screen with three things to ask, and `mode` says which: the **prompt** (one field) while
 the server has an identity step pending that nothing was stored for, the **form** that adds a server (address,
 username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from.
@@ -759,6 +768,14 @@ characters. A switch stays where every other settings screen puts it, on the rig
 
 `restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
 by the next, and is dead while there are unsaved rows in the box.
+
+The `Startup` row is the fourth kind, and it is the one row in the box whose answer is not in a config file
+at all: `ClientKind::Choice` carries the answers **with** the value (`ClientValue::Choice { id, options }`)
+rather than having them enumerated beside it the way the devices are, because that list is the server list
+and is read off the disk in the same breath. It opens the same picker a device row does — one list of
+`id`/`label` pairs, which is why `setPicked` is one function taking the row's own kind and writing through
+`set_client_device` or `set_client_choice` accordingly — and ←→ cycles it, `None` being its first entry and
+not a special case.
 
 The `Audio` rows above them are the third kind. A **volume** carries the range it lives in along with it
 (`ClientValue::Volume { percent, max, step }`), because the ceiling is `voice_options::VOLUME_MAX` and not a
