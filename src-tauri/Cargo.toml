@@ -63,7 +63,7 @@ toml = "1"
 
 # THE DESKTOP BUILD IS THE WHOLE PROGRAM: THE CHAT, THE CALL AND THE SCREEN SHARE BOTH WAYS
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.1.2", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.1.3", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 # CLOSING THE WINDOW PUTS THE PROGRAM IN THE TRAY RATHER THAN ENDING IT (src/tray.rs), AND THE ICON IS
 # TAURI'S OWN FEATURE - IT IS ASKED FOR ON THIS TARGET ALONE BECAUSE A PHONE HAS NO TRAY TO PUT ANYTHING
@@ -95,7 +95,7 @@ glib = "0.18"
 # DRAWS THROUGH winit/wgpu, WHICH WANT THE MAIN THREAD TAURI ALREADY OWNS - AND A PHONE SHARES ITS SCREEN
 # THROUGH MediaProjection ANYWAY - SO THAT ONE IS OFF, AND build.rs TURNS THE `screen` CFG OFF WITH IT
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.1.2", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.1.3", default-features = false, features = ["client_base", "client_voice"] }
 
 # THE FILE PICKER ON ANDROID ANSWERS WITH A content:// URI, WHICH IS A HANDLE ON SOMEBODY ELSE'S FILE AND
 # NOT A PLACE ON THE DISK - THE CONTENT RESOLVER IS THE ONLY THING THAT OPENS ONE, AND THIS IS THE WAY TO
