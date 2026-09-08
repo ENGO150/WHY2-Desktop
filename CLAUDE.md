@@ -905,6 +905,19 @@ none` on the picture is what keeps the page itself out of the gesture (React's o
 so a `preventDefault` there would only warn), and esc and the back gesture take the zoom off before they
 take the picture away.
 
+**A zoomed picture is then looked around by dragging it**, which is the other half of the gesture: a phone
+has no scrollbars, and zooming back out to pick a different corner is not what anybody means by a zoom.
+One finger on a picture that is already zoomed moves it (`onPanStart`/`onPanMove`/`onPanEnd`), and what it
+moves is the **anchor** rather than a translation beside it — the zoom is said in one thing, a percent of
+the picture, and it stays said in that one thing (`PAN_SLOP` is how far the finger travels before this is a
+drag and not a tap or a hold). An anchor is a fixed point, so moving it by *d* moves the picture by
+`-(scale - 1)d`, which is where the arithmetic comes from; it is a percent of the picture's **layout** size
+(`offsetWidth`), since `getBoundingClientRect` already has the scale in it. Clamping the anchor to 0–100%
+is exactly what keeps the picture covering the frame, so there is no edge to drag a hole in from. The
+origin is written straight onto the element while the finger is down and handed back on the way up, as the
+pinch and the drawers are, and `pannedRef` drops the click a drag leaves behind — otherwise letting go
+would zoom back out.
+
 **A right-click on a picture — or a hold on a phone — opens a menu**, in the pane and in the lightbox both.
 It is `useHoldMenu`, the gesture the server lists already use, and `PictureMenu` in `messages.tsx` is what it
 opens: **Copy image** and **Save image**. A hold ends in a click like any other press, so `held()` is what

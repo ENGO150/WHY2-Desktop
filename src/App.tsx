@@ -105,6 +105,10 @@ const ZOOM_MAX = 6;
 const TAP_AGAIN = 300;
 const TAP_SLOP = 32;
 
+//AND HOW FAR A FINGER TRAVELS BEFORE IT IS MOVING THE PICTURE RATHER THAN TAPPING IT: A TAP IS NEVER
+//PERFECTLY STILL, AND A PAN THAT STARTED AT THE FIRST PIXEL WOULD EAT THE SECOND HALF OF EVERY ZOOM
+const PAN_SLOP = 8;
+
 //AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
 //IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
 //THE WINDOW BEING RESIZED UNDER IT
@@ -222,6 +226,12 @@ function App()
     //CANNOT ANSWER SINCE IT HAS DROPPED ITS OWN STATE BY THE TIME ANYTHING ELSE IS ASKED
     const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
     const pinchedRef = useRef(false);
+
+    //AND THE ONE FINGER MOVING A PICTURE THAT IS ALREADY ZOOMED, WITH THE ANCHOR IT STARTED FROM AND THE
+    //ONE IT HAS GOT TO. A ZOOM IS ONLY HALF THE GESTURE - THE OTHER HALF IS LOOKING AROUND WHAT IT WENT
+    //INTO, WHICH ON A PHONE IS A DRAG AND NOT A SECOND ZOOM SOMEWHERE ELSE
+    const panRef = useRef<{ x: number; y: number; ox: number; oy: number; live: Zoom } | null>(null);
+    const pannedRef = useRef(false);
 
     //WHETHER THIS PLATFORM HAS A CLIPBOARD THAT TAKES PIXELS AND A DIALOG TO ASK "WHERE" WITH. A PHONE
     //HAS NEITHER, AND ITS MENU IS THEREFORE THE ONE ITEM
@@ -1530,10 +1540,11 @@ function App()
     {
         const box = event.currentTarget.getBoundingClientRect();
 
-        //A PINCH IS NOT A TAP, AND ANY CLICK IT LEAVES BEHIND IS NOT ONE EITHER
-        if (pinchedRef.current)
+        //A PINCH IS NOT A TAP, AND NEITHER IS A DRAG - ANY CLICK EITHER OF THEM LEAVES BEHIND IS NOT ONE
+        if (pinchedRef.current || pannedRef.current)
         {
             pinchedRef.current = false;
+            pannedRef.current = false;
             tapRef.current = null;
 
             return;
@@ -1635,6 +1646,69 @@ function App()
 
         //ALL THE WAY BACK OUT IS THE PICTURE AS IT ARRIVED, AND NOT A ZOOM OF ONE
         setZoom(start.live <= 1.01 ? null : { scale: start.live, x: start.x, y: start.y });
+    };
+
+    //AND ONE FINGER ON A PICTURE THAT IS ALREADY ZOOMED, WHICH IS HOW EVERYBODY LOOKS AROUND ONE: THE
+    //PICTURE FOLLOWS THE FINGER RATHER THAN HAVING TO BE ZOOMED OUT OF AND BACK INTO SOMEWHERE ELSE.
+    //IT IS THE *ANCHOR* THAT MOVES AND NOT A TRANSLATION BESIDE IT, SO WHERE SOMEBODY IS LOOKING STAYS
+    //THE ONE THING THE ZOOM IS EVER SAID IN - A PERCENT OF THE PICTURE, WHICH SURVIVES THE WINDOW BEING
+    //RESIZED UNDER IT. AN ANCHOR IS A FIXED POINT, SO MOVING IT BY d MOVES THE PICTURE BY -(scale - 1)d
+    const onPanStart = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        const touch = event.touches[0];
+
+        if (event.touches.length !== 1 || !zoom || !touch)
+        {
+            panRef.current = null;
+
+            return;
+        }
+
+        panRef.current = { x: touch.clientX, y: touch.clientY, ox: zoom.x, oy: zoom.y, live: zoom };
+    };
+
+    const onPanMove = (event: React.TouchEvent<HTMLImageElement>) =>
+    {
+        const start = panRef.current;
+        const touch = event.touches[0];
+        const picture = pictureRef.current;
+
+        if (!start || event.touches.length !== 1 || !touch || !picture) return;
+
+        const dx = touch.clientX - start.x;
+        const dy = touch.clientY - start.y;
+
+        //UNTIL IT HAS TRAVELLED, THIS IS STILL A TAP OR A HOLD AND NOT A DRAG
+        if (!pannedRef.current && Math.hypot(dx, dy) < PAN_SLOP) return;
+
+        pannedRef.current = true;
+
+        //THE LAYOUT SIZE AND NOT THE BOUNDING BOX: THE ANCHOR IS A PERCENT OF THE PICTURE AS IT WOULD
+        //STAND UNZOOMED, WHILE getBoundingClientRect ALREADY HAS THE SCALE IN IT
+        const reach = start.live.scale - 1;
+        const x = Math.min(100, Math.max(0, start.ox - (dx / (reach * picture.offsetWidth)) * 100));
+        const y = Math.min(100, Math.max(0, start.oy - (dy / (reach * picture.offsetHeight)) * 100));
+
+        //STRAIGHT ONTO THE ELEMENT WHILE THE FINGER IS DOWN, EXACTLY AS THE PINCH AND THE DRAWERS ARE
+        picture.style.transformOrigin = `${x}% ${y}%`;
+
+        panRef.current = { ...start, live: { ...start.live, x, y } };
+    };
+
+    const onPanEnd = () =>
+    {
+        const start = panRef.current;
+
+        panRef.current = null;
+
+        if (!start || !pannedRef.current) return;
+
+        const picture = pictureRef.current;
+
+        //BACK TO THE CLASSES AND TO THE STATE, WHERE THE SAME ANCHOR ARRIVES A RENDER LATER
+        if (picture) picture.style.transformOrigin = "";
+
+        setZoom(start.live);
     };
 
     const pictures: Pictures =
@@ -2802,20 +2876,33 @@ function App()
                         if (event.touches.length > 1)
                         {
                             pinchedRef.current = true;
+                            pannedRef.current = false;
 
                             holdPicture.onTouchEnd();
                         }
                         else
                         {
                             pinchedRef.current = false;
+                            pannedRef.current = false;
 
                             holdPicture.onTouchStart(event);
                         }
 
                         onPinchStart(event);
+                        onPanStart(event);
                     }}
-                    onTouchMove={(event) => { holdPicture.onTouchMove(); onPinchMove(event); }}
-                    onTouchEnd={(event) => { holdPicture.onTouchEnd(); onPinchEnd(event); }}
+                    onTouchMove={(event) =>
+                    {
+                        holdPicture.onTouchMove();
+                        onPinchMove(event);
+                        onPanMove(event);
+                    }}
+                    onTouchEnd={(event) =>
+                    {
+                        holdPicture.onTouchEnd();
+                        onPinchEnd(event);
+                        onPanEnd();
+                    }}
                     style={zoom
                         ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
                         : undefined}
