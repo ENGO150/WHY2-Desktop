@@ -2644,6 +2644,10 @@ function App()
         {
             if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
 
+            //A LINE WITH A NEWLINE IN IT IS SEVERAL LINES, AND THERE THE ARROWS ARE THE ONLY WAY TO WALK
+            //BETWEEN THEM - THE TERMINAL'S HISTORY IS OVER A ONE-LINE INPUT AND HAS NOTHING TO SAY HERE
+            if (chatInput.includes("\n")) return;
+
             event.preventDefault();
 
             const line = event.key === "ArrowUp"
