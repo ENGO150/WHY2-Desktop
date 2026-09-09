@@ -88,8 +88,15 @@ jobs:
       # THE BUNDLE SHIPS UBUNTU'S libwayland, AND THE HOST'S MESA libEGL IS LINKED AGAINST THE HOST'S COPY -
       # TWO IN ONE PROCESS MEANS THE wl_display GTK MADE IS A POINTER EGL DOES NOT RECOGNISE, SO
       # eglGetPlatformDisplay ANSWERS EGL_BAD_PARAMETER, WEBKIT'S WEB PROCESS ABORTS AND THE WINDOW STAYS GREY.
-      # THESE FOUR ARE ON APPIMAGE'S OWN EXCLUDELIST FOR EXACTLY THAT REASON: THEY BELONG TO THE HOST
-      - name: Unbundle libwayland from the AppImage (Linux)
+      # THESE FOUR ARE ON APPIMAGE'S OWN EXCLUDELIST FOR EXACTLY THAT REASON: THEY BELONG TO THE HOST.
+      #
+      # libpipewire IS THE SAME FAULT ON THE OTHER HALF OF THE PROGRAM, AND IT IS THE CALL. THE BINARY
+      # LINKS IT (client_screen'S CAPTURE DOES), SO UBUNTU'S COPY IS BUNDLED AND LOADED FIRST - AND THEN
+      # alsa-lib dlopen()s THE *HOST'S* libasound_module_pcm_pipewire.so, WHICH RESOLVES AGAINST THE
+      # BUNDLED ONE AND FAILS ON A SYMBOL IT DOES NOT HAVE (pw_log_topic_register ON 1.2 AND UP). THE
+      # DEFAULT PCM THEN WILL NOT OPEN AT ALL, WHICH LOOKS LIKE A CALL THAT DISCONNECTS THE INSTANT IT
+      # IS JOINED. THE PLUGIN IS THE HOST'S, SO THE LIBRARY UNDER IT HAS TO BE THE HOST'S TOO
+      - name: Unbundle the host's libraries from the AppImage (Linux)
         if: runner.os == 'Linux'
         env:
           ARCH: x86_64
@@ -103,6 +110,7 @@ jobs:
           chmod +x appimagetool
           "$appimage" --appimage-extract >/dev/null
           rm -f squashfs-root/usr/lib/libwayland-*.so.*
+          rm -f squashfs-root/usr/lib/libpipewire-*.so.*
           rm -f "$appimage"
           ./appimagetool squashfs-root "$appimage"
           rm -rf squashfs-root appimagetool

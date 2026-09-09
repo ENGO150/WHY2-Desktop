@@ -3047,6 +3047,13 @@ function App()
             //h-dvh IS THE WINDOW WHERE WE ARE THE ONLY THING IN IT, AND A COLUMN OF WHAT IS LEFT UNDER
             //THE TITLE BAR WHERE THERE IS ONE
             className={`noise-overlay safe-top safe-bottom relative flex overflow-hidden bg-chat text-[15px] text-text ${chrome === "none" ? "h-dvh w-screen" : "min-h-0 w-full flex-1"}`}
+
+            //AND WHERE THE TOP OF THE PAGE ACTUALLY IS. THE DRAWERS OF A NARROW WINDOW ARE fixed, WHICH
+            //IS AGAINST THE VIEWPORT AND NOT AGAINST THIS COLUMN - SO WHERE THE BAR IS OURS THEY HAVE TO
+            //BE TOLD TO START UNDER IT, OR THEIR FIRST INCH IS BEHIND IT AND CUT OFF. IT IS A CUSTOM
+            //PROPERTY AND NOT A PROP BECAUSE IT INHERITS DOWN THE DOM, WHICH IS WHAT A fixed CHILD STILL
+            //READS - AND A WINDOW WIDE ENOUGH TO HAVE NO DRAWERS SIMPLY NEVER ASKS
+            style={{ "--chrome-top": chrome === "none" ? "0px" : "var(--titlebar)" } as React.CSSProperties}
         >
             {connected && (
                 <>
@@ -3059,8 +3066,9 @@ function App()
                             ref={scrimEl}
                             onMouseDown={() => setDrawer(null)}
                             //fixed AND NOT absolute, LIKE THE DRAWERS IT SITS UNDER: BOTH ARE AGAINST THE
-                            //VIEWPORT, SO THE DARKNESS REACHES THE SAME EDGES OF THE GLASS THEY DO
-                            className={`scrim fixed inset-0 z-30 bg-black/50 ${drawer === null ? "pointer-events-none opacity-0" : "opacity-100"}`}
+                            //VIEWPORT, SO THE DARKNESS REACHES THE SAME EDGES OF THE GLASS THEY DO -
+                            //THE BAR WE DRAW OURSELVES INCLUDED, WHICH IS WHAT --chrome-top IS
+                            className={`scrim fixed inset-x-0 bottom-0 top-[var(--chrome-top)] z-30 bg-black/50 ${drawer === null ? "pointer-events-none opacity-0" : "opacity-100"}`}
                         />
                     )}
 

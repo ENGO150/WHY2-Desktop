@@ -71,6 +71,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --syntax-attr: #f0c9c4;
 
     --radius: 8px;
+
+    /* THE BAR WE DRAW OURSELVES (titlebar.tsx'S h-8 AND ITS BOTTOM BORDER - ONE ANSWER SPELLED TWICE),
+       AND HOW FAR DOWN THE GLASS THE PAGE ACTUALLY STARTS. A NARROW WINDOW'S DRAWERS ARE fixed, WHICH
+       IS AGAINST THE VIEWPORT AND NOT AGAINST THE COLUMN UNDER THE BAR - SO WITHOUT THIS THEIR TOP
+       INCH IS BEHIND IT. App.tsx SETS --chrome-top ON <main>, AND IT IS 0 WHERE THE FRAME IS SOMEBODY
+       ELSE'S TO DRAW (macOS, A PHONE, A BROWSER) */
+    --titlebar: calc(2rem + 1px);
+    --chrome-top: 0px;
 }
 
 @theme inline

@@ -89,7 +89,7 @@ export function Sidebar(
 
     return (
                     <aside ref={panelRef} className={`${narrow
-                        ? `drawer safe-top safe-bottom fixed inset-y-0 left-0 z-40 w-[86%] max-w-[368px] shadow-2xl ${drawer === "left" ? "translate-x-0" : "drawer-shut -translate-x-full"}`
+                        ? `drawer safe-top safe-bottom fixed bottom-0 left-0 top-[var(--chrome-top)] z-40 w-[86%] max-w-[368px] shadow-2xl ${drawer === "left" ? "translate-x-0" : "drawer-shut -translate-x-full"}`
                         : "w-[308px] shrink-0"} flex-col border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
                     <div className="flex min-h-0 flex-1">
                         {/* THE SERVER RAIL BELONGS TO THIS COLUMN RATHER THAN BESIDE IT: ON A PHONE THE

@@ -39,7 +39,7 @@ export function MemberColumn(
 {
     return (
                         <aside ref={panelRef} className={narrow
-                            ? `drawer safe-top safe-bottom fixed inset-y-0 right-0 z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
+                            ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
                             : "flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar"}>
                             <div className="scroller scroller-quiet flex-1 px-2 pb-3">
                                 <SectionLabel>Online — {users.length}</SectionLabel>

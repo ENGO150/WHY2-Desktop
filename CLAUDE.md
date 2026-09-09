@@ -1349,7 +1349,13 @@ chat app has settled on:
 - The two sidebars become **drawers** over the conversation — the same JSX, `position: fixed` and translated
   off-canvas. They are always rendered and never conditionally mounted, because a panel that is mounted when it
   opens has nowhere to slide from; `.drawer-shut` makes the parked one `visibility: hidden` so it is out of
-  reach of a tap and of the tab key.
+  reach of a tap and of the tab key. **`fixed` is against the viewport and not against `<main>`**, and where
+  the title bar is ours (see **The window**) the page starts an inch below the top of the glass — so a drawer
+  pinned to `inset-y-0` had its first 33 pixels behind the bar and its heading cut off, which a phone never
+  shows and a desktop window dragged under 820px shows every time. They stand on `--chrome-top` instead: a
+  custom property `App.tsx` writes on `<main>` (`--titlebar` where the bar is ours, `0` where it is somebody
+  else's — macOS, a phone, a browser), inherited down the DOM, which is what a `fixed` child still reads. The
+  scrim under them takes it too, so the darkness begins where they do.
 - The channel header gains the hamburger, and its members button toggles the right drawer instead of the
   column. Picking a channel, a conversation or a member closes the drawer it was picked in.
 - A **sideways swipe** on the window opens and closes them, and the drawer follows the finger rather than
@@ -1540,6 +1546,20 @@ the crate arrives off crates.io rather than off the disk beside it.
 silicon, `macos-13` is Intel), Windows — installing the same system libraries the local build wants, then
 `npm run tauri build`. That runs `beforeBuildCommand` on the way in, so the tsc typecheck is part of it
 rather than a job of its own. The bundles are uploaded per runner.
+
+**The AppImage is then opened up and two of its libraries taken back out**, because they are the runner's and
+the machine it lands on has its own. `libwayland-*` is the older half of it: the host's Mesa `libEGL` is
+linked against the host's copy, and two in one process means the `wl_display` GTK made is a pointer EGL does
+not recognise — `eglGetPlatformDisplay` answers `EGL_BAD_PARAMETER`, WebKit's web process aborts, and the
+window stays grey. **`libpipewire-0.3.so.0` is the same fault and it costs the call**: the binary links it
+(`client_screen`'s capture does), so Ubuntu's copy is bundled and loaded first, and then alsa-lib `dlopen`s
+the **host's** `libasound_module_pcm_pipewire.so`, which resolves against the bundled one and fails on a
+symbol it does not have (`pw_log_topic_register`). The default PCM will not open at all, which looks like a
+call that disconnects the instant it is joined. The plugin is the host's, so the library under it has to be
+the host's — the price being that an AppImage now wants a `libpipewire-0.3.so.0` on the machine it runs on,
+which is the same bargain the `libwayland` removal already made. Both are on AppImage's own excludelist for
+exactly this reason. It is done by extracting the finished AppImage, deleting the two, and repacking with
+`appimagetool`, since `linuxdeploy` is run by Tauri and not by this workflow.
 
 **`build-android`** installs JDK 21, the SDK, the NDK and the four targets, generates `gen/android` (it is
 not tracked), and builds a **release** APK. The generated Gradle project carries **no `signingConfigs`**, so
