@@ -205,6 +205,11 @@ pub fn run()
             #[cfg(desktop)]
             tray::init(_app.handle())?;
 
+            //AND THE KEY THAT ENDS IT WITHOUT GOING LOOKING FOR THE ICON, WHICH IS A GTK MENU'S
+            //ACCELERATOR ON THE WINDOW - SO IT IS ASKED FOR AFTER THERE IS BOTH A WINDOW AND A TRAY
+            #[cfg(target_os = "linux")]
+            tray::accelerator(_app.handle())?;
+
             //EVERY DIAL GOES THROUGH THE PROXY WHEN THE CONFIG ASKS FOR IT
             if config::read_config("socks5_enabled") { options::enable_socks5(); }
 

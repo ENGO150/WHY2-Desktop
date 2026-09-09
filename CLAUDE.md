@@ -641,6 +641,26 @@ minimized are two different places a window can be in and it can be in both.
 must not be prevented — without the flag the menu item would hide a window that is already hidden and the
 process would never end.
 
+**Quit has a key as well, and on Linux it is `Ctrl+Q`** — the one every other program on that desktop
+answers. The window manager's own close (Super+Q on Hyprland, Alt+F4 elsewhere) is the same `CloseRequested`
+the × is, so it puts the program in the tray; `Ctrl+Q` is the **application's** shortcut for ending something
+that goes on running behind its window, and nothing sends it to a program that has not claimed one — which is
+why this window used to do nothing at all when it was pressed. `tray.rs::accelerator` claims it the way every
+GTK program does, with an **accel group on the GTK window itself** (`gtk` is a Linux-target dependency for
+that one call, at Tauri's own version, since the `ApplicationWindow` it hands back is that crate's type). GTK
+answers accelerators in `gtk_window_key_press_event` *before* it gives the key to whatever has the focus, so
+the press is the toolkit's to act on wherever it lands, the webview included, and nothing in the page is
+listening for it. It fires the same `quit()` the menu item does.
+
+It is deliberately **not** a hidden menu with an accelerator on it, which is Tauri's own way and the obvious
+one: `set_menu` here packs a `GtkMenuBar` into the box the webview already lives in and **recurses to death
+inside GTK** — the window is undecorated and has no menu bar by design (see **The window**), and an accel
+group has no bar to hide in the first place. It is Linux alone because the convention is: macOS carries
+`Cmd+Q` in the application menu it already has, and Windows ends a program with Alt+F4 — which is a close,
+and a close here is the tray. Synthetic input cannot test it: GTK resolves an accelerator through the display
+keymap, and a virtual keyboard's keycodes do not resolve, so `wtype` misses on a plain GTK3 probe app too —
+only a real press proves it.
+
 It is `#[cfg(desktop)]` and the `tray-icon` feature is asked of `tauri` in the **non-Android** target section
 only — the module gate and the feature are one answer spelled twice, the same shape as `voice`/`screen`. A
 phone has no tray and answers this question its own way already, with the foreground service that holds the
