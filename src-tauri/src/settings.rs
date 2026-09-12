@@ -32,6 +32,9 @@ use why2_chat::
 #[cfg(voice)]
 use why2_chat::network::voice::{ consts as voice_consts, client::{ self as voice, options as voice_options } };
 
+#[cfg(screen)]
+use why2_chat::network::screen::client::options as screen_options;
+
 use crate::types::*;
 use crate::state::AppState;
 use crate::servers::{ self, StoredServer };
@@ -49,6 +52,10 @@ pub(crate) const AUDIO_SETTINGS: &[SettingsKey] =
     ("Audio", "Output device",     "output_device",     ClientKind::Device { input: false }),
     ("Audio", "Input volume",      "input_volume",      ClientKind::Volume),
     ("Audio", "Output volume",     "output_volume",     ClientKind::Volume),
+
+    //THE ATTACHED SHARE'S OWN PLAYBACK, WHICH ONLY A BUILD THAT CAN WATCH ONE HAS
+    #[cfg(screen)]
+    ("Audio", "Screen share volume", "screen_volume",   ClientKind::Volume),
     ("Audio", "Noise suppression", "noise_suppression", ClientKind::Toggle { invert: false }),
     ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
 ];
@@ -248,6 +255,9 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
     {
         "input_volume" => voice_options::set_input_volume(percent),
         "output_volume" => voice_options::set_output_volume(percent),
+
+        #[cfg(screen)]
+        "screen_volume" => screen_options::set_screen_volume(percent),
         _ => {},
     }
 
