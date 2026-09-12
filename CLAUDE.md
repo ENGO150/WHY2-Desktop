@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.1.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.1.4", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.1.1", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.1.4", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -303,6 +303,21 @@ until it works: a typo is a failed connect rather than a row to be forgotten aga
 form all come back to — and by the `disconnected` event when a switch is parked. Picking a server while
 another one is up is a **switch and not a second session**: the one in front is asked to leave with `/exit`,
 `switchRef` parks where we are going, and the disconnect dials it.
+
+**A session that drops by itself dials back.** That is the TUI's `Reconnect`, and it costs almost nothing
+here because the list already holds what a re-dial needs: `armRetry` waits `RECONNECT_DELAY` and calls the
+same `dial` a click on that row would have, stored identity and all, up to `RECONNECT_ATTEMPTS` times. The
+tries are handed out by the session that **worked** (`authenticated` is what refills them), so a server that
+never let us in is never dialled behind the user's back, and they are taken away by everything that says the
+answer is no longer ours to give: a `/exit` or a switch (a disconnect with no reason), a username or password
+the server refused, and picking another server. A dial that never reached the server at all arms the next one
+from `dial`'s own `catch`. While the wait runs the connect screen says so rather than `Connecting…` —
+`retrying` is that line, and it is the only thing `LoginScreen` was given for any of this.
+
+A drop the **server** is about to make for a reason of its own says which: `ClientEvent::IncompatibleVersion`
+puts its sentence in `AppState::disconnect_reason` instead of the pane — the pane goes with the session — and
+the `Quit` behind it hands that to the connect screen, where it will actually be read. Anything else is still
+`Server quit communication.`
 
 **The program opens on the list and dials nothing.** A window that reconnected to whatever was used last
 would be a session nobody asked for, to be left again by hand; which server this is going to be is the one
@@ -851,9 +866,8 @@ color, the same as a message: **the four events a live picture can put a line up
 carry it in `StoredMessage`, and `ChatMessage::named` is what puts it on — the *username* color alone, since
 a picture line's text is the filename, which is this client's wording rather than something the sender typed.
 `ImageData` deliberately carries none: it is keyed by hash and only fills a caption one of those already
-made. The other end of the same fact is `upload_file`, which puts `get_colors().username_color` on
-`PacketCode::Image` — the server has no standing notion of anybody's colors, so a picture is named in ours
-only because the upload said so. The six events behind a picture are the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
+made. Nothing is said about it on the way out any more: `PacketCode::Image` carries no color at all, since
+the server holds everybody's and looks the sender's up where the line is built (see **Colors**). The six events behind a picture are the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
 server's header check and still would not decode (an error line, word for word with `tui/event.rs`),
 `ImageData` is the answer to a caption somebody asked to see, and the three the client cache added —
 `ImageOffer`, `ImagePending` and `ImageRequest` — are below.
@@ -1520,8 +1534,19 @@ through `send_packet` so the clock it reads stays honest.
 
 ### Colors
 
-The protocol carries 16 ANSI color codes. `to_color` in `color.rs` parses names/numbers → code plus canonical
-name (persisted to `client.toml`); the `ANSI` table in `theme.ts` maps code → hex. Both must stay in sync, and
+The protocol carries 16 ANSI color codes, and **the server is what holds them** — they live in
+`server_users.toml` beside the role, so they follow the account rather than the machine it was typed on.
+`/ucolor` and `/color` are therefore one packet and nothing else: `color_handler` in `color.rs` checks the
+name (a color no code can carry is refused here rather than after a round trip) and sends
+`PacketCode::Colors { username, color }`, and the same packet coming back is `ClientEvent::Colors` — the
+`Color set successfully.` popup. Nothing is written down and nothing is read back; a message goes out as
+`PacketCode::MessageRequest`, which carries the text alone, and the colors on the line that comes back are
+the server's own. Nothing already in the pane changes color for a `/color`, each line keeping the colors it
+was said in.
+
+The **names** are the crate's `colors::COLORS` — that table is the wire, so it is not copied here — and
+`to_color` is what this side adds to it: the spelling somebody typed (`gray`, `dark red`, a bare number)
+turned into a code. The `ANSI` table in `theme.ts` maps code → hex, and must stay in step with it;
 `disable_colors` turns the message colors off without touching the theme.
 
 There are **two** tables: `ANSI` is the lifted set the names and the message text are painted in — these sit

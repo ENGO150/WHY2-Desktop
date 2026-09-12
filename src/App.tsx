@@ -93,6 +93,11 @@ import
     unsavedRows,
 } from "./settings";
 
+//A DROP NOBODY ASKED FOR DIALS ITSELF BACK, THE WAY THE TUI'S Reconnect DOES - THE SAME WAIT AND THE SAME
+//NUMBER OF TRIES. WHAT IS REPLAYED IS THE ROW'S OWN IDENTITY, WHICH THE LIST ALREADY HOLDS
+const RECONNECT_DELAY = 3000;
+const RECONNECT_ATTEMPTS = 5;
+
 //HOW FAR A CLICK GOES INTO A PICTURE, AND HOW FAR TWO FINGERS MAY. A CLICK IS ONE STEP AND NOT A RANGE -
 //IT IS THE MAGNIFYING GLASS AND THEN THE OTHER ONE - WHILE A PINCH IS A RANGE BY NATURE, AND ITS FLOOR IS
 //THE PICTURE AS IT WAS: THERE IS NOTHING BELOW "ALL OF IT", THE LIGHTBOX ALREADY FITTING IT TO THE GLASS
@@ -148,6 +153,7 @@ function App()
     const [errorMsg, setErrorMsg] = useState("");
     const [hint, setHint] = useState("");
     const [registering, setRegistering] = useState(false);
+    const [retrying, setRetrying] = useState("");
     const [address, setAddress] = useState("");
 
     //THE SERVERS THIS WINDOW REMEMBERS, WHICHEVER OF THEM IS IN FRONT, AND THE FORM THAT ADDS ONE. THE
@@ -290,6 +296,9 @@ function App()
     //DIALLED AT ALL - THE LIST IS READ ONCE AT STARTUP, AND StrictMode READS IT TWICE
     const serverNameRef = useRef("");
     const switchRef = useRef<StoredServer | null>(null);
+
+    //THE TRIES LEFT ON A SESSION THAT DROPPED BY ITSELF, AND THE WAIT BEFORE THE NEXT ONE
+    const retryRef = useRef<{ left: number; timer: number | null }>({ left: 0, timer: null });
     const loginInputRef = useRef<HTMLInputElement>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -639,8 +648,48 @@ function App()
         invoke("connect_to_server", { address: server.address }).catch((error: unknown) =>
         {
             setErrorMsg(String(error));
-            setConnecting(false);
+
+            //A TRY THAT NEVER REACHED THE SERVER IS STILL A TRY - THE NEXT ONE IS ARMED FROM HERE TOO
+            if (!armRetry()) setConnecting(false);
         });
+    };
+
+    //A DIAL NOBODY ASKED FOR: THE ROW IS THE ONE WE WERE JUST ON, AND ITS STORED IDENTITY IS WHAT THE
+    //IDENTITY STEPS ARE ANSWERED WITH - THE SAME REPLAY A PICKED ROW GETS. THE TRIES ARE HANDED OUT BY
+    //THE SESSION THAT WORKED, SO A SERVER THAT NEVER LET US IN IS NEVER DIALLED BEHIND THE USER'S BACK
+    const cancelRetry = () =>
+    {
+        if (retryRef.current.timer !== null) clearTimeout(retryRef.current.timer);
+
+        retryRef.current = { left: 0, timer: null };
+
+        setRetrying("");
+    };
+
+    const armRetry = () =>
+    {
+        const entry = entryRef.current;
+
+        if (!entry || retryRef.current.left <= 0)
+        {
+            cancelRetry();
+
+            return false;
+        }
+
+        retryRef.current.left -= 1;
+
+        setRetrying(`Connection lost, reconnecting… (${RECONNECT_ATTEMPTS - retryRef.current.left}/${RECONNECT_ATTEMPTS})`);
+        setConnecting(true);
+
+        retryRef.current.timer = window.setTimeout(() =>
+        {
+            retryRef.current.timer = null;
+
+            dial(entry);
+        }, RECONNECT_DELAY);
+
+        return true;
     };
 
     //THE SESSION GOT THROUGH, SO WHAT GOT IT THROUGH IS WORTH KEEPING: THE ADDRESS, WHOEVER WE TURNED
@@ -776,6 +825,9 @@ function App()
                 {
                     typedRef.current.username = "";
 
+                    //A REPLAYED ANSWER THE SERVER REFUSES IS NOT ONE TO REPLAY AGAIN
+                    cancelRetry();
+
                     setErrorMsg("Username rejected!");
                     setConnecting(false);
                     break;
@@ -785,6 +837,8 @@ function App()
                 {
                     typedRef.current.password = "";
 
+                    cancelRetry();
+
                     setErrorMsg(`Password rejected! Enter at least ${payload.data.min} characters.`);
                     setConnecting(false);
                     break;
@@ -792,6 +846,10 @@ function App()
 
                 case "authenticated":
                 {
+                    //THESE ANSWERS ARE WORTH REPLAYING NOW
+                    cancelRetry();
+                    retryRef.current.left = RECONNECT_ATTEMPTS;
+
                     setUiState("connected");
                     setConnecting(false);
                     setErrorMsg("");
@@ -1037,14 +1095,24 @@ function App()
                 //(OR THE SAME ONE AGAIN) IS ONE ENTER AWAY
                 case "disconnected":
                 {
-                    resetSession(payload.data.reason ?? "");
+                    const reason = payload.data.reason ?? "";
+
+                    resetSession(reason);
 
                     //A SERVER PICKED WHILE ANOTHER ONE WAS STILL UP IS DIALLED HERE RATHER THAN THERE:
                     //THE OLD SESSION IS ASKED TO LEAVE FIRST (/exit), AND THIS IS IT GONE
                     const next = switchRef.current;
                     switchRef.current = null;
 
-                    if (next) dial(next);
+                    if (next)
+                    {
+                        cancelRetry();
+                        dial(next);
+                        break;
+                    }
+
+                    //A DROP WITH NOTHING TO EXPLAIN IT IS ONE THE USER ASKED FOR, AND THE REST DIAL BACK
+                    if (reason) armRetry(); else cancelRetry();
                     break;
                 }
             }
@@ -1276,6 +1344,7 @@ function App()
     const goTo = (server: StoredServer) =>
     {
         setDrawer(null);
+        cancelRetry();
 
         if (connected)
         {
@@ -3013,6 +3082,7 @@ function App()
             value={inputValue}
             setValue={setInputValue}
             connecting={connecting}
+            retrying={retrying}
             errorMsg={errorMsg}
             hint={hint}
             registering={registering}

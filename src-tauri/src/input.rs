@@ -44,7 +44,7 @@ use why2_chat::
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::color::{ color_handler, get_colors };
+use crate::color::color_handler;
 use crate::net::send_packet;
 use crate::picture::unhex;
 
@@ -230,10 +230,8 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
 
     let request = match image
     {
-        //THE SENDER'S OWN COLOR TRAVELS WITH THE PICTURE, THE WAY IT DOES WITH A MESSAGE: THE SERVER
-        //HAS NO STANDING NOTION OF ANYBODY'S COLORS, SO A CAPTION IS NAMED IN OURS ONLY IF WE SAY SO HERE
-        true => PacketCode::Image { hash, filename, token: None, uid: None,
-            username_color: get_colors().username_color },
+        //NO COLOR: THE CAPTION IS NAMED IN WHATEVER THE SERVER HOLDS FOR US, THE WAY A MESSAGE IS
+        true => PacketCode::Image { hash, filename, token: None, uid: None },
         false => PacketCode::Upload { hash, token: None, uid: None },
     };
 
@@ -434,8 +432,8 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                         },
                     },
 
-                    Command::UsernameColor => color_handler(&app, "username_color", parameters),
-                    Command::MessageColor => color_handler(&app, "message_color", parameters),
+                    Command::UsernameColor => color_handler(&app, &state, &write_stream, true, parameters).await,
+                    Command::MessageColor => color_handler(&app, &state, &write_stream, false, parameters).await,
 
                     //NOTHING WENT TO THE SERVER BECAUSE NOTHING HAD TO: THE SHARE IS ALREADY UP AND ONLY
                     //THE MONITOR UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
@@ -482,7 +480,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
         },
         LoginState::PasswordLogin => PacketCode::PasswordL { password: Some(input) },
         LoginState::PasswordRegister => PacketCode::PasswordR { password: Some(input) },
-        LoginState::None => PacketCode::Message { text: input, colors: get_colors(), username: None, id: None },
+        LoginState::None => PacketCode::MessageRequest { text: input },
     };
 
     send_packet(&state, &write_stream, code).await;

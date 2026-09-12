@@ -68,8 +68,6 @@ pub(crate) const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 pub(crate) const ROSTER_COALESCE: Duration = Duration::from_millis(50);
 
-//THE WHOLE VOCABULARY OF /color AND /ucolor, IN CODE ORDER - THE POSITION IN THIS TABLE IS WHAT THE WIRE
-
 pub(crate) struct AppState
 {
     pub(crate) write_stream: MutexAsync<Option<Arc<MutexAsync<OwnedWriteHalf>>>>, //WRITE HALF OF THE LIVE SESSION
@@ -81,6 +79,7 @@ pub(crate) struct AppState
     pub(crate) roster_queued: AtomicBool,                                         //A ROSTER REFRESH IS ALREADY ON ITS WAY
     pub(crate) screens_queued: AtomicBool,                                        //AND SO IS A SCREENS ONE
     pub(crate) leaving: AtomicBool,                                               //THE DISCONNECT WAS ASKED FOR
+    pub(crate) disconnect_reason: Mutex<Option<String>>,                          //WHY THE SERVER IS ABOUT TO DROP US
     pub(crate) list_requested: AtomicBool,                                        //THE NEXT ROSTER OPENS A MODAL
     pub(crate) version_checked: AtomicBool,                                       //crates.io IS ASKED ONCE PER PROCESS
     pub(crate) voice_enabled: AtomicBool,                                         //THE SERVER LET US INTO THE CALL

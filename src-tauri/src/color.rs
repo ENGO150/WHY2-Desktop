@@ -16,44 +16,24 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use std::sync::Arc;
+
 use tauri::AppHandle;
+
+use tokio::{ net::tcp::OwnedWriteHalf, sync::Mutex as MutexAsync };
 
 use why2_chat::
 {
-    config,
-    network::codes::MessageColors,
+    colors::COLORS,
+    network::codes::PacketCode,
 };
 
 use crate::types::*;
+use crate::state::AppState;
 use crate::emit::popup;
-
-pub(crate) const COLORS: [&str; 16] =
-[
-    "black",
-    "dark_red",
-    "dark_green",
-    "dark_yellow",
-    "dark_blue",
-    "dark_magenta",
-    "dark_cyan",
-    "grey",
-    "dark_grey",
-    "red",
-    "green",
-    "yellow",
-    "blue",
-    "magenta",
-    "cyan",
-    "white",
-];
+use crate::net::send_packet;
 
 pub(crate) const BRIGHT: usize = 8; //WHERE THE BRIGHT HALF OF THE CODE TABLE STARTS
-
-//THE client.toml ROWS THE SETTINGS BOX SHOWS, AS tui/settings.rs OPENS THEM: THE HEADING THEY SIT UNDER,
-//THE LABEL, THE KEY, AND WHAT KIND OF ANSWER THE KEY TAKES. THE KEY IS THE TRUTH AND THE LABEL IS WHAT IT
-//MEANS - disable_colors HELD IS "Message colors" TURNED OFF, WHICH IS WHY A TOGGLE CARRIES invert
-//THE AUDIO HALF OF IT IS THE VOICE CLIENT'S OWN, AND IS NOT THERE TO BE OFFERED IN A BUILD WITHOUT ONE -
-//A ROW POINTING AT A DEVICE NOTHING WILL EVER OPEN IS A SWITCH WIRED TO NOTHING
 
 pub(crate) fn to_color(color: &str) -> Result<(u8, String), ()> //PARSE A COLOR NAME/NUMBER INTO THE CODE THE WIRE CARRIES
 {
@@ -97,27 +77,15 @@ pub(crate) fn offered_colors() -> Vec<VocabularyValue>
     bright.into_iter().map(|(code, name)| VocabularyValue { value: name.to_string(), color: Some(code as u8) }).collect()
 }
 
-pub(crate) fn get_colors() -> MessageColors //READ THE CONFIGURED COLORS
-{
-    MessageColors
-    {
-        username_color: to_color(&config::read_config::<String>("username_color")).ok().map(|(code, _)| code),
-        message_color: to_color(&config::read_config::<String>("message_color")).ok().map(|(code, _)| code),
-    }
-}
-
-pub(crate) fn color_handler(app: &AppHandle, key: &str, parameters: Option<String>) //SAVE A COLOR TO client.toml
+//THE SERVER KEEPS THE COLORS AND PAINTS EVERY LINE WITH THEM, SO ALL THIS DOES IS ASK - THERE IS NOTHING
+//TO STORE AND NOTHING TO READ BACK. THE NAME IS STILL CHECKED HERE, SO A COLOR NO CODE CAN CARRY GETS ITS
+//ANSWER WITHOUT A ROUND TRIP, AND THE "Color set successfully." IS THE SERVER'S OWN PACKET COMING BACK
+pub(crate) async fn color_handler(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
+    username: bool, parameters: Option<String>)
 {
     let Some(parameters) = parameters else { return popup(app, "Invalid usage!") };
 
-    match to_color(&parameters)
-    {
-        Ok((_, name)) =>
-        {
-            config::client_write(key, &name);
-            popup(app, "Color set successfully.");
-        },
+    let Ok((color, _)) = to_color(&parameters) else { return popup(app, "Invalid color!") };
 
-        Err(()) => popup(app, "Invalid color!"),
-    }
+    send_packet(state, write_stream, PacketCode::Colors { username, color }).await;
 }

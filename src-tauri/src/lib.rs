@@ -159,6 +159,7 @@ pub fn run()
             roster_queued: AtomicBool::new(false),
             screens_queued: AtomicBool::new(false),
             leaving: AtomicBool::new(false),
+            disconnect_reason: Mutex::new(None),
             list_requested: AtomicBool::new(false),
             version_checked: AtomicBool::new(false),
             voice_enabled: AtomicBool::new(false),

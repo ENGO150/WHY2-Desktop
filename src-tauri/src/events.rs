@@ -229,6 +229,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             emit(app, UiEvent::History { messages });
         },
 
+        //THE SERVER STORED A COLOR. IT KEEPS THEM NOW, SO THERE IS NOTHING HERE TO WRITE DOWN - AND
+        //NOTHING IN THE PANE CHANGES COLOR FOR IT, EVERY LINE KEEPING THE COLORS IT WAS SAID IN
+        ClientEvent::Colors => popup(app, "Color set successfully."),
+
         ClientEvent::ServerSay(message) =>
         {
             say(app, ChatMessage::notice(message).from_server());
@@ -588,9 +592,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
         ClientEvent::DisabledFeature => popup(app, "Server has disabled the feature you requested."),
 
+        //THE SERVER IS ABOUT TO DROP US OVER THIS, AND THE PANE GOES WITH THE SESSION - SO IT IS KEPT
+        //FOR THE Quit THAT FOLLOWS AND SAID ON THE CONNECT SCREEN, WHICH IS WHERE IT WILL BE READ
         ClientEvent::IncompatibleVersion(version, server_version) =>
         {
-            say(app, ChatMessage::error(format!("Incompatible version! ({version}/{server_version})")));
+            *state.disconnect_reason.lock().unwrap() =
+                Some(format!("Incompatible version! ({version}/{server_version})"));
         },
 
         ClientEvent::VersionMismatch(version, server_version) =>
@@ -620,7 +627,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                 reason: match state.leaving.load(Ordering::Relaxed)
                 {
                     true => None,
-                    false => Some(String::from("Server quit communication.")),
+                    false => Some(state.disconnect_reason.lock().unwrap().take()
+                        .unwrap_or_else(|| String::from("Server quit communication."))),
                 },
             });
         },
@@ -650,6 +658,7 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     state.tofu_reply.lock().unwrap().take();
     state.events.lock().unwrap().take();
     state.roster_queued.store(false, Ordering::Relaxed);
+    state.disconnect_reason.lock().unwrap().take();
     state.voice_enabled.store(false, Ordering::Relaxed);
     state.voice_roster.lock().unwrap().clear();
     state.voice_activity.lock().unwrap().clear();

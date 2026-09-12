@@ -30,7 +30,7 @@ use why2_chat::
 //THE CALL AND THE SCREEN SHARE, WHICH THE ANDROID BUILD IS COMPILED WITHOUT - why2-chat IS PULLED IN
 //THERE WITHOUT client_voice/client_screen, SO THESE MODULES DO NOT EXIST TO BE NAMED
 #[cfg(voice)]
-use why2_chat::network::voice::client::{ self as voice, options as voice_options };
+use why2_chat::network::voice::{ consts as voice_consts, client::{ self as voice, options as voice_options } };
 
 use crate::types::*;
 use crate::state::AppState;
@@ -144,7 +144,7 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
             ClientKind::Volume => ClientValue::Volume
             {
                 percent: voice_options::clamp_volume(config::read_config::<u32>(key)),
-                max: voice_options::VOLUME_MAX,
+                max: voice_consts::VOLUME_MAX,
                 step: VOLUME_STEP,
             },
 

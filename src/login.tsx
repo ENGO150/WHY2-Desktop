@@ -46,7 +46,7 @@ let introPlayed = false;
 //    ADDRESS FIELD BESIDE THE ROWS IS THE SAME QUESTION ASKED TWICE
 export function LoginScreen(
 {
-    uiState, mode, servers, target, form, setForm, value, setValue, connecting, errorMsg, hint,
+    uiState, mode, servers, target, form, setForm, value, setValue, connecting, retrying, errorMsg, hint,
     registering, inputRef, narrow, onSubmit, onPick, onAdd, onForget, onCancel,
 }: {
     uiState: UIState;
@@ -58,6 +58,7 @@ export function LoginScreen(
     value: string;
     setValue: (value: string) => void;
     connecting: boolean;
+    retrying: string;
     errorMsg: string;
     hint: string;
     registering: boolean;
@@ -115,7 +116,7 @@ export function LoginScreen(
     const status = (
         <div className="mt-2 min-h-[1.25rem] text-xs">
             {connecting
-                ? <span className="text-accent">{uiState === "server_select" ? "Connecting…" : "Waiting for the server…"}</span>
+                ? <span className="text-accent">{retrying || (uiState === "server_select" ? "Connecting…" : "Waiting for the server…")}</span>
                 : errorMsg
                     ? <span className="text-error">{errorMsg}</span>
                     : <span className="text-faint">{hint}</span>}
