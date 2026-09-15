@@ -156,7 +156,6 @@ pub fn run()
             role: Mutex::new(Role::default()),
             session: AtomicU64::new(0),
             last_sent: Mutex::new(Instant::now()),
-            roster_queued: AtomicBool::new(false),
             screens_queued: AtomicBool::new(false),
             leaving: AtomicBool::new(false),
             disconnect_reason: Mutex::new(None),

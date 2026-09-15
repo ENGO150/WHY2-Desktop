@@ -66,8 +66,6 @@ pub(crate) const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
 
-pub(crate) const ROSTER_COALESCE: Duration = Duration::from_millis(50);
-
 pub(crate) struct AppState
 {
     pub(crate) write_stream: MutexAsync<Option<Arc<MutexAsync<OwnedWriteHalf>>>>, //WRITE HALF OF THE LIVE SESSION
@@ -76,8 +74,7 @@ pub(crate) struct AppState
     pub(crate) role: Mutex<Role>,                                                 //WHAT THIS SERVER GRANTED US
     pub(crate) session: AtomicU64,                                                //ONLY THE NEWEST SESSION COUNTS
     pub(crate) last_sent: Mutex<Instant>,                                         //WHEN WE LAST PUT SOMETHING ON THE WIRE
-    pub(crate) roster_queued: AtomicBool,                                         //A ROSTER REFRESH IS ALREADY ON ITS WAY
-    pub(crate) screens_queued: AtomicBool,                                        //AND SO IS A SCREENS ONE
+    pub(crate) screens_queued: AtomicBool,                                        //A SCREENS REQUEST IS ALREADY ON ITS WAY
     pub(crate) leaving: AtomicBool,                                               //THE DISCONNECT WAS ASKED FOR
     pub(crate) disconnect_reason: Mutex<Option<String>>,                          //WHY THE SERVER IS ABOUT TO DROP US
     pub(crate) list_requested: AtomicBool,                                        //THE NEXT ROSTER OPENS A MODAL

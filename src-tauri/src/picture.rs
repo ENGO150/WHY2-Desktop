@@ -37,9 +37,9 @@ use image::
     },
 };
 
-use why2_chat::network::client::Animation;
+use why2_chat::network::client::image::Animation;
 
-use crate::types::{ MessageImage, PictureActions };
+use crate::types::{ MessageImage, PictureState, PictureActions };
 
 //CONSTS
 const JPEG_QUALITY: u8 = 88; //WHAT A PHOTOGRAPH SURVIVES WITHOUT ANYBODY LOOKING FOR THE DIFFERENCE
@@ -152,7 +152,7 @@ pub(crate) async fn encode(animation: Animation, filename: String, hash: Option<
         filename,
         hash: hash.as_ref().map(hex),
         source: Some(format!("data:{};base64,{}", encoded.0, BASE64_STANDARD.encode(encoded.1))),
-        pending: false,
+        state: PictureState::Absent, //A PICTURE THAT IS HERE HAS NO CAPTION TO OFFER ANYTHING
         width,
         height,
     })

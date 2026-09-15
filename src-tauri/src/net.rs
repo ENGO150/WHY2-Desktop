@@ -64,48 +64,10 @@ pub(crate) async fn request_picture(state: &AppState, hash: [u8; 32])
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
 
-    send_packet(state, &write_stream, PacketCode::ImageData { hash, data: None }).await;
+    send_packet(state, &write_stream, PacketCode::ImageDataRequest { hash }).await;
 }
 
-//ASK FOR THE ROSTER - EVENTUALLY. THE ROSTER IS ALSO THE CHANNEL LIST, SO IT HAS TO FOLLOW EVERY JOIN,
-//AND JOINS ARRIVE IN CLUMPS: LOGGING IN ALONE BRINGS Accept AND OUR OWN Join ONE AFTER THE OTHER, WHICH
-//AS TWO SEPARATE List PACKETS IS EXACTLY WHAT THE SERVER CALLS SPAM. ONE REQUEST ANSWERS THE WHOLE
-//CLUMP, AND IT WAITS OUT WHATEVER WE LAST SENT BEFORE GOING OUT
-pub(crate) fn refresh_online(app: &AppHandle, session: u64)
-{
-    //THE FIRST CALLER QUEUES IT; EVERY OTHER ONE UNTIL IT GOES OUT *IS* THAT SAME REQUEST
-    if app.state::<AppState>().roster_queued.swap(true, Ordering::Relaxed) { return }
-
-    let app = app.clone();
-
-    async_runtime::spawn(async move
-    {
-        time::sleep(ROSTER_COALESCE).await;
-
-        //NOBODY IS WAITING ON A ROSTER, SO IT GIVES WAY TO ANYTHING THE USER ACTUALLY TYPED
-        loop
-        {
-            let waited = app.state::<AppState>().last_sent.lock().unwrap().elapsed();
-
-            if waited >= ROSTER_GAP { break }
-
-            time::sleep(ROSTER_GAP - waited).await;
-        }
-
-        let state = app.state::<AppState>();
-
-        //THE SESSION IT WAS QUEUED FOR IS GONE, AND SO IS THE POINT OF ASKING
-        if state.session.load(Ordering::Relaxed) != session { return }
-
-        state.roster_queued.store(false, Ordering::Relaxed);
-
-        let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
-
-        send_packet(&state, &write_stream, PacketCode::List { users: None }).await;
-    });
-}
-
-//THE SAME, FOR THE ONE QUESTION THE SERVER NEVER ANSWERS UNASKED: WHO IS SHARING A SCREEN. THE WINDOW ASKS
+//THE ONE QUESTION THE SERVER NEVER ANSWERS UNASKED: WHO IS SHARING A SCREEN. THE WINDOW ASKS
 //IT ON A CLOCK AND NOT BECAUSE ANYBODY TYPED ANYTHING, SO IT GIVES WAY TO EVERYTHING THAT DID - A Screens
 //PACKET ON THE HEELS OF AN Attach IS EXACTLY WHAT THE SERVER CALLS SPAM
 #[tauri::command]
@@ -136,7 +98,7 @@ pub(crate) fn refresh_screens(app: AppHandle, state: State<'_, AppState>)
 
         let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
 
-        send_packet(&state, &write_stream, PacketCode::Screens { users: None }).await;
+        send_packet(&state, &write_stream, PacketCode::ScreensRequest).await;
     });
 }
 
@@ -179,7 +141,8 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     #[cfg(target_os = "android")]
     let dialled = connecting_addr.clone();
 
-    let (mut read_half, write_half) = client::connect(connecting_addr).await.map_err(|error| error.to_string())?;
+    let (mut read_half, write_half) = client::handshake::connect(connecting_addr).await
+        .map_err(|error| error.to_string())?;
 
     //WHATEVER IS LEFT OF THE PREVIOUS SESSION STOPS BEING LISTENED TO THE MOMENT THIS ONE EXISTS
     let session = state.session.fetch_add(1, Ordering::Relaxed) + 1;
@@ -190,7 +153,6 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     *state.role.lock().unwrap() = Role::default();
     state.leaving.store(false, Ordering::Relaxed);
     state.list_requested.store(false, Ordering::Relaxed);
-    state.roster_queued.store(false, Ordering::Relaxed);
     state.screens_queued.store(false, Ordering::Relaxed);
     *state.last_sent.lock().unwrap() = Instant::now();
 
@@ -202,7 +164,7 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
 
     let (tx, rx) = mpsc::channel::<ClientEvent>(consts::EVENT_CHANNEL_BOUND);
 
-    //A CLICKED CAPTION IS ANSWERED OUT OF THE IMAGE CACHE WHERE IT CAN BE, AND client::fetch_image REPORTS
+    //A CLICKED CAPTION IS ANSWERED OUT OF THE IMAGE CACHE WHERE IT CAN BE, AND image::fetch_image REPORTS
     //WHAT IT FOUND (OR DID NOT) BACK DOWN THIS CHANNEL LIKE ANY OTHER EVENT - SO THIS SESSION'S SENDER IS
     //KEPT FOR IT, THE WAY tui/mod.rs HANDS ITS OWN tx TO THE MOUSE-UP ARM
     *state.events.lock().unwrap() = Some(tx.clone());

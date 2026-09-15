@@ -41,6 +41,7 @@ import type
     MessageImage,
     PictureActions,
     OnlineUser,
+    OfflineUser,
     ArgValues,
     AudioDevices,
     CommandInfo,
@@ -79,7 +80,8 @@ import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines } from "./messages";
 import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
-import { markWaiting, deliverPicture, pictureName } from "./pictures";
+import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
+import { sortRoster, sortOffline } from "./roster";
 import
 {
     RESTART_LABEL,
@@ -140,8 +142,8 @@ interface Pinch
 //CONVENIENCE AND NOT A CHECK: ANYTHING ELSE CAN STILL BE TYPED OUT AS /image <PATH> AND WILL BE REFUSED
 const IMAGE_EXTENSIONS =
 [
-    "png", "jpg", "jpeg", "gif", "bmp", "ico", "tif", "tiff", "webp",
-    "qoi", "hdr", "ff", "dds", "exr", "pnm", "pbm", "pgm", "ppm", "pam",
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp",
+    "qoi", "hdr", "ff", "dds", "pnm", "pbm", "pgm", "ppm", "pam",
 ];
 
 function App()
@@ -173,6 +175,10 @@ function App()
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
+
+    //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
+    //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
+    const [offline, setOffline] = useState<OfflineUser[] | null>(null);
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
 
@@ -326,6 +332,9 @@ function App()
     //TO EVERYBODY IN IT, THE ONE WHO SAID IT INCLUDED, AND NOBODY WANTS TO BE TOLD WHAT THEY JUST TYPED
     const usernameRef = useRef("");
 
+    //AND THE ROSTER, WHICH IS WHERE A LEAVER'S NAME AND COLOR COME FROM - THE PACKET NAMES ONLY THE ID
+    const usersRef = useRef<OnlineUser[]>([]);
+
     useEffect(() =>
     {
         currentChannelRef.current = currentChannel;
@@ -382,6 +391,11 @@ function App()
 
     useEffect(() =>
     {
+        usersRef.current = users;
+    }, [users]);
+
+    useEffect(() =>
+    {
         if (!popupMessage) return;
 
         const timer = setTimeout(() => setPopupMessage(""), 3500);
@@ -432,14 +446,13 @@ function App()
         if (node) node.scrollTop = node.scrollHeight;
     }, [paneByChannel, currentChannel, dms, openDm]);
 
-    //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, SO THE ROSTER IS THE WHOLE TRUTH ABOUT
-    //WHICH ONES THERE ARE - AND THE SCROLLBACK OF ONE NOBODY IS IN ANY MORE IS NOT WORTH KEEPING
+    //THE SCROLLBACK OF A CHANNEL NOBODY IS IN ANY MORE IS NOT WORTH KEEPING. WHICH ONES THOSE ARE IS THE
+    //ROSTER'S ANSWER AND THE TWO CHANNEL EVENTS', NOT THIS EFFECT'S - A ROSTER IS SENT AT LOGIN AND ASKED
+    //FOR BY /list, AND NOTHING SAYS WHO MOVED WHERE IN BETWEEN
     useEffect(() =>
     {
-        const channels = new Set(users.map((user) => user.channel ?? LOBBY));
+        const channels = new Set(activeChannels);
         channels.add(LOBBY);
-
-        setActiveChannels(Array.from(channels));
 
         setPaneByChannel((previous) =>
         {
@@ -457,19 +470,19 @@ function App()
 
             return changed ? next : previous;
         });
-    }, [users]);
+    }, [activeChannels]);
 
     //A LINE ON ITS WAY INTO A PANE. A PICTURE THAT CAME WITH ITS OWN BYTES IS SIMPLY DRAWN; ONE THAT WAS
     //ONLY NAMED IS A CAPTION, AND WHICH OF THE TWO IT IS DECIDES NOTHING - WHAT DOES IS WHETHER THE
-    //PICTURE IS ALREADY ON ITS WAY (A LIVE OFFER THE BRIDGE ASKED FOR, OR A REPLAYED ONE THE CACHE HOLDS),
-    //WHICH IS waiting AND CARRIES NO BUTTON, AGAINST absent, WHICH IS THE [ show ] ONE
+    //PICTURE IS ALREADY ON ITS WAY (waiting), IN THE CACHE AND A LOOK AWAY (deferred), OR SOMETHING TO
+    //ASK FOR - absent, WHICH IS THE ONE THAT CARRIES THE [ show ] BUTTON
     const entryFor = (message: ChatMessage): PaneEntry =>
     {
         const image = message.image;
 
         if (!image || image.source) return { entry: "message", message };
 
-        return { entry: "message", message, picture: image.pending ? "waiting" : "absent" };
+        return { entry: "message", message, picture: image.state };
     };
 
     const push = (...entries: PaneEntry[]) =>
@@ -593,6 +606,7 @@ function App()
         setChatInput("");
         setPaneByChannel({});
         setUsers([]);
+        setOffline(null);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
         setDms({});
@@ -1042,15 +1056,53 @@ function App()
                     break;
                 }
 
+                //A CHANNEL EXISTS EXACTLY AS LONG AS SOMEBODY SITS IN IT, AND THE ROSTER IS WHERE THAT IS
+                //SAID - THE JOINS AND THE LEAVES MOVE THE ROWS AND NOT THE CHANNEL LIST, SINCE EVERYBODY
+                //ARRIVES IN THE LOBBY AND THE TWO CHANNEL EVENTS SAY THE REST (tui/event.rs)
                 case "users":
                 {
-                    setUsers(payload.data.users);
+                    const roster = payload.data.users;
+
+                    setUsers(sortRoster(roster, usernameRef.current));
+                    setOffline(payload.data.offline && sortOffline(payload.data.offline));
+                    setActiveChannels(Array.from(new Set([LOBBY, ...roster.map((user) => user.channel ?? LOBBY)])));
                     break;
                 }
 
+                //THE JOIN NAMES THE USER WHOLE, SO THE ROSTER ADDS THE ROW ITSELF RATHER THAN ASKING FOR
+                //THE WHOLE LIST AGAIN - AND SOMEBODY WHO IS HERE IS NOT OFFLINE ANY MORE
+                case "user_joined":
+                {
+                    const joined = payload.data.user;
+
+                    setUsers((previous) => previous.some((user) => user.id === joined.id)
+                        ? previous
+                        : sortRoster([...previous, joined], usernameRef.current));
+
+                    setOffline((previous) => previous?.filter((user) => user.username !== joined.username) ?? null);
+                    break;
+                }
+
+                //AND THE OTHER WAY ROUND: THE SERVER HAS NO GUESTS, SO SOMEBODY WHO LEFT IS A REGISTERED
+                //USER - THE ROW WE ARE DROPPING IS ALSO WHERE THEIR NAME AND THEIR COLOR COME FROM
                 case "user_left":
                 {
-                    setUsers((previous) => previous.filter((user) => user.id !== payload.data.id));
+                    const { id } = payload.data;
+                    const gone = usersRef.current.find((user) => user.id === id);
+
+                    setUsers((previous) => previous.filter((user) => user.id !== id));
+
+                    if (gone)
+                    {
+                        setOffline((listed) =>
+                        {
+                            if (!listed || listed.some((user) => user.username === gone.username)) return listed;
+
+                            return sortOffline([...listed,
+                                { username: gone.username, username_color: gone.username_color }]);
+                        });
+                    }
+
                     break;
                 }
 
@@ -1111,8 +1163,9 @@ function App()
                         break;
                     }
 
-                    //A DROP WITH NOTHING TO EXPLAIN IT IS ONE THE USER ASKED FOR, AND THE REST DIAL BACK
-                    if (reason) armRetry(); else cancelRetry();
+                    //A DROP WITH NOTHING TO EXPLAIN IT IS ONE THE USER ASKED FOR, AND A SERVER THAT CLOSED
+                    //THE SOCKET ITSELF HAS ANSWERED - ONLY A LINE THAT WENT DOWN BY ITSELF IS DIALLED BACK
+                    if (reason && !payload.data.said) armRetry(); else cancelRetry();
                     break;
                 }
             }
@@ -1789,6 +1842,15 @@ function App()
             invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
         },
 
+        //THE SAME ASK, MADE BY THE CAPTION COMING INTO VIEW RATHER THAN BY ANYBODY PRESSING ANYTHING -
+        //AND IT IS USUALLY THE CACHE THAT ANSWERS IT, SINCE THAT IS WHY THE LINE WAS DEFERRED AT ALL
+        load: (hash: string) =>
+        {
+            setPaneByChannel((previous) => markLoading(previous, hash));
+
+            invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
+        },
+
         open: openLightbox,
         hold: (image: MessageImage) => pictureHold.bind(image),
         held: pictureHold.held,
@@ -1829,6 +1891,10 @@ function App()
 
     const wanted = shape.mode === "pending" ? shape.arg.values : null;
 
+    //THE ONE VOCABULARY THAT IS ALSO A QUESTION ABOUT WHAT WAS TYPED: WHAT SITS BESIDE A HALF-TYPED PATH
+    //IS A DIFFERENT ANSWER AT EVERY KEYSTROKE, WHILE EVERY OTHER SET IS THE SAME LIST WHATEVER IS IN THE LINE
+    const typedPath = shape.mode === "pending" && (wanted === "paths" || wanted === "images") ? shape.typed : "";
+
     //ASKED FOR EVERY TIME THE CARET LANDS ON SUCH A PARAMETER, AND DROPPED THE MOMENT IT LEAVES - THE
     //MONITORS ARE THE REASON: ONE PLUGGED IN MID-SESSION IS STILL SUPPOSED TO SHOW UP HERE
     useEffect(() =>
@@ -1841,12 +1907,12 @@ function App()
 
         let live = true;
 
-        invoke<VocabularyValue[]>("get_vocabulary", { values: wanted })
+        invoke<VocabularyValue[]>("get_vocabulary", { values: wanted, typed: typedPath })
             .then((values) => { if (live) setVocabulary({ kind: wanted, values }); })
             .catch(() => {});
 
         return () => { live = false; };
-    }, [wanted]);
+    }, [wanted, typedPath]);
 
     const palette = useMemo<PaletteState>(() =>
     {
@@ -2862,7 +2928,7 @@ function App()
             {
                 previous = null;
 
-                return renderBlock(entry.title, entry.rows, index);
+                return renderBlock(entry.title, entry.rows, index, config);
             }
 
             const message = entry.message;
@@ -3423,6 +3489,7 @@ function App()
                     {(narrow ? !theater : members && !theater) && (
                         <MemberColumn
                             users={users}
+                            offline={offline}
                             username={username}
                             config={config}
                             narrow={narrow}

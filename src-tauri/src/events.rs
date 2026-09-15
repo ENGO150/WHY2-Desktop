@@ -38,6 +38,7 @@ use why2_chat::
             SettingValue,
             BanEntry,
             OnlineUser,
+            OfflineUser,
             UserScreen,
             ServerSetting,
             StoredMessage,
@@ -48,14 +49,14 @@ use why2_chat::
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::net::{ refresh_online, request_picture };
+use crate::net::request_picture;
 use crate::picture;
 use crate::settings::client_settings;
 
 //A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT - THE HISTORY'S OWN, AND THE ONES A SERVER OFFERS
-//RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND pending IS THE
-//DIFFERENCE BETWEEN A PICTURE ON ITS WAY AND ONE WAITING TO BE ASKED FOR (tui/state.rs::push_caption)
-fn caption(username: String, filename: String, hash: [u8; 32], pending: bool, color: Option<u8>)
+//RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND state IS WHAT THERE
+//IS TO DO ABOUT THE PICTURE ITSELF (tui/state.rs::push_caption)
+fn caption(username: String, filename: String, hash: [u8; 32], state: PictureState, color: Option<u8>)
     -> ChatMessage
 {
     ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).picture(MessageImage
@@ -63,13 +64,13 @@ fn caption(username: String, filename: String, hash: [u8; 32], pending: bool, co
         filename,
         hash: Some(picture::hex(&hash)),
         source: None,
-        pending,
+        state,
         width: 0,
         height: 0,
     })
 }
 
-pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u64)
+pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 {
     let state = app.state::<AppState>();
 
@@ -112,11 +113,9 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
 
             //THE SERVER BACKDATES ITS OWN CLOCK BY min_message_delay WHEN IT AUTHENTICATES SOMEBODY, SO
             //THE FIRST PACKET AFTER LOGIN IS FREE BY CONSTRUCTION - OURS IS BACKDATED TO MATCH, WHICH IS
-            //WHAT LETS THE ROSTER LAND IMMEDIATELY INSTEAD OF A SECOND INTO THE SESSION
+            //WHAT LETS THE FIRST THING THE USER DOES GO OUT AT ONCE. THE ROSTER IS NOT ONE OF THOSE ANY
+            //MORE: THE SERVER SENDS IT UNASKED THE MOMENT IT LETS SOMEBODY IN
             *state.last_sent.lock().unwrap() = Instant::now() - ROSTER_GAP;
-
-            //THE ROSTER IS ALSO WHERE THE CHANNEL LIST COMES FROM
-            refresh_online(app, session);
         },
 
         //A ROLE WAS SET. THE SERVER NAMES THE USER WHEN IT IS SOMEBODY ELSE, SO THE ONE WITHOUT A NAME
@@ -153,7 +152,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //THAT IS BEING SENT TO THEM ANYWAY, SO THERE IS NO BUTTON ON IT
         ClientEvent::ImagePending(username, filename, hash, color) =>
         {
-            say(app, caption(username, filename, hash, true, color));
+            say(app, caption(username, filename, hash, PictureState::Waiting, color));
 
             request_picture(&state, hash).await;
         },
@@ -162,7 +161,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //PICTURE AND NOTHING IS COMING UNTIL SOMEBODY CLICKS
         ClientEvent::ImageOffer(username, filename, hash, color) =>
         {
-            say(app, caption(username, filename, hash, false, color));
+            say(app, caption(username, filename, hash, PictureState::Absent, color));
         },
 
         //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
@@ -214,13 +213,15 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             {
                 //A PICTURE IS NAMED HERE AND NOT REPLAYED - THE HISTORY CARRIES ITS HASH, AND NOTHING GOES
                 //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME.
-                //ONE WE ALREADY HOLD IS THE EXCEPTION: THE CRATE IS WALKING THE CACHE BEHIND THIS EVENT
-                //AND WILL FILL THAT CAPTION ITSELF, SO IT SAYS SO INSTEAD OF OFFERING A BUTTON THAT WOULD
-                //ASK FOR WHAT IS ALREADY ON ITS WAY
+                //ONE WE ALREADY HOLD IS THE EXCEPTION: IT COSTS NOTHING BUT A DISK READ, SO IT CARRIES
+                //NO BUTTON AND IS LOADED WHEN THE CAPTION IS ACTUALLY LOOKED AT (tui/state.rs::load_visible)
                 match image
                 {
-                    Some(hash) => caption(username, text, hash, cached.contains(&hash),
-                        colors.username_color),
+                    Some(hash) => caption(username, text, hash, match cached.contains(&hash)
+                    {
+                        true => PictureState::Deferred,
+                        false => PictureState::Absent,
+                    }, colors.username_color),
                     None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
                 }
             }).collect::<Vec<ChatMessage>>();
@@ -238,16 +239,24 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             say(app, ChatMessage::notice(message).from_server());
         },
 
-        ClientEvent::Join(username) =>
+        //THE PACKET NAMES THE USER WHOLE - THEIR ID, THEIR COLOR AND WHAT THEY ARE ON - SO THE ROSTER
+        //ADDS THE ROW ITSELF. NOTHING IS ASKED FOR: A List BEHIND EVERY JOIN IS A PACKET PER ARRIVAL,
+        //AND EVERYBODY STARTS IN THE LOBBY
+        ClientEvent::Join(username, username_color, id, device) =>
         {
             say(app, ChatMessage::ok(format!("{username} connected.")).from_server());
 
-            //A NEW USER MEANS A NEW ROW, AND POSSIBLY A CHANNEL NOBODY WAS IN BEFORE
-            refresh_online(app, session);
+            emit(app, UiEvent::UserJoined { user: OnlineUserInfo
+            {
+                username,
+                username_color,
+                id,
+                channel: None,
+                device: device.as_ref().map(|device| device_label(device).to_string()),
+            } });
         },
 
-        //NO PacketCode::List HERE: A KICK WOULD PUT ONE RIGHT BEHIND THE ServerKick PACKET AND EARN A
-        //SpamWarning. THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
+        //THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
         ClientEvent::Leave(username, id) =>
         {
             say(app, ChatMessage::system(format!("{username} disconnected.")).from_server());
@@ -260,7 +269,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
             if was_in_voice { emit_voice(app); }
         },
 
-        ClientEvent::List(users) =>
+        ClientEvent::List(users, offline) =>
         {
             //THE ROSTER FEEDS THE SIDEBAR EITHER WAY; ONLY A /list THE USER TYPED ALSO ECHOES A BLOCK
             if state.list_requested.swap(false, Ordering::Relaxed)
@@ -273,16 +282,29 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                     id: Some(user.id),
                     text: user.username.clone(),
                     note: user.channel.clone().map(|channel| format!("#{channel}")),
+                    color: user.username_color,
+                    device: user.device.as_ref().map(|device| device_label(device).to_string()),
                     accent: user.channel.clone().unwrap_or_default() == here,
                 }).collect());
             }
 
-            let users = users.into_iter().map(|OnlineUser { username, id, channel }|
-            {
-                OnlineUserInfo { username, id, channel }
-            }).collect();
+            let users = users.into_iter()
+                .map(|OnlineUser { username, username_color, id, channel, device }| OnlineUserInfo
+                {
+                    username,
+                    username_color,
+                    id,
+                    channel,
+                    device: device.as_ref().map(|device| device_label(device).to_string()),
+                }).collect();
 
-            emit(app, UiEvent::Users { users });
+            //A SERVER THAT KEEPS ITS REGISTERED USERS TO ITSELF SENDS NONE AT ALL, WHICH IS NOT THE SAME
+            //THING AS SENDING AN EMPTY LIST - THE FIRST HAS NO SUCH PANEL AND THE SECOND HAS AN EMPTY ONE
+            let offline = offline.map(|offline| offline.into_iter()
+                .map(|OfflineUser { username, username_color }| OfflineUserInfo { username, username_color })
+                .collect());
+
+            emit(app, UiEvent::Users { users, offline });
         },
 
         //NOT A TREE: THE OWNER IS A HEADING AND THEIR FILES ARE THE ROWS UNDER IT. THE TWO IDS TRAVEL
@@ -321,6 +343,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                     id: None,
                     text: name.to_string(),
                     note: None,
+                    color: None,
+                    device: None,
                     accent: false,
                 });
 
@@ -330,6 +354,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                     id: Some(id),
                     text: subject,
                     note: None,
+                    color: None,
+                    device: None,
                     accent: false,
                 }));
             }
@@ -388,17 +414,17 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //REFUSING THE CHECK JUST ENDS THE SESSION
         ClientEvent::TofuError =>
         {
-            emit(app, UiEvent::Disconnected { reason: Some(String::from("Server identity rejected.")) });
+            emit(app, UiEvent::Disconnected { reason: Some(String::from("Server identity rejected.")), said: false });
         },
 
         //THE SERVER WENT AWAY BETWEEN THE TWO CONNECTIONS - THE KEY IS PINNED NOW, THE SOCKET IS NOT
         ClientEvent::ReconnectFailed =>
         {
-            emit(app, UiEvent::Disconnected { reason: Some(String::from("Reconnecting to the server failed.")) });
+            emit(app, UiEvent::Disconnected { reason: Some(String::from("Reconnecting to the server failed.")), said: false });
         },
 
         //UNLIKE TofuError THERE WAS NO PROMPT TO EXPLAIN ITSELF, SO THE REASON GOES BACK WITH THE BOX
-        ClientEvent::HandshakeFailed(reason) => emit(app, UiEvent::Disconnected { reason: Some(reason) }),
+        ClientEvent::HandshakeFailed(reason) => emit(app, UiEvent::Disconnected { reason: Some(reason), said: false }),
 
         ClientEvent::TofuSkip(hash) =>
         {
@@ -620,7 +646,9 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
         //THE SOCKET IS GONE, BUT THE APP IS NOT: THE CONNECT BOX COMES BACK SO ANOTHER SERVER (OR THE
         //SAME ONE AGAIN) IS ONE ENTER AWAY. A DISCONNECT THE USER ASKED FOR ARRIVES WITHOUT A REASON,
         //SO THE BOX COMES BACK WITHOUT AN ERROR OVER IT
-        ClientEvent::Quit =>
+        //A SERVER THAT SAID SO IS NOT ONE TO DIAL BACK, WHICH IS WHAT said CARRIES: A GRACEFUL CLOSE IS
+        //AN ANSWER AND NOT A DROPPED LINE (tui/event.rs HANDS THE SAME THING TO reconnect.forget)
+        ClientEvent::Quit(said) =>
         {
             emit(app, UiEvent::Disconnected
             {
@@ -630,6 +658,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent, session: u
                     false => Some(state.disconnect_reason.lock().unwrap().take()
                         .unwrap_or_else(|| String::from("Server quit communication."))),
                 },
+
+                said,
             });
         },
     }
@@ -646,7 +676,7 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     {
         if app.state::<AppState>().session.load(Ordering::Relaxed) != session { return }
 
-        handle_event(&app, event, session).await;
+        handle_event(&app, event).await;
     }
 
     let state = app.state::<AppState>();
@@ -657,7 +687,6 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     *state.role.lock().unwrap() = Role::default();
     state.tofu_reply.lock().unwrap().take();
     state.events.lock().unwrap().take();
-    state.roster_queued.store(false, Ordering::Relaxed);
     state.disconnect_reason.lock().unwrap().take();
     state.voice_enabled.store(false, Ordering::Relaxed);
     state.voice_roster.lock().unwrap().clear();

@@ -55,7 +55,7 @@ export interface MessageImage
     filename: string;
     hash: string | null;   //THE CONTENT HASH, WHICH IS WHAT THE SERVER IS ASKED FOR THE PICTURE WITH
     source: string | null; //THE PICTURE ITSELF, AS A data: URL
-    pending: boolean;      //THE PICTURE IS ALREADY ON ITS WAY, SO THE CAPTION OFFERS NO BUTTON
+    state: PictureState;   //WHAT THE CAPTION OFFERS WHILE THERE IS NO PICTURE UNDER IT
     width: number;
     height: number;
 }
@@ -69,9 +69,13 @@ export interface PictureActions
     ask: boolean;
 }
 
+//WHAT THE BRIDGE SAYS ABOUT A CAPTION'S PICTURE. deferred IS ONE THE CACHE ALREADY HOLDS: IT COSTS A
+//DISK READ AND NOT A PACKET, SO IT CARRIES NO BUTTON AND IS ASKED FOR WHEN IT IS LOOKED AT
+export type PictureState = "absent" | "deferred" | "waiting";
+
 //WHAT THERE IS TO DRAW UNDER A CAPTION - AND, WHILE THERE IS NOTHING, WHAT THE CAPTION OFFERS INSTEAD.
 //THE TUI'S Picture, MINUS THE READY ARM: A PICTURE THAT IS HERE IS THE MESSAGE'S OWN source
-export type PictureStatus = "absent" | "waiting" | "gone";
+export type PictureStatus = PictureState | "gone";
 
 //WHO A PRIVATE MESSAGE IS WITH - THE OTHER PERSON WHICHEVER WAY IT WENT. THE ECHO OF ONE WE SENT NAMES
 //THE RECIPIENT AND CARRIES NO AUTHOR, SO outgoing IS WHICH SIDE OF THE CONVERSATION THE LINE IS ON
@@ -98,6 +102,8 @@ export interface BlockRow
     id: number | null;
     text: string;
     note: string | null;
+    color: number | null;  //THE NAME'S OWN COLOR, WHERE THE ROW IS A PERSON
+    device: string | null; //AND WHAT THEY ARE ON, WHERE THEY SHARE IT
     accent: boolean;
 }
 
@@ -140,12 +146,22 @@ export type PaneEntry =
 export interface OnlineUser
 {
     username: string;
+    username_color: number | null;
     id: number;
     channel: string | null;
+    device: string | null; //WHAT THEY ARE ON, WHERE THEY SHARE IT - "tui", "desktop" OR "phone"
+}
+
+//A REGISTERED USER NOBODY IS CONNECTED AS. A SERVER THAT KEEPS ITS REGISTERED USERS TO ITSELF SENDS NONE
+//AT ALL, WHICH IS NOT AN EMPTY LIST BUT NO LIST - AND NO PANEL EITHER
+export interface OfflineUser
+{
+    username: string;
+    username_color: number | null;
 }
 
 //THE NAME OF THE SET A PARAMETER ACCEPTS - "free" IS EVERYTHING ELSE, AND HAS NOTHING TO OFFER
-export type ArgValues = "free" | "colors" | "monitors" | "roles";
+export type ArgValues = "free" | "colors" | "paths" | "images" | "monitors" | "roles";
 
 export interface CommandArgInfo
 {
@@ -358,7 +374,8 @@ export type BridgeEvent =
     | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
     | { event: "popup"; data: { text: string } }
     | { event: "tofu_prompt"; data: TofuPrompt }
-    | { event: "users"; data: { users: OnlineUser[] } }
+    | { event: "users"; data: { users: OnlineUser[]; offline: OfflineUser[] | null } }
+    | { event: "user_joined"; data: { user: OnlineUser } }
     | { event: "user_left"; data: { id: number } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
     | { event: "files"; data: { owners: FileOwner[] } }
@@ -372,4 +389,4 @@ export type BridgeEvent =
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }
     | { event: "channel_destroyed"; data: { name: string } }
-    | { event: "disconnected"; data: { reason: string | null } };
+    | { event: "disconnected"; data: { reason: string | null; said: boolean } };

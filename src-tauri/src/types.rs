@@ -21,7 +21,7 @@ use serde::{ Serialize, Deserialize };
 use why2_chat::
 {
     options,
-    network::codes::MessageColors,
+    network::codes::{ MessageColors, Device },
 };
 
 
@@ -45,14 +45,14 @@ pub(crate) struct ChatMessage
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
 //PICTURE WHERE THE TEXT WOULD BE. WHAT ARRIVED WITH ITS OWN BYTES CARRIES source AND NOTHING ELSE; ONE
 //THAT WAS ONLY NAMED CARRIES hash, AND NOTHING IS FETCHED UNTIL SOMEBODY ASKS TO SEE IT (request_image) -
-//UNLESS IT IS ALREADY ON ITS WAY, WHICH IS WHAT pending SAYS
+//UNLESS IT IS ALREADY ON ITS WAY OR IN THE CACHE, WHICH IS WHAT state SAYS
 #[derive(Serialize, Clone)]
 pub(crate) struct MessageImage
 {
     pub(crate) filename: String,
     pub(crate) hash: Option<String>,   //THE CONTENT HASH AS HEX - WHAT PacketCode::ImageData IS ASKED WITH
     pub(crate) source: Option<String>, //THE PICTURE ITSELF, AS A data: URL
-    pub(crate) pending: bool,          //THE PICTURE IS COMING, SO THE CAPTION OFFERS NO BUTTON
+    pub(crate) state: PictureState,    //WHAT THE CAPTION OFFERS WHILE THERE IS NO PICTURE UNDER IT
     pub(crate) width: u32,
     pub(crate) height: u32,
 }
@@ -87,6 +87,8 @@ pub(crate) struct BlockRow
     pub(crate) id: Option<usize>,
     pub(crate) text: String,
     pub(crate) note: Option<String>,             //A DIM TRAILING COLUMN - A CHANNEL, A DESCRIPTION
+    pub(crate) color: Option<u8>,                //THE NAME'S OWN COLOR, WHERE THE ROW IS A PERSON
+    pub(crate) device: Option<String>,           //AND WHAT THEY ARE ON, WHERE THEY SHARE IT
     pub(crate) accent: bool,
 }
 
@@ -131,8 +133,20 @@ pub(crate) struct FileOwnerInfo
 pub(crate) struct OnlineUserInfo
 {
     pub(crate) username: String,
+    pub(crate) username_color: Option<u8>,
     pub(crate) id: usize,
     pub(crate) channel: Option<String>,
+    pub(crate) device: Option<String>, //WHAT THEY ARE ON, WHERE THEY SHARE IT
+}
+
+//A REGISTERED USER NOBODY IS CONNECTED AS. THE SERVER SENDS THEM ONLY WHERE show_offline_users SAYS SO,
+//WHICH IS WHY THE WHOLE LIST IS AN Option AND NOT AN EMPTY ONE - A SERVER THAT KEEPS THEM TO ITSELF HAS
+//NO SUCH PANEL RATHER THAN AN EMPTY ONE
+#[derive(Serialize, Clone)]
+pub(crate) struct OfflineUserInfo
+{
+    pub(crate) username: String,
+    pub(crate) username_color: Option<u8>,
 }
 
 #[derive(Serialize, Clone)]
@@ -272,6 +286,18 @@ pub(crate) struct VocabularyValue
 }
 
 //ENUMS
+//WHAT THERE IS TO DRAW UNDER A CAPTION WHILE THE PICTURE ITSELF IS NOT HERE. absent CARRIES THE BUTTON,
+//waiting IS ONE ALREADY ASKED FOR, AND deferred IS ONE THE CACHE HOLDS - LOADED WHEN IT IS LOOKED AT
+//(tui/state.rs::Picture)
+#[derive(Serialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PictureState
+{
+    Absent,
+    Deferred,
+    Waiting,
+}
+
 //WHAT KIND OF ANSWER ONE OF OUR OWN KEYS TAKES. THIS IS THE TABLE'S SIDE OF IT - THE VALUE THE KEY
 //ACTUALLY HOLDS IS READ OUT OF THE CONFIG AND HANDED OVER AS A ClientValue
 #[derive(Clone, Copy)]
@@ -338,7 +364,9 @@ pub(crate) enum UiEvent
         pinned: Option<String>,
         mismatch: bool,
     },
-    Users { users: Vec<OnlineUserInfo> },                         //THE ROSTER BEHIND THE SIDEBAR
+    //THE ROSTER BEHIND THE SIDEBAR, AND THE REGISTERED USERS NOBODY IS CONNECTED AS (None = NOT OFFERED)
+    Users { users: Vec<OnlineUserInfo>, offline: Option<Vec<OfflineUserInfo>> },
+    UserJoined { user: OnlineUserInfo },                          //ADD ONE ROW WITHOUT ASKING AGAIN
     UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
     Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
@@ -352,7 +380,7 @@ pub(crate) enum UiEvent
     ChannelChanged { channel: Option<String> },                   //WE SWITCHED CHANNEL
     ChannelCreated { name: String },                              //SOMEBODY OPENED ONE
     ChannelDestroyed { name: String },                            //THE LAST ONE LEFT IT
-    Disconnected { reason: Option<String> },                      //THE SOCKET IS GONE
+    Disconnected { reason: Option<String>, said: bool },          //THE SOCKET IS GONE (said = THE SERVER CLOSED IT)
 }
 
 //IMPLEMENTATIONS
@@ -434,3 +462,13 @@ impl ChatMessage
 }
 
 //FUNCTIONS
+//HOW A SHARED DEVICE IS NAMED, WORD FOR WORD WITH tui/mod.rs::device_label
+pub(crate) fn device_label(device: &Device) -> &'static str
+{
+    match device
+    {
+        Device::TUI => "tui",
+        Device::Desktop => "desktop",
+        Device::Phone => "phone",
+    }
+}

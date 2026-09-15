@@ -48,6 +48,13 @@ function rewrite(panes: Panes, hash: string, status: PictureStatus[], change: (e
     return panes;
 }
 
+//A CAPTION THAT SCROLLED INTO VIEW AND WHOSE PICTURE THE CACHE ALREADY HOLDS: THE DISK READ IS ASKED FOR
+//HERE AND NOT WHEN THE HISTORY ARRIVED (tui/state.rs::load_visible)
+export function markLoading(panes: Panes, hash: string): Panes
+{
+    return rewrite(panes, hash, ["deferred"], (entry) => ({ ...entry, picture: "waiting" }));
+}
+
 //ASKED FOR. A CAPTION THAT WAS ANSWERED WITH NOTHING IS ASKABLE AGAIN - THE PICTURE MAY HAVE LEFT THE
 //HISTORY, AND IT MAY ALSO HAVE BEEN THE ONE ANSWER THAT WENT MISSING
 export function markWaiting(panes: Panes, hash: string): Panes

@@ -8422,6 +8422,7 @@ name = "why2-desktop"
 version = "1.0.3"
 dependencies = [
  "base64 0.23.1",
+ "dirs 7.0.0",
  "glib",
  "gtk",
  "image",

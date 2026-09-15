@@ -16,6 +16,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use std::
+{
+    fs,
+    ffi::OsStr,
+    path::{ Path, PathBuf },
+};
+
+use image::ImageFormat;
+
 use tauri::State;
 
 use why2_chat::
@@ -42,6 +51,8 @@ pub(crate) fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandA
         {
             ArgValues::Free => "free",
             ArgValues::Colors => "colors",
+            ArgValues::Paths => "paths",
+            ArgValues::Images => "images",
             ArgValues::Monitors => "monitors",
             ArgValues::Roles => "roles",
         }.to_string(),
@@ -78,14 +89,88 @@ pub(crate) fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE
         .collect()
 }
 
+//DIRECTORY ENTRIES OFFERED FOR ONE PATH, AS tui/consts.rs HAS IT
+const MAX_PATHS: usize = 256;
+
+//A LEADING ~ AS THE HOME DIRECTORY. THE CRATE KEPT THIS UNTIL THE PALETTE OFFERED PATHS AT ALL, AND IT
+//IS NOW THE TWO CLIENTS' OWN - ~name IS SOMEBODY ELSE'S HOME AND NOT OURS TO GUESS AT
+pub(crate) fn expand_home(path: &str) -> PathBuf
+{
+    let Some(rest) = path.strip_prefix('~') else { return PathBuf::from(path) };
+
+    let Some(home) = dirs::home_dir() else { return PathBuf::from(path) };
+
+    match rest.strip_prefix('/')
+    {
+        Some(rest) => home.join(rest),
+        None if rest.is_empty() => home,
+
+        None => PathBuf::from(path),
+    }
+}
+
+//WHETHER A FILE IS A PICTURE THIS CLIENT DECODES
+fn decodable(name: &str) -> bool
+{
+    let Some(extension) = Path::new(name).extension().and_then(OsStr::to_str) else { return false };
+
+    ImageFormat::from_extension(extension).is_some_and(|format| format.reading_enabled())
+}
+
+//WHAT SITS BESIDE THE HALF-TYPED PATH (tui/palette.rs::paths)
+fn paths(typed: &str, images: bool) -> Vec<VocabularyValue>
+{
+    //EVERYTHING PAST THE LAST SEPARATOR IS THE NAME BEING TYPED
+    let (dir, prefix) = match typed.rfind('/')
+    {
+        Some(cut) => (&typed[..=cut], &typed[cut + 1..]),
+        None => ("", typed),
+    };
+
+    let target = if dir.is_empty() { PathBuf::from(".") } else { expand_home(dir) };
+
+    let Ok(entries) = fs::read_dir(target) else { return Vec::new() };
+
+    let prefix = prefix.to_lowercase();
+
+    let mut matches = entries.flatten().filter_map(|entry|
+    {
+        let name = entry.file_name().into_string().ok()?;
+
+        if !name.to_lowercase().starts_with(&prefix) { return None }
+
+        //A DOTFILE IS OFFERED ONLY WHEN ASKED FOR
+        if name.starts_with('.') && !prefix.starts_with('.') { return None }
+
+        //A DIRECTORY CARRIES ITS SEPARATOR, SO COMPLETING ONE WALKS INTO IT
+        let directory = entry.path().is_dir();
+
+        if images && !directory && !decodable(&name) { return None }
+
+        let separator = if directory { "/" } else { "" };
+
+        Some(format!("{dir}{name}{separator}"))
+    }).collect::<Vec<String>>();
+
+    matches.sort_unstable();
+    matches.truncate(MAX_PATHS);
+
+    matches.into_iter().map(|value| VocabularyValue { value, color: None }).collect()
+}
+
 //ONE ROW'S KIND, OR NOTHING WHEN THE KEY IS NOT ONE THE BOX OFFERS - A KEY ARRIVING FROM ANYWHERE ELSE
 //IS NOT OURS TO WRITE, WHATEVER client.toml HAPPENS TO HOLD UNDER IT
 
 #[tauri::command]
-pub(crate) fn get_vocabulary(values: String) -> Vec<VocabularyValue>
+pub(crate) fn get_vocabulary(values: String, typed: String) -> Vec<VocabularyValue>
 {
     match values.as_str()
     {
+        //THE FILESYSTEM, READ AT EVERY KEYSTROKE - WHAT SITS BESIDE THE HALF-TYPED PATH IS A DIFFERENT
+        //ANSWER EACH TIME, WHICH IS WHY THIS IS THE ONE VOCABULARY THAT IS ASKED WHAT WAS TYPED
+        "paths" => paths(&typed, false),
+        "images" => paths(&typed, true),
+
         "colors" => offered_colors(),
 
         //THE ROLES ARE THE ONE VOCABULARY THAT IS ALSO A PROTOCOL VALUE - THE SERVER STORES THE POSITION IN

@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.1.4", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.1.4", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.0", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -41,7 +41,8 @@ so the first `--release` build is usually where it shows up. It is on for **both
 in **Android**. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
 own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
 which also documents the one change this app needs in that crate. When behaviour looks wrong, the cause is often in that crate, not here — read
-its `chat/src/` (`network/client.rs`, `network/codes.rs`, `command.rs`, `options.rs`) before
+its `chat/src/` (`network/client/`, which is `mod.rs`, `handshake.rs` and `image.rs` since 2.2.0,
+`network/codes.rs`, `command.rs`, `options.rs`) before
 assuming a bug in this repo — in the checkout at `/mnt/data/Rust/WHY2` if there is one, otherwise in the copy
 cargo fetched under `~/.cargo/git`. This app is a thin presentation layer over it.
 
@@ -140,7 +141,8 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 `LOBBY`), `theme.ts` (the two ANSI tables), `format.ts`, `icons.tsx`, `components.tsx` (`Avatar`, `Switch`,
 `SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `pictures.ts` (which caption an arriving
-picture belongs to), `narrow.ts` — and the views that take props
+picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
+`narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
 `servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`.
 
@@ -310,7 +312,10 @@ same `dial` a click on that row would have, stored identity and all, up to `RECO
 tries are handed out by the session that **worked** (`authenticated` is what refills them), so a server that
 never let us in is never dialled behind the user's back, and they are taken away by everything that says the
 answer is no longer ours to give: a `/exit` or a switch (a disconnect with no reason), a username or password
-the server refused, and picking another server. A dial that never reached the server at all arms the next one
+the server refused, and picking another server. **A server that closed the socket itself is not dialled back
+either**: `ClientEvent::Quit` says whether the other end said so, the bridge passes that on as
+`Disconnected { said }`, and a graceful close is an answer rather than a line that went down (the TUI calls
+that `reconnect.forget()`). A dial that never reached the server at all arms the next one
 from `dial`'s own `catch`. While the wait runs the connect screen says so rather than `Connecting…` —
 `retrying` is that line, and it is the only thing `LoginScreen` was given for any of this.
 
@@ -772,7 +777,13 @@ readable until the next render — so a tap used to take the first row whatever 
 
 The vocabularies are not shipped with the command list: `get_vocabulary` is invoked when the caret lands on a
 parameter that has one and dropped when it leaves, because a monitor plugged in mid-session is supposed to
-show up. Colors carry their own code so the row can be painted in it. `/screen` is the only user of
+show up. Colors carry their own code so the row can be painted in it. **`/upload` and `/image` take a path,
+and a path is the one vocabulary that is also a question about what was typed** — so the command carries the
+half-typed word with it (`typedPath` in `App.tsx`) and `palette.rs::paths` reads that directory at every
+keystroke, mirroring `tui/palette.rs`: a directory keeps its trailing separator so completing one walks into
+it, a dotfile is offered only when asked for, and `/image` (`ArgValues::Images`) offers only what `image` can
+actually decode. A leading `~` is expanded here rather than in the crate, which is where `expand_home` used
+to live. `/screen` is the only user of
 `ArgValues::Monitors`, and the names come from the crate's own `screen_capture::monitor_names()` rather than
 Tauri's `available_monitors()` — these are what `/screen` resolves against, and a window manager's idea of
 what a monitor is called is not always the capture backend's.
@@ -800,6 +811,10 @@ On a phone the row turns: a 220px control and a 24px gap leave a setting's *name
 ellipsis, so under `narrow` everything but a switch goes **under** the label and takes the width, and the
 label itself wraps rather than being cut — a setting's name is a phrase and not something measured in
 characters. A switch stays where every other settings screen puts it, on the right of the thing it turns off.
+
+The `Privacy` section is one row and it is the only key in the box that anybody else ever sees the effect
+of: `share_device` puts `Device::Desktop` (or `Device::Phone`) on the identity step, and every user list on
+the server then says which client this is — see **The roster**. Off is the default, here as in the crate.
 
 `restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
 by the next, and is dead while there are unsaved rows in the box.
@@ -886,16 +901,20 @@ image ever posted. So a history entry with an `image` becomes a caption — the 
 invokes `request_image`. That command no longer puts a packet on the wire itself: it hands the hash to
 `client::fetch_image`, which answers out of the cache where it can and comes back as **`ImageRequest`**
 where it cannot — and *that* is what asks the server. `ClientEvent::History` also carries **which of its
-pictures we already hold**, and those captions go up as `waiting` rather than `absent`: the crate is walking
-the cache behind that event and will fill them itself, so offering a button for a picture already on its way
-is the one thing they must not do.
+pictures we already hold**, and those captions go up as `deferred`: the crate does not walk the cache behind
+that event any more, so the picture is loaded **when the caption is actually looked at** — `Caption` in
+`messages.tsx` puts an `IntersectionObserver` on the row and asks once, which is `tui/state.rs::load_visible`
+with a browser doing the measuring. A login that unpacked every picture it had ever been sent is a second of
+disk and decoding for lines nobody scrolled back to. It carries no button either way: what the cache holds
+costs a disk read and not a packet, and a button for it would be asking to be given what is already ours.
 
-The caption's `pending` flag (`MessageImage`) is the whole of what the bridge says about that — it is
+The caption's `state` (`MessageImage`) is the whole of what the bridge says about that — it is
 `tui/state.rs::push_caption`'s own parameter, and `entryFor` in `App.tsx` is where it becomes a
 `PictureStatus`. The state of a caption is otherwise the **frontend's**, since the pane is: `PaneEntry`
-carries a `PictureStatus` (`absent`, `waiting`, `gone`) beside the message, which is `tui/state.rs`'s
+carries a `PictureStatus` (`absent`, `deferred`, `waiting`, `gone`) beside the message, which is `tui/state.rs`'s
 `Picture` minus its ready arm — a picture that is here is the message's own `source`. `pictures.ts` is the
-two things that move it, and `deliverPicture` makes the same decision `deliver_image` does: **the answer
+three things that move it (`markWaiting` is the button, `markLoading` is the caption coming into view), and
+`deliverPicture` makes the same decision `deliver_image` does: **the answer
 fills the oldest line still without that picture**, because the same picture can be in the pane twice and
 the second one asked for itself. `absent` counts as well as `waiting` — an answer nobody clicked for is
 what a cache hit *is* — while a **refusal only marks a line that actually asked**. A `gone` caption is
@@ -1144,8 +1163,8 @@ seeing is the one thing the person sharing cannot otherwise check) over our own 
 badged. The header's monitor button opens it, the sidebar's `Sharing your screen` strip reopens it to swap.
 Its rows send `/attach <id>`, `/deattach` and `/screen <name>`.
 
-The ask does **not** go through `send_input`: `refresh_screens` is the `refresh_online` of this question,
-waiting out `ROSTER_GAP` since our own last packet, because a `Screens` on the heels of an `Attach` is
+The ask does **not** go through `send_input`: `refresh_screens` waits out `ROSTER_GAP` since our own last
+packet, because a `Screens` on the heels of an `Attach` is
 exactly what the server calls spam. And every answer opens the window, since nothing asks quietly any
 more — a `screens` event is either the window's own ask or somebody typing `/screens`, and both of them
 belong in it.
@@ -1523,14 +1542,35 @@ Everything else is the shape the window already has:
   back out of a screen, and the composer's placeholder. `whisper` (the accent rule and the `private` badge) is
   drawn only **outside** a conversation, where a line being private is news.
 
-### Roster refreshes
+### The roster
 
-The server counts *packets*, not messages, against `min_message_delay`, and it broadcasts our own `Join` right
-behind `Accept` — so the two events that both want a roster used to put two `List` packets on the wire a
-millisecond apart and earn a spam warning. `refresh_online` coalesces them the way the TUI's `refresh_online`
-flag does, then waits until our own last packet is `ROSTER_GAP` behind it. Never send a `List` (or anything
-else unprompted) straight out of an event handler — go through `refresh_online`, and route anything you do send
-through `send_packet` so the clock it reads stays honest.
+**Nobody asks for the roster any more.** The server sends a `List` the moment it lets somebody in, and every
+arrival after that is a `Join` that names the user whole — their id, their color and what they are on — so
+the window adds the row itself (`UiEvent::UserJoined`) and the `Leave` that names the id drops it. That is
+`tui/event.rs`'s own arrangement, and it is what the silent `List` behind every join was costing: a packet
+per arrival for an answer we were already being told. `sortRoster` in `roster.ts` keeps the order
+`tui/state.rs::sort_online` keeps — us first, the rest by id.
+
+What the roster is therefore **not** kept honest about is which channel somebody is standing in: nothing is
+broadcast when they move, so a row's `#channel` is as old as the last `List`. The channel *list* is not
+affected — `ChannelCreated`/`ChannelDestroyed` are broadcast, and the sidebar follows them.
+
+`ROSTER_GAP` is still what anything unprompted waits out (`refresh_screens` is the one left), and everything
+this side originates still goes through `send_packet` so the clock it reads stays honest: the server counts
+*packets*, not messages, against `min_message_delay`.
+
+**A server may also send the users nobody is connected as** — `show_offline_users`, which is its own config
+key — and those arrive with the same `List`. `null` there is not an empty list: it is a server that keeps
+them to itself, and the member column then has no such section rather than an empty one. A leave files that
+person into it and a join takes them back out, since the server has no guests and everybody who left is
+somebody registered.
+
+**What somebody is running is on the row, as an icon.** `share_device` (`client.toml`, off by default, a
+`Privacy` row in the settings dialog) is what puts `Device::Desktop` — or `Device::Phone`, the target being
+what says which — on the identity step, and it travels no further than the user lists. The TUI prints the
+word because a terminal has only words; this window has the line art already, so `deviceIcon` in `roster.ts`
+names one of `terminal`/`monitor`/`phone` and it sits on the right edge of the row, which is where the TUI
+anchors its own. The `/list` card carries both it and the name's color, since that card is the same list.
 
 ### Colors
 

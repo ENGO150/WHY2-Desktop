@@ -23,6 +23,7 @@ import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
+import { deviceIcon } from "./roster";
 import { parse, type Segment } from "./markup";
 import hljs from "highlight.js/lib/common";
 import katex from "katex";
@@ -38,6 +39,10 @@ import { MENU_WIDTH, type HeldMenu } from "./servers";
 export interface Pictures
 {
     show: (hash: string) => void;
+
+    //A PICTURE THE CACHE ALREADY HOLDS, ASKED FOR BECAUSE ITS CAPTION IS ON SCREEN - NOBODY PRESSED
+    //ANYTHING FOR THIS ONE
+    load: (hash: string) => void;
     open: (image: MessageImage) => void;
     hold: (image: MessageImage) => Record<string, unknown>;
     held: () => boolean;
@@ -318,15 +323,45 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
         );
     }
 
+    return <Caption image={image} status={status} pictures={pictures} />;
+}
+
+//A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT. ONE THE CACHE HOLDS IS LOADED WHEN IT IS ACTUALLY
+//LOOKED AT AND NOT WHEN THE HISTORY ARRIVES (tui/state.rs::load_visible) - A LOGIN THAT UNPACKED EVERY
+//PICTURE IT HAD EVER BEEN SENT IS A SECOND OF DISK AND DECODING FOR LINES NOBODY SCROLLED BACK TO
+function Caption({ image, status, pictures }: { image: MessageImage; status: PictureStatus; pictures: Pictures })
+{
+    const row = React.useRef<HTMLDivElement>(null);
+    const asked = React.useRef(false);
+
+    React.useEffect(() =>
+    {
+        const node = row.current;
+
+        if (status !== "deferred" || !node || asked.current) return;
+
+        const observer = new IntersectionObserver((entries) =>
+        {
+            if (!entries.some((entry) => entry.isIntersecting) || asked.current) return;
+
+            asked.current = true;
+            pictures.load(image.hash!);
+        });
+
+        observer.observe(node);
+
+        return () => observer.disconnect();
+    }, [status]);
+
     return (
-        <div className="flex flex-wrap items-center gap-2 text-[15px] leading-relaxed text-muted">
+        <div ref={row} className="flex flex-wrap items-center gap-2 text-[15px] leading-relaxed text-muted">
             <Icon name="image" className="h-4 w-4 shrink-0" />
             <span className="min-w-0 break-all">{image.filename}</span>
 
-            {status === "waiting" && <span className="text-faint">loading...</span>}
+            {(status === "waiting" || status === "deferred") && <span className="text-faint">loading...</span>}
             {status === "gone" && <span className="text-error">unavailable</span>}
 
-            {status !== "waiting" && image.hash && (
+            {status !== "waiting" && status !== "deferred" && image.hash && (
                 <button
                     type="button"
                     onClick={() => pictures.show(image.hash!)}
@@ -339,7 +374,7 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
     );
 }
 
-    //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
+//SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
     picture: PictureStatus, pictures: Pictures, lines: Lines)
@@ -434,7 +469,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
 
     //A LIST THE SERVER ANSWERED WITH. IT IS A CARD IN THE STREAM RATHER THAN A WINDOW OVER IT, AND THE
     //ROWS KEEP THE TERMINAL'S BRANCH GLYPHS - THEY ARE A TREE, AND A TREE IS WHAT THEY SHOULD LOOK LIKE
-export function renderBlock(title: string, rows: BlockRow[], key: number)
+export function renderBlock(title: string, rows: BlockRow[], key: number, config: ClientConfig)
     {
         const glyphs = branches(rows);
 
@@ -454,14 +489,22 @@ export function renderBlock(title: string, rows: BlockRow[], key: number)
                 </div>
 
                 <div className="py-1">
-                    {rows.map((row, index) => (
-                        <div key={index} className="flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px]">
-                            <span className="text-border-strong">{glyphs[index]}</span>
-                            {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
-                            <span className={row.accent ? "text-accent" : ""}>{row.text}</span>
-                            {row.note && <span className="text-faint">{"  "}{row.note}</span>}
-                        </div>
-                    ))}
+                    {rows.map((row, index) =>
+                    {
+                        //A NAME IS PAINTED IN WHATEVER ITS OWNER PICKED, THE SAME AS IT IS IN THE PANE
+                        const color = messageColor(config, row.color);
+                        const device = row.device ? deviceIcon(row.device) : null;
+
+                        return (
+                            <div key={index} className="flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px]">
+                                <span className="text-border-strong">{glyphs[index]}</span>
+                                {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
+                                <span className={color ? "" : row.accent ? "text-accent" : ""} style={color ? { color } : undefined}>{row.text}</span>
+                                {device && <Icon name={device} className="mx-1.5 h-3.5 w-3.5 shrink-0 text-faint" />}
+                                {row.note && <span className="text-faint">{"  "}{row.note}</span>}
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         );

@@ -35,10 +35,15 @@ use why2_chat::
 {
     misc,
     consts,
+    config,
     role::Role,
     options::{ self, LoginState },
     command::{ self, Command, Subcommand },
-    network::{ client, codes::PacketCode },
+    network::
+    {
+        client,
+        codes::{ PacketCode, Device },
+    },
 };
 
 use crate::types::*;
@@ -231,11 +236,22 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
     let request = match image
     {
         //NO COLOR: THE CAPTION IS NAMED IN WHATEVER THE SERVER HOLDS FOR US, THE WAY A MESSAGE IS
-        true => PacketCode::Image { hash, filename, token: None, uid: None },
-        false => PacketCode::Upload { hash, token: None, uid: None },
+        true => PacketCode::ImageRequest { hash, filename },
+        false => PacketCode::UploadRequest { hash },
     };
 
     send_packet(state, write_stream, request).await;
+}
+
+//WHAT WE TELL THE SERVER WE ARE RUNNING, AND ONLY WHERE THE USER SAID TO. THE TWO BUILDS ARE TWO
+//DIFFERENT ANSWERS: THE SAME SOURCE IS A DESKTOP PROGRAM AND A PHONE APP, AND THE TARGET IS WHAT SAYS
+//WHICH (tui/../client/mod.rs::share_device)
+fn share_device() -> Option<Device>
+{
+    if !config::read_config::<bool>("share_device") { return None }
+
+    #[cfg(target_os = "android")] { Some(Device::Phone) }
+    #[cfg(not(target_os = "android"))] { Some(Device::Desktop) }
 }
 
 //MODERATION ACTIONS - /server <action> [parameters]
@@ -285,9 +301,9 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
         Subcommand::BanIp     => PacketCode::ServerBanIp { id: id.unwrap() },
         Subcommand::Pardon    => PacketCode::ServerPardon { id: id.unwrap() },
         Subcommand::PardonIp  => PacketCode::ServerPardonIp { id: id.unwrap() },
-        Subcommand::Bans      => PacketCode::ServerBans { users: None, ips: None },
+        Subcommand::Bans      => PacketCode::ServerBansRequest,
         Subcommand::Say       => PacketCode::ServerSay { message: tail.to_owned() },
-        Subcommand::Settings  => PacketCode::ServerSettings { settings: None, save: false },
+        Subcommand::Settings  => PacketCode::ServerSettingsRequest,
 
         //THE ONE ACTION THAT AIMS AT A USER AND STILL TAKES SOMETHING ELSE - THE ROLE IS RESOLVED HERE,
         //SO A NAME NOBODY KNOWS IS INVALID USAGE ON THE SPOT RATHER THAN A PACKET THE SERVER REFUSES
@@ -298,7 +314,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
             let Ok(id) = target.parse::<usize>() else { return popup(app, "Invalid usage!") };
             let Ok(role) = role.trim().parse::<Role>() else { return popup(app, "Invalid role!") };
 
-            PacketCode::ServerRole { id, role, username: None }
+            PacketCode::ServerRoleRequest { id, role }
         },
     };
 
@@ -331,7 +347,7 @@ pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> R
 
     let Some(hash) = unhex(&hash) else { return Err(String::from("Invalid image")) };
 
-    client::fetch_image(hash, events);
+    client::image::fetch_image(hash, events);
 
     Ok(())
 }
@@ -476,10 +492,10 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
         {
             *state.username.lock().unwrap() = input.clone();
 
-            PacketCode::Username { username: Some(input) }
+            PacketCode::Username { username: input, device: share_device() }
         },
-        LoginState::PasswordLogin => PacketCode::PasswordL { password: Some(input) },
-        LoginState::PasswordRegister => PacketCode::PasswordR { password: Some(input) },
+        LoginState::Login => PacketCode::Login { password: input },
+        LoginState::Register => PacketCode::Register { password: input },
         LoginState::None => PacketCode::MessageRequest { text: input },
     };
 

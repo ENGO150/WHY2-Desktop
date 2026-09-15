@@ -79,6 +79,13 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
 ];
 
+//ON, THE IDENTITY STEP TELLS THE SERVER WHICH CLIENT THIS IS - AND EVERY USER LIST THEN SAYS SO. IT IS
+//OFF BY DEFAULT: WHAT SOMEBODY IS RUNNING IS THEIRS TO SHARE
+pub(crate) const PRIVACY_SETTINGS: &[SettingsKey] =
+&[
+    ("Privacy", "Share device", "share_device", ClientKind::Toggle { invert: false }),
+];
+
 //THE ONE ROW IN THE BOX THAT IS NOT client.toml'S. THE WINDOW OPENS ON THE LIST AND DIALS NOTHING UNLESS
 //THIS SAYS OTHERWISE, WHICH IS WHY None IS WHAT IT SHIPS WITH: A SESSION NOBODY ASKED FOR IS ONE TO BE
 //LEFT AGAIN BY HAND
@@ -90,7 +97,7 @@ pub(crate) const STARTUP_SETTINGS: &[SettingsKey] =
 //EVERY ROW THE BOX OFFERS, IN THE ORDER tui/settings.rs OPENS THEM
 pub(crate) fn client_keys() -> impl Iterator<Item = &'static SettingsKey>
 {
-    AUDIO_SETTINGS.iter().chain(INTERFACE_SETTINGS).chain(STARTUP_SETTINGS)
+    AUDIO_SETTINGS.iter().chain(INTERFACE_SETTINGS).chain(PRIVACY_SETTINGS).chain(STARTUP_SETTINGS)
 }
 
 //CELLS OF VOLUME BAR AND THE STEP EITHER ARROW MOVES IT BY, BOTH AS tui/settings.rs HAS THEM. THE BAR IS
@@ -336,7 +343,7 @@ pub(crate) async fn save_server_settings(settings: Vec<SettingRow>, app: AppHand
         restart: false,
     }).collect();
 
-    send_packet(&state, &write_stream, PacketCode::ServerSettings { settings: Some(settings), save: true }).await;
+    send_packet(&state, &write_stream, PacketCode::ServerSettingsSave { settings }).await;
 
     //STORED IS NOT THE SAME AS IN USE FOR THESE - SAY SO ONCE, WHERE THE USER READS THINGS
     if !restart.is_empty()

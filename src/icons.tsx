@@ -51,6 +51,8 @@ export const ICONS: Record<string, string[]> =
     archive: ["M4 8h16v12H4z", "M3 4h18v4H3z", "M10 12h4"],
     code: ["M9 18l-6-6 6-6", "M15 6l6 6-6 6"],
     monitor: ["M3 5h18v11H3z", "M9 20h6", "M12 16v4"],
+    phone: ["M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", "M10.5 18.5h3"],
+    terminal: ["M4 4h16v16H4z", "M8 9l3 3-3 3", "M13 15h3"],
     at: ["M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"],
     menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
 
