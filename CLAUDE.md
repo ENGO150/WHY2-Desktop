@@ -530,6 +530,14 @@ Two things the layout depends on:
 - **The composer and the header do not scroll** (`shrink-0`), and the pane between them is the only thing
   that does. The palette is absolutely positioned against the composer's wrapper (`bottom-full`), so it grows
   upwards off a fixed edge rather than pushing the input around.
+- **Nothing in the window scrolls sideways.** `overflow-y: auto` computes the *other* axis to `auto` as well,
+  so every `.scroller` was a column that could be dragged horizontally the moment anything in it was too
+  wide — which on a phone is most of them. `.scroller` therefore says `overflow-x: hidden` out loud, and what
+  is wide wraps instead: the message text breaks any token (`overflow-wrap: anywhere` on `.message-body`, and
+  not `break-word`, which leaves the min-content width alone), and a `/list` row wraps its name while the
+  branch glyphs and the ID column stay `whitespace-pre`. The three things that are genuinely not text — a
+  fenced code block, display math and a long inline formula — still scroll, each **inside its own box**, which
+  is what keeps the column behind them still.
 
 The window is nearly monochrome on purpose. The surfaces are a near-black stack (`deep` → `sidebar` →
 `chat` → `raised` → `overlay`) with a trace of rose in every one of them, and the accents are still

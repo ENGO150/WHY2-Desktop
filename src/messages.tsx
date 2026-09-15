@@ -496,10 +496,10 @@ export function renderBlock(title: string, rows: BlockRow[], key: number, config
                         const device = row.device ? deviceIcon(row.device) : null;
 
                         return (
-                            <div key={index} className="flex items-center whitespace-pre px-3 py-[3px] font-mono text-[13px]">
-                                <span className="text-border-strong">{glyphs[index]}</span>
-                                {row.id !== null && <span className="text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
-                                <span className={color ? "" : row.accent ? "text-accent" : ""} style={color ? { color } : undefined}>{row.text}</span>
+                            <div key={index} className="flex items-start whitespace-pre-wrap px-3 py-[3px] font-mono text-[13px]">
+                                <span className="shrink-0 whitespace-pre text-border-strong">{glyphs[index]}</span>
+                                {row.id !== null && <span className="shrink-0 whitespace-pre text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
+                                <span className={`min-w-0 break-words ${color ? "" : row.accent ? "text-accent" : ""}`} style={color ? { color } : undefined}>{row.text}</span>
                                 {device && <Icon name={device} className="mx-1.5 h-3.5 w-3.5 shrink-0 text-faint" />}
                                 {row.note && <span className="text-faint">{"  "}{row.note}</span>}
                             </div>

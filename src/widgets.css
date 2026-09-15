@@ -16,10 +16,13 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* THE SCROLLBAR IS ONLY THERE WHILE SOMETHING IS OFF-SCREEN, AND IT NEVER CLAIMS A COLUMN OF ITS OWN */
+/* THE SCROLLBAR IS ONLY THERE WHILE SOMETHING IS OFF-SCREEN, AND IT NEVER CLAIMS A COLUMN OF ITS OWN.
+   overflow-x IS SAID OUT LOUD BECAUSE overflow-y: auto ALONE COMPUTES THE OTHER AXIS TO auto AS WELL -
+   A COLUMN THAT SCROLLS SIDEWAYS IS A LINE THAT SHOULD HAVE WRAPPED */
 .scroller
 {
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: var(--border-strong) transparent;
 }
@@ -338,8 +341,15 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
    WANT - A FORMULA IN A COLOURED MESSAGE IS THE SENDER'S COLOUR, THE WAY THE REST OF THEIR TEXT IS.
    DISPLAY MATH OWNS ITS ROWS AND IS THE ONE THING IN THE PANE THAT CAN BE WIDER THAN THE PANE, SO IT
    SCROLLS ON ITS OWN AND THE COLUMN BEHIND IT NEVER DOES */
+/* KaTeX SETS ITS OWN RUN nowrap, SO A LONG INLINE FORMULA IS THE ONE PIECE OF A MESSAGE THAT CANNOT
+   WRAP - IT IS BOXED AND SCROLLS IN ITS OWN INCH RATHER THAN WIDENING THE COLUMN BEHIND IT */
 .math-inline
 {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    vertical-align: bottom;
     white-space: normal;
 }
 
@@ -394,6 +404,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
    LINE IS A COLUMN OF BUTTONS AND NOT A CONVERSATION, AND ONE FLOATING OVER THE TOP-RIGHT OF EVERY ROW
    SITS ON THE END OF SOMEBODY'S FIRST LINE. THE GESTURE THERE IS A HOLD, WHICH OPENS THE SAME THING AS
    A MENU (MessageMenu) - THE WAY A PICTURE IS ALREADY ASKED ABOUT */
+/* A WORD WITH NO BREAK IN IT - A URL, A HASH, SOMEBODY LEANING ON ONE KEY - IS BROKEN RATHER THAN
+   CARRIED PAST THE EDGE. anywhere AND NOT break-word, WHICH LEAVES THE MIN-CONTENT WIDTH ALONE */
+.message-body,
+.message-body p,
+.message-body span,
+.message-body a
+{
+    overflow-wrap: anywhere;
+}
+
 @media (hover: none)
 {
     .row-action
