@@ -66,7 +66,7 @@ import { PALETTE_ROWS, analyze, entryTyped, formatArg } from "./palette";
 import { hasMarkup } from "./markup";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
-import { useNarrow, useTouch, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
+import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
 import { TofuDialog, CHALLENGE } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
@@ -1195,6 +1195,7 @@ function App()
         side: "left" | "right" | null;
         from: number;
         width: number;
+        scroller: HTMLElement | null;
     } | null>(null);
 
     //THE INLINE POSITION IS GIVEN BACK TO THE CLASSES ONCE THE LAST STRETCH HAS PLAYED OUT, AND A DRAG
@@ -1271,7 +1272,16 @@ function App()
         //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
         swipeRef.current = narrow && event.touches.length === 1 && touch && connected
             && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu
-            ? { x: touch.clientX, y: touch.clientY, side: null, from: 0, width: 1 }
+            ? {
+                x: touch.clientX,
+                y: touch.clientY,
+                side: null,
+                from: 0,
+                width: 1,
+
+                //AND A BOX THAT SCROLLS SIDEWAYS IS WHAT A DRAG ACROSS IT BELONGS TO, NOT THE DRAWERS
+                scroller: scrollerAt(event.target, event.currentTarget),
+            }
             : null;
     };
 
@@ -1295,6 +1305,15 @@ function App()
             if (Math.abs(across) < SWIPE_SLOP && Math.abs(along) < SWIPE_SLOP) return;
 
             if (Math.abs(across) < Math.abs(along) * SWIPE_SLOPE)
+            {
+                swipeRef.current = null;
+
+                return;
+            }
+
+            //SIDEWAYS, AND OVER SOMETHING THAT STILL HAS SIDEWAYS TO GIVE: THE FORMULA OR THE CODE BLOCK
+            //IS BEING READ TO ITS END, AND THE DRAWER IS NOT PART OF THAT
+            if (start.scroller && canScroll(start.scroller, across))
             {
                 swipeRef.current = null;
 

@@ -35,6 +35,40 @@ export const SWIPE_SLOP = 10;
 //SINCE THIS IS WHEN THE INLINE POSITION IS HANDED BACK TO THEM
 export const DRAWER_MS = 180;
 
+//THE BOX UNDER THE FINGER THAT SCROLLS SIDEWAYS, IF THERE IS ONE. THREE THINGS IN THE PANE ARE WIDER THAN
+//IT ON PURPOSE AND SCROLL INSIDE THEMSELVES - A FENCED BLOCK, DISPLAY MATH AND A LONG INLINE FORMULA - AND
+//A DRAG ACROSS ONE OF THOSE IS SOMEBODY READING THE END OF IT, NOT SOMEBODY REACHING FOR A DRAWER.
+//IT IS ASKED OF THE COMPUTED STYLE AND NOT OF A LIST OF CLASS NAMES: .scroller IS overflow-x: hidden AND
+//IS THEREFORE NOT ONE OF THESE, WHICH IS THE WHOLE REASON THAT RULE IS WRITTEN OUT LOUD
+export function scrollerAt(target: EventTarget | null, root: Element | null): HTMLElement | null
+{
+    let node = target instanceof Element ? target : null;
+
+    while (node && node !== root)
+    {
+        if (node instanceof HTMLElement && node.scrollWidth > node.clientWidth + 1)
+        {
+            const overflow = getComputedStyle(node).overflowX;
+
+            if (overflow === "auto" || overflow === "scroll") return node;
+        }
+
+        node = node.parentElement;
+    }
+
+    return null;
+}
+
+//AND WHETHER IT HAS ANYWHERE LEFT TO GO THE WAY THE FINGER IS PUSHING IT. A FINGER MOVING RIGHT PULLS THE
+//CONTENT BACK TOWARDS ITS START, SO THE BOX ONLY OWNS THAT DRAG WHILE IT IS NOT ALREADY THERE - A FORMULA
+//SCROLLED TO ITS END HANDS THE NEXT SWIPE ON TO THE DRAWER, WHICH IS WHAT A NATIVE ONE DOES TOO
+export function canScroll(node: HTMLElement, across: number): boolean
+{
+    const left = Math.abs(node.scrollLeft); //rtl COUNTS THE OTHER WAY
+
+    return across > 0 ? left > 1 : left < node.scrollWidth - node.clientWidth - 1;
+}
+
 //ONE MEDIA QUERY, WATCHED. BOTH QUESTIONS BELOW ARE THAT AND NOTHING ELSE, AND NEITHER OF THEM IS
 //ANSWERED ONCE AT STARTUP: A WINDOW IS DRAGGED NARROWER AND A TABLET HAS A KEYBOARD PLUGGED INTO IT
 function useMedia(query: string): boolean

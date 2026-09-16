@@ -1469,7 +1469,13 @@ chat app has settled on:
   about is decided once, after `SWIPE_SLOP`, and then kept: a drawer already open is the one being moved,
   otherwise the direction picks one — and a drag that is mostly vertical is somebody reading (`SWIPE_SLOPE`).
   Letting go commits the direction if it travelled `SWIPE`, and otherwise puts the drawer back where it came
-  from. The position is written **straight onto the elements** (`panelRef` on both columns, `scrimEl` on the
+  from. **A box that scrolls sideways owns the drag across it** (`scrollerAt`, `canScroll`): the three things
+  in the pane that are deliberately wider than it — a fenced block, display math, a long inline formula —
+  are read by dragging them, and a finger doing that was opening a drawer at the same time, since React's
+  `touchmove` is passive and the native scroll happens either way. It is asked of the computed `overflow-x`
+  rather than of a list of class names, which is the other half of why `.scroller` says `overflow-x: hidden`
+  out loud, and it is asked again at the moment the direction is decided rather than at the press: a formula
+  already scrolled to its end hands the next swipe on to the drawer, the way a native one does. The position is written **straight onto the elements** (`panelRef` on both columns, `scrimEl` on the
   sheet) with the transition off, because a finger puts out sixty positions a second and React owns where a
   drawer *is* rather than where it is being dragged to; `settle` animates the last stretch and hands the
   inline styles back to the classes `DRAWER_MS` later, once the drawer has arrived. **What is written is
