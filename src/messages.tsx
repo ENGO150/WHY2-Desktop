@@ -24,7 +24,7 @@ import { Icon } from "./icons";
 import { Avatar } from "./components";
 import { branches, linkParts } from "./format";
 import { deviceIcon } from "./roster";
-import { parse, type Segment } from "./markup";
+import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, type Shape } from "./markup";
 import hljs from "highlight.js/lib/common";
 import katex from "katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -202,42 +202,179 @@ const Formula = React.memo(function Formula({ tex, display }: { tex: string; dis
         : <span className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
+//EVERY EMPHASIS A PIECE OF TEXT IS INSIDE OF, AS THE ELEMENTS THAT MEAN THEM. THE TERMINAL SAYS THE SAME
+//THING IN ONE Modifier SET, SINCE A CELL HAS NO NESTING - HERE THEY STACK, AND THE ORDER IS FIXED SO THAT
+//THE SAME MESSAGE IS ALWAYS THE SAME TREE
+function emphasize(node: React.ReactNode, modifier: number): React.ReactNode
+{
+    let out = node;
+
+    if (modifier & ITALIC) out = <em>{out}</em>;
+    if (modifier & BOLD) out = <strong>{out}</strong>;
+    if (modifier & UNDERLINE) out = <u>{out}</u>;
+    if (modifier & STRIKE) out = <s>{out}</s>;
+
+    return out;
+}
+
+//ONE PIECE OF A ROW. AN ESCAPED CHARACTER IS NOT LINKIFIED - IT IS A CHARACTER SOMEBODY TYPED OUT, AND
+//THE AUTO-LINKING IS FOR WHAT THEY DID NOT
+function renderInline(node: Inline, index: number): React.ReactNode
+{
+    if (node.kind === "code")
+    {
+        return <code key={index} className="code-inline font-mono">{emphasize(node.text, node.modifier)}</code>;
+    }
+
+    if (node.kind === "math") return <Formula key={index} tex={node.text} display={false} />;
+
+    //A LINK IS A LINK, WHICH IS WHAT A WINDOW HAS AND A TERMINAL DOES NOT: THE TUI PRINTS THE TARGET IN
+    //BRACKETS BESIDE THE TEXT BECAUSE NOTHING THERE CAN BE CLICKED. THE TWO SCHEMES ARE THE ONLY ONES
+    //OPENED ANYWHERE IN HERE (SEE linkParts) - ANYTHING ELSE IS THE LABEL AS TEXT, TARGET AND ALL
+    if (node.kind === "link")
+    {
+        if (!/^https?:\/\//i.test(node.url)) return <span key={index} title={node.url}>{node.text}</span>;
+
+        return (
+            <a
+                key={index}
+                href={node.url}
+                title={node.url}
+                onClick={(event) => { event.preventDefault(); openUrl(node.url).catch(() => {}); }}
+                className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+            >
+                {node.text}
+            </a>
+        );
+    }
+
+    return <span key={index}>{emphasize(node.linkify ? linked(node.text) : node.text, node.modifier)}</span>;
+}
+
+function renderNodes(nodes: Inline[]): React.ReactNode
+{
+    return nodes.map((node, index) => renderInline(node, index));
+}
+
+//WHAT A ROW IS INDENTED BY, WHERE IT WAS TYPED WITH SPACES IN FRONT OF ITS MARKER. THE TERMINAL PADS
+//THE ROW OUT BY HAND; A LIST INSIDE A LIST IS THE ONLY THING ANYBODY MEANS BY IT
+function indented(shape: Shape): React.CSSProperties | undefined
+{
+    const indent = shape.kind === "plain" ? 0 : shape.indent;
+
+    return indent > 0 ? { marginInlineStart: `${indent * 0.6}em` } : undefined;
+}
+
 //A MESSAGE AS IT IS READ. WHAT SOMEBODY TYPED GOES THROUGH tui/markup.rs' PARSER (markup.ts IS THAT FILE
-//REWRITTEN), SO A FENCE IS A BLOCK AND A BACKTICK IS A RUN OF CODE HERE THE SAME WAY IT IS THERE - AND
-//WHAT IS LEFT IS TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE
+//REWRITTEN), SO A FENCE IS A BLOCK, A BACKTICK IS A RUN OF CODE AND A HASH IS A HEADING HERE THE SAME WAY
+//THEY ARE THERE - AND WHAT IS LEFT IS TEXT, WITH WHATEVER LOOKED LIKE A LINK IN IT DRAWN AS ONE.
+//THE TERMINAL DRAWS THE LINE-LEVEL MARKDOWN AS THE GLYPHS A CELL GRID HAS (A BULLET, A QUOTE'S EDGE, A
+//RULE OF BOX-DRAWING); A WINDOW HAS THE ELEMENTS THEMSELVES, SO A LIST IS A LIST AND A QUOTE IS A
+//BLOCKQUOTE - THE SAME ROWS, DRAWN WITH WHAT THIS SIDE ACTUALLY HAS
 export function markup(text: string, render_math: boolean): React.ReactNode
 {
     const segments = parse(text, render_math);
 
-    //NOTHING IN IT, WHICH IS ALMOST EVERY LINE - THE ARRAY AND THE KEYS ARE NOT WORTH BUILDING
-    if (segments.length === 1 && segments[0].kind === "text") return linked(text);
-
-    return segments.map((segment, index) =>
+    //NOTHING IN IT, WHICH IS ALMOST EVERY LINE - THE ROWS AND THE KEYS ARE NOT WORTH BUILDING
+    //A ROW STARTING WITH ONE OF THESE MAY CARRY A MARKER OR BE A RULE, AND NOTHING ELSE CAN
+    if (segments.length === 1 && segments[0].kind === "text" && !/^ *[#>*+_\-0-9]/m.test(text))
     {
-        //A BLOCK OWNS THE ROWS IT SITS ON, SO THE NEWLINE ON EITHER SIDE OF ONE IS THE FENCE'S AND NOT A
-        //BLANK LINE SOMEBODY TYPED - THE TUI DROPS THE SAME TWO, IT JUST DOES IT BY NOT OPENING A ROW
-        if (segment.kind === "text")
+        return linked(text);
+    }
+
+    return renderRows(rows(segments));
+}
+
+//THE ROWS, WITH WHAT BELONGS TOGETHER GROUPED: A RUN OF LIST ROWS IS ONE LIST AND A RUN OF QUOTED ONES IS
+//ONE QUOTE, WHICH IS THE ONE THING A WINDOW HAS TO DECIDE THAT A TERMINAL DRAWING ROW BY ROW DOES NOT.
+//PLAIN ROWS ARE JOINED BY THE NEWLINE THEY WERE TYPED WITH - THE PANE IS pre-wrap, SO NOTHING ELSE IS
+//NEEDED FOR THEM, AND A BLOCK ELEMENT BREAKS THE LINE BY ITSELF
+function renderRows(list: Row[]): React.ReactNode
+{
+    const out: React.ReactNode[] = [];
+    let index = 0;
+
+    while (index < list.length)
+    {
+        const row = list[index];
+
+        if (row.kind === "rule") { out.push(<hr key={out.length} className="md-rule" />); index++; continue; }
+
+        if (row.kind === "block") { out.push(<CodeBlock key={out.length} lang={row.lang} body={row.body} />); index++; continue; }
+
+        if (row.kind === "display") { out.push(<Formula key={out.length} tex={row.text} display />); index++; continue; }
+
+        const shape = row.shape;
+
+        if (shape.kind === "heading")
         {
-            let text = segment.text;
+            const Tag = `h${shape.level}` as "h1" | "h2" | "h3";
 
-            const owns = (segment: Segment | undefined) => segment?.kind === "block" || segment?.kind === "display";
+            out.push(<Tag key={out.length} className={`md-heading md-h${shape.level}`} style={indented(shape)}>{renderNodes(row.nodes)}</Tag>);
+            index++;
 
-            if (owns(segments[index - 1]) && text.startsWith("\n")) text = text.slice(1);
-            if (owns(segments[index + 1]) && text.endsWith("\n")) text = text.slice(0, -1);
-
-            return <span key={index}>{linked(text)}</span>;
+            continue;
         }
 
-        //A NEWLINE INSIDE INLINE CODE IS A SPACE: IT IS ONE RUN OF TEXT, AND A FENCE IS WHAT SPANS ROWS
-        if (segment.kind === "code")
+        //THE THREE THAT RUN TOGETHER. A QUOTE KEEPS THE NEWLINES INSIDE IT, SINCE ITS ROWS ARE ONE
+        //PARAGRAPH BEHIND ONE EDGE; A LIST'S ROWS ARE ITEMS AND EACH OF THEM IS ITS OWN ELEMENT
+        const run: Row[] = [];
+        while (index < list.length)
         {
-            return <code key={index} className="code-inline font-mono">{segment.text.replace(/\n/g, " ")}</code>;
+            const next = list[index];
+
+            if (next.kind !== "row" || next.shape.kind !== shape.kind) break;
+
+            run.push(next);
+            index++;
         }
 
-        if (segment.kind === "block") return <CodeBlock key={index} lang={segment.lang} body={segment.body} />;
+        if (shape.kind === "quote")
+        {
+            out.push(
+                <blockquote key={out.length} className="md-quote" style={indented(shape)}>
+                    {run.map((quoted, at) => (
+                        <React.Fragment key={at}>
+                            {at > 0 && "\n"}
+                            {quoted.kind === "row" && renderNodes(quoted.nodes)}
+                        </React.Fragment>
+                    ))}
+                </blockquote>,
+            );
 
-        return <Formula key={index} tex={segment.text} display={segment.kind === "display"} />;
-    });
+            continue;
+        }
+
+        if (shape.kind === "bullet" || shape.kind === "ordinal")
+        {
+            const items = run.map((item, at) => (item.kind === "row" && (
+                <li key={at} className="md-item" style={indented(item.shape)}
+                    value={item.shape.kind === "ordinal" ? item.shape.number : undefined}>
+                    {renderNodes(item.nodes)}
+                </li>
+            )));
+
+            out.push(shape.kind === "bullet"
+                ? <ul key={out.length} className="md-list">{items}</ul>
+                : <ol key={out.length} className="md-list" start={shape.number}>{items}</ol>);
+
+            continue;
+        }
+
+        //PLAIN, AND THE NEWLINES BETWEEN THEM
+        out.push(
+            <span key={out.length}>
+                {run.map((plain, at) => (
+                    <React.Fragment key={at}>
+                        {at > 0 && "\n"}
+                        {plain.kind === "row" && renderNodes(plain.nodes)}
+                    </React.Fragment>
+                ))}
+            </span>,
+        );
+    }
+
+    return out;
 }
 
 //THE LINE BEING TYPED, AS THE PANE WILL DRAW IT. A FORMULA IS THE ONE THING IN A MESSAGE NOBODY CAN READ
@@ -399,6 +536,10 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //FORM ONLY MEANS SOMETHING IN A WINDOW LIKE THIS ONE
         const copyable = !message.image;
 
+        //THE MESSAGE'S OWN COLOUR, SAID TWICE: ONCE AS THE COLOUR AND ONCE AS THE PROPERTY A HEADING READS
+        //BACK, SINCE A HEADING KEEPS IT WHERE THERE IS ONE AND TAKES ITS OWN WHERE THERE IS NOT
+        const body = messageColor(config, message.message_color);
+
         //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
         //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
         //UNDER IT EVER SEES ONE. EVERY OTHER CLICK ONLY COSTS THE FLAG BEING READ AND PUT BACK
@@ -457,7 +598,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
 
                     <div
                         className="message-body select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
-                        style={{ color: messageColor(config, message.message_color) }}
+                        style={{ color: body, "--msg-color": body } as React.CSSProperties}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
                         {message.image ? renderPicture(message.image, picture, pictures) : markup(message.text, config.render_math)}

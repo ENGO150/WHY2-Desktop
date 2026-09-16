@@ -59,6 +59,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --code-bar: #9dceff;         /* THE BLOCK'S LEFT EDGE */
     --code-lang: #cab4b7;
 
+    /* MARKDOWN. tui/theme.rs' HEADING, QUOTE, BULLET AND RULE - THE FOUR THINGS THE LINE-LEVEL MARKUP
+       DRAWS THAT ARE NOT THE MESSAGE'S OWN TEXT */
+    --md-heading: #ffdde2;
+    --md-quote: #9dceff;         /* A BLOCKQUOTE'S EDGE, AND A LIST MARKER */
+    --md-rule: #cab4b7;
+
     /* AND WHAT A HIGHLIGHTER PAINTS ON IT. THE TERMINAL HIGHLIGHTS NOTHING, SO THESE ARE THIS WINDOW'S
        ALONE - PITCHED TO SIT ON --code-bg RATHER THAN TAKEN FROM THE CHROME, WHICH IS GREY BY DESIGN */
     --syntax-keyword: #ffa0b4;

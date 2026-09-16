@@ -91,6 +91,8 @@ export function fileKind(name: string): { icon: string; label: string }
 //OTHERWISE, AND A CLOSING BRACKET ONLY BELONGS TO THE URL IF IT OPENED ONE
 const LINK = /https?:\/\/[^\s<>"']+/gi;
 
+const MAX_URL = 2048; //LONGER THAN THIS AND A CLICK OPENS NOTHING - tui/consts.rs' OWN CEILING
+
 export interface TextPart
 {
     text: string;
@@ -110,7 +112,8 @@ export function linkParts(text: string): TextPart[]
         {
             const last = found[found.length - 1];
 
-            if (".,;:!?'\"".includes(last) || (last === ")" && !found.includes("(")))
+            //A CLOSING BRACKET THE LINK OPENED ITSELF IS PART OF IT, WHICH IS state.rs' url() EXACTLY
+            if (".,;:!?'\"]".includes(last) || (last === ")" && !found.includes("(")))
             {
                 found = found.slice(0, -1);
                 continue;
@@ -120,7 +123,7 @@ export function linkParts(text: string): TextPart[]
         }
 
         //NOTHING LEFT OF IT ONCE THE PUNCTUATION IS OFF, SO IT WAS NEVER A LINK
-        if (!/^https?:\/\/[^\s/]+/i.test(found)) continue;
+        if (found.length > MAX_URL || !/^https?:\/\/[^\s/]+/i.test(found)) continue;
 
         const start = match.index;
 

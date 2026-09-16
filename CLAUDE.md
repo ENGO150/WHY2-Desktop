@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.0", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.1", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -467,7 +467,9 @@ a `textarea` shorter than the buttons beside it sits the difference too low in t
 A line that has a link in it gets one: `linkParts` in `format.ts` finds the `http://` and `https://` in the
 text — those two and nothing else, since a line is written by a stranger on a server and `file://` is not
 something to hand the system — walking the trailing punctuation back off, so a URL at the end of a sentence
-keeps the full stop and the link does not. `linked` in `messages.tsx` draws the pieces, and a click goes to
+keeps the full stop and the link does not, and a closing bracket only belongs to the link that opened one.
+That is `state.rs`'s own `url()` since 2.2.1, `MAX_URL` included: the TUI answers a click on a word the same
+way, so the two clients agree about where a link ends. `linked` in `messages.tsx` draws the pieces, and a click goes to
 `openUrl` rather than to the `href`: this window is a chat client, and a page that navigated it away would
 take the session with it. The opener's scope is what actually allows the two schemes, so the capability
 carries an `opener:allow-open-url` entry beside `opener:default` — **a glob there is `http://**`, not
@@ -563,11 +565,21 @@ drawn (see **Images**).
 ### Message markup
 
 **What somebody typed goes through `src/markup.ts`, which is `tui/markup.rs`'s parser rewritten** — the same
-rules, so a message reads the same in both clients: Discord's fenced ``` blocks and inline `` ` `` code. The
+rules, so a message reads the same in both clients: Discord's fenced ``` blocks and inline `` ` `` code,
+`$…$` math, `*`/`_`/`~~` emphasis, `[text](url)` links, and the line-level markdown (headings, quotes,
+lists, rules) the crate added in 2.2.1. The
 parser **never consumes what it cannot close** (an unterminated fence is backticks somebody typed, not a
-block that swallows the rest of the line), a backslash takes the markup off the character after it, and a
-delimiter that was not found once is not searched for again. It walks **code points** (`[...text]`), not
+block that swallows the rest of the line), a backslash takes the markup off the character after it — the
+crate's `ESCAPABLE` set and no wider — and a
+delimiter that was not found once is not searched for again (`missing`, nine slots, one per delimiter the
+parser can give up on separately). It walks **code points** (`[...text]`), not
 UTF-16 halves, because the Rust it mirrors counts `chars`.
+
+The file is that parser in **two halves, the way the Rust is**: `parse` answers with the `Segment`s a
+message is made of, and `rows` is `markup.rs`'s `render` — the same walk over them, keeping the same `open`
+and `start` flags, deciding the same things about where a row begins and what it opens with. What it hands
+back is `Row`s rather than laid-out cells, because the wrapping a terminal has to do itself is the browser's
+here; `renderRows` in `messages.tsx` is what draws them.
 
 It reaches exactly what the TUI's does: **what a user wrote**, which here is `renderChat` — `user` and
 `private` lines — and nothing else. `renderNotice` still calls `linked` on its own, because those lines are
@@ -579,6 +591,36 @@ the warm surface, the bar down the left edge, the language over it. **Code is no
 broken where it runs out of room, which in a window means it is not broken at all: `.code-block pre` scrolls
 sideways on its own so the pane behind it never does. The newline on either side of a fence is the fence's
 own and is dropped, which is the same thing the TUI does by not opening a row for it.
+
+**Emphasis is the delimiters and not what they usually mean elsewhere**: `*`/`_` once is italic, `**` is
+bold, `__` is **underline** (not bold — that is `modifier` in the crate, and this window says the same
+thing), `~~` is a strikethrough, and three of `*` or `_` is the pair. A run only opens where its close is
+already in sight, which is what keeps `snake_case` a word and a lone asterisk an asterisk; the open runs are
+a stack, and every piece of text carries the set of them it sits inside (`ITALIC`/`BOLD`/`UNDERLINE`/
+`STRIKE`, the bits `emphasize` turns into nested `<em>`/`<strong>`/`<u>`/`<s>`). A terminal says the same
+thing in one `Modifier` set on a cell, so the two agree about *which* emphasis a character is in even where
+they cannot agree about the tree.
+
+**The line-level markdown is a window's to draw and not a cell grid's.** `marker` takes the same things off
+the front of a row the crate does — `#`/`##`/`###`, `> `, `- `/`* `/`+ `, `1.`/`1)` up to nine digits — and
+only while nothing is on the row yet, so a hash mid-sentence is a hash and so is one a backslash got to
+first; `isRule` is the same three-or-more of one of `-*_` and nothing else. What differs is what is drawn
+from it: the TUI prints a bullet glyph, an edge character in front of every quoted row and a row of
+box-drawing, because that is all a terminal has, while here a list is a `<ul>`/`<ol>`, a quote is a
+`<blockquote>` and a rule is an `<hr>` — so `renderRows` has one decision the TUI does not, which is that a
+**run** of list or quote rows is one element rather than one each. An ordered list keeps the number it was
+typed with (`value` on the item), and the spaces a marker was indented by become a margin, since a list
+inside a list is the only thing anybody means by them. A heading **keeps the message's own colour where it
+has one** and takes `--md-heading` where it does not, which is `markup.rs`'s `heading` patching a foreground
+in only where the style carries none: the body says its colour twice, once as `color` and once as
+`--msg-color`, and `.md-heading` reads the second back.
+
+**A link is a link**, which is the other thing a window has: the TUI draws `[text](url)` as the text with
+the target in brackets beside it because nothing there can be clicked, and here it is an anchor that goes
+through `openUrl` like every other one in the pane. The two schemes are the same two `linkParts` allows —
+anything else is the label as text, target and all, since a stranger on a server does not get to hand this
+window a `javascript:`. Auto-linking still runs over the text between the markup, and not over what a
+backslash escaped: that is a character somebody typed out.
 
 **Math is real KaTeX and not an approximation of one.** The TUI lays TeX out in cells because a terminal
 has nothing else — a Unicode superscript where one exists, `a/b` for a fraction, a subset of the notation on
@@ -617,7 +659,9 @@ something sets it — so the line is drawn as the pane will draw it before it go
 call and not a second renderer: a preview that could disagree with the message is worse than none. It stands
 where the palette stands, which is free by construction — **the palette answers a line starting with `/`,
 and a command is never parsed for markup**, so the two cannot want that space at once. It is drawn only when
-`hasMarkup` says there is something in the line to show, since a line of plain text previewed is the same
+`hasMarkup` says there is something in the line to show — which is a segment that is not plain text **or** a
+row that is not a plain one, since `- item` is markup with no delimiter anywhere in it — since a line of
+plain text previewed is the same
 line twice — and **once it is up it stays up while there is a delimiter on the line at all** (`previewing`,
 `previewRef`). The parser never consumes what it cannot close, which is right for a message and wrong for a
 line being typed: a formula halfway through is a line with no markup in it, so the panel used to go away at
@@ -641,7 +685,8 @@ usually wrong. What comes back is HTML the highlighter escaped itself, which is 
 set as markup at all. Its class names are used and **its stylesheets are not** — those are written for a
 white page or for somebody else's dark one — so `widgets.css` maps the classes onto a palette of our own in
 `theme.css`. The five code tokens there (`--code-bg`, `--code-inline`, `--code-text`, `--code-bar`,
-`--code-lang`) are `tui/theme.rs`'s own values; the eight `--syntax-*` ones are this window's alone, since
+`--code-lang`) are `tui/theme.rs`'s own values, and so are the three the markdown draws with
+(`--md-heading`, `--md-quote`, `--md-rule`); the eight `--syntax-*` ones are this window's alone, since
 the terminal highlights nothing.
 
 ### The tray
@@ -1542,7 +1587,10 @@ Everything else is the shape the window already has:
   window ever held it.
 - The composer sends through the command path like everything else: in a conversation a plain line becomes
   `/pm <id> <line>`, and a line that already starts with `/` is a command wherever it was typed. The history
-  keeps what was typed, not what it turned into.
+  keeps what was typed, not what it turned into. `/re` (2.2.1) is the same thing without the id — the
+  **server** holds who the last private message came from, so it is a packet and nothing else here, and it
+  arrives back as the `PrivateMessageSent` echo any other PM does, into that person's conversation. The
+  palette picks it up the way it picks up every command, off `get_commands`.
 - Walking into a channel walks out of the conversation — the sidebar's channel rows and the `channel_changed`
   event both clear `openDm`, and a row for the channel we are already standing in is a way back rather than a
   packet.

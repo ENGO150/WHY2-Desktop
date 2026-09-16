@@ -241,6 +241,54 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     }
 }
 
+/* THE LINE-LEVEL MARKDOWN. THE TUI DRAWS ALL OF IT IN CELLS - A HEADING IS BOLD TEXT, A LIST MARKER IS
+   A BULLET GLYPH, A QUOTE IS AN EDGE CHARACTER IN FRONT OF EVERY ROW AND A RULE IS A ROW OF BOX-DRAWING
+   - BECAUSE A TERMINAL HAS NOTHING ELSE. A WINDOW HAS THE ELEMENTS, SO THESE ARE THE SAME ROWS DRAWN
+   WITH WHAT THIS SIDE HAS, AND THE SIZES ARE KEPT CLOSE TO THE TEXT AROUND THEM: A HEADING IN A CHAT
+   LINE IS A HEADING OVER THREE SENTENCES, NOT OVER A PAGE */
+.md-heading
+{
+    margin: 4px 0 2px;
+    font-weight: 600;
+    line-height: 1.3;
+
+    /* THE MESSAGE'S OWN COLOUR WHERE IT HAS ONE, THE WAY tui/markup.rs' heading PATCHES ONE IN ONLY WHERE
+       THE STYLE CARRIES NO FOREGROUND. THE BODY SETS --msg-color BESIDE ITS color FOR EXACTLY THIS */
+    color: var(--msg-color, var(--md-heading));
+}
+
+.md-h1 { font-size: 1.3em; text-decoration: underline; text-underline-offset: 3px; }
+.md-h2 { font-size: 1.18em; }
+.md-h3 { font-size: 1.06em; }
+
+.md-quote
+{
+    margin: 2px 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--md-quote);
+}
+
+.md-list
+{
+    margin: 2px 0;
+    padding-left: 22px;
+}
+
+ul.md-list { list-style: disc; }
+ol.md-list { list-style: decimal; }
+
+.md-item::marker
+{
+    color: var(--md-quote);
+}
+
+.md-rule
+{
+    margin: 6px 0;
+    border: 0;
+    border-top: 1px solid var(--md-rule);
+}
+
 /* CODE. THE TUI PADS A FENCED BLOCK OUT TO THE PANE BECAUSE A TERMINAL HAS NOTHING BUT CELLS TO MAKE A
    BOX WITH; A WINDOW HAS A BOX, SO WHAT IS KEPT IS WHAT THE BOX IS FOR - THE WARM SURFACE, THE BAR DOWN
    THE LEFT EDGE AND THE LANGUAGE OVER IT. CODE IS BROKEN WHERE IT RUNS OUT OF ROOM AND NOT AT THE LAST

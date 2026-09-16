@@ -1879,7 +1879,7 @@ function App()
     //MARKUP IN IT IS NOT PREVIEWED BECAUSE SOMEBODY WROTE DOWN A PRICE
     const marked = hasMarkup(chatInput, config.render_math);
     const previewRef = useRef(false);
-    const previewing = marked || (previewRef.current && /[$`]/.test(chatInput));
+    const previewing = marked || (previewRef.current && /[$`*_~[\]]/.test(chatInput));
 
     useEffect(() => { previewRef.current = previewing; });
 
