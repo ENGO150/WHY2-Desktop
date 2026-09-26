@@ -503,8 +503,8 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
     const fill = outcome === null ? "bg-accent" : outcome ? "bg-ok" : "bg-error";
 
     return (
-        <div key={key} className="flex gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
-            <div className="flex w-9 shrink-0 justify-end pt-[3px]">
+        <div key={key} className="flex items-center gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
+            <div className="flex w-9 shrink-0 justify-end">
                 <Icon name={upload ? "upload" : "download"} className={`h-4 w-4 ${tone}`} />
             </div>
 
