@@ -21,7 +21,7 @@ use std::
     fs::File,
     time::Instant,
     io::{ Read, Seek },
-    path::Path,
+    path::{ Path, PathBuf },
     sync::{ Arc, atomic::Ordering },
 };
 
@@ -150,11 +150,8 @@ fn percent_decode(text: &str) -> String
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-//ONE REQUEST, TWO CODES: A PERSISTENT IMAGE IS ASKED FOR EXACTLY THE WAY A FILESHARE IS - THE PATH IS
-//CHECKED AND THE FILE HASHED IDENTICALLY, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE
-//TWO IT BECOMES. THIS IS tui/mod.rs::submit'S Command::Upload | Command::Image, ARM FOR ARM
-pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
-    path: &str, image: bool)
+//OPEN A FILE AND REFUSE WHAT THE SERVER WOULD (tui/../client/mod.rs::check_upload)
+pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Result<(File, PathBuf), String>
 {
     //COPYING THE WHOLE FILE IS BLOCKING I/O - KEEP IT OFF THE RUNTIME, THE WAY THE HASH BELOW IS
     #[cfg(target_os = "android")]
@@ -166,28 +163,27 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
         match task::spawn_blocking(move || stage_content_uri(&app_handle, &picked)).await
         {
             Ok(Ok(staged)) => staged,
-            Ok(Err(message)) => return popup(app, message),
-            Err(_) => return popup(app, "Error reading file!"),
+            Ok(Err(message)) => return Err(message.into()),
+            Err(_) => return Err("Error reading file!".into()),
         }
     };
 
     #[cfg(target_os = "android")]
     let path = staged.as_deref().unwrap_or(path);
 
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+
     let path = Path::new(path.trim());
 
-    let Ok(mut file) = File::open(path) else { return popup(app, "File not found!") };
+    let Ok(mut file) = File::open(path) else { return Err("File not found!".into()) };
 
     if !path.is_file() || path.file_name().and_then(|name| name.to_str()).is_none()
     {
-        return popup(app, "File not found!");
+        return Err("File not found!".into());
     }
 
-    let Ok(path) = path.canonicalize() else { return popup(app, "File not found!") };
-
-    //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
-    //THE REQUEST ITSELF - THE SERVER MAY ALREADY HOLD THE PICTURE AND ANSWER WITHOUT AN UPLOAD AT ALL
-    let filename = path.file_name().and_then(|name| name.to_str()).unwrap_or("unnamed_file").to_owned();
+    let Ok(path) = path.canonicalize() else { return Err("File not found!".into()) };
 
     if image
     {
@@ -195,8 +191,7 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
         //SIZE IS KNOWN HERE, SO IT IS SAID HERE
         if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_IMAGE_SIZE as u64
         {
-            return popup(app, format!("Image is too large! (limit is {}MB)",
-                consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
+            return Err(format!("Image is too large! (limit is {}MB)", consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
         }
 
         //THE HEADER IS READ BEFORE THE SERVER IS ASKED FOR ANYTHING, SO A FILE THAT IS NOT AN IMAGE COSTS
@@ -206,10 +201,29 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
 
         file.by_ref().take(consts::IMAGE_HEADER_SIZE as u64).read_to_end(&mut header).ok();
 
-        if file.rewind().is_err() { return popup(app, "Error reading file!") }
+        if file.rewind().is_err() { return Err("Error reading file!".into()) }
 
-        if !misc::is_image(&header) { return popup(app, "Not an image!") }
+        if !misc::is_image(&header) { return Err("Not an image!".into()) }
     }
+
+    Ok((file, path))
+}
+
+//ONE REQUEST, TWO CODES: A PERSISTENT IMAGE IS ASKED FOR EXACTLY THE WAY A FILESHARE IS - THE PATH IS
+//CHECKED AND THE FILE HASHED IDENTICALLY, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE
+//TWO IT BECOMES. THIS IS tui/mod.rs::submit'S Command::Upload | Command::Image, ARM FOR ARM
+pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
+    path: &str, image: bool)
+{
+    let (mut file, path) = match open_upload(app, path, image).await
+    {
+        Ok(opened) => opened,
+        Err(error) => return popup(app, error),
+    };
+
+    //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
+    //THE REQUEST ITSELF - THE SERVER MAY ALREADY HOLD THE PICTURE AND ANSWER WITHOUT AN UPLOAD AT ALL
+    let filename = path.file_name().and_then(|name| name.to_str()).unwrap_or("unnamed_file").to_owned();
 
     //SHA256 OVER THE WHOLE FILE - BLOCKING I/O AND CPU, KEEP IT OFF THE RUNTIME
     let hash = task::spawn_blocking(move || -> Option<[u8; 32]>

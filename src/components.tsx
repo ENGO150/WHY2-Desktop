@@ -24,14 +24,29 @@ export function Avatar(
     color,
     size,
     ring,
+    src,
 }: {
     name: string;
     color?: string;
     size?: number;
     ring?: boolean;
+    src?: string; //THEIR PICTURE, WHERE THEY HAVE ONE
 })
 {
     const side = size ?? 36;
+
+    if (src)
+    {
+        return (
+            <img
+                src={src}
+                alt={name}
+                draggable={false}
+                className={`shrink-0 select-none rounded-full object-cover ${ring ? "speaking" : ""}`}
+                style={{ width: side, height: side }}
+            />
+        );
+    }
 
     return (
         <div

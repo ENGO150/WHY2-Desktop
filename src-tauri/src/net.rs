@@ -50,6 +50,9 @@ use crate::state::*;
 use crate::emit::*;
 use crate::events::pump_events;
 
+//PICTURES ASKED OF THE SERVER AT ONCE (tui/consts.rs)
+const MAX_IMAGE_FETCHES: usize = 2;
+
 pub(crate) async fn send_packet(state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, code: PacketCode)
 {
     network::send(&mut *write_stream.lock().await, code, options::get_keys().as_ref()).await;
@@ -57,14 +60,88 @@ pub(crate) async fn send_packet(state: &AppState, write_stream: &Arc<MutexAsync<
     *state.last_sent.lock().unwrap() = Instant::now();
 }
 
-//A PICTURE THE CACHE COULD NOT ANSWER, ASKED OF THE SERVER. THE TUI QUEUES THESE ONTO ITS REDRAW TICK
-//BECAUSE THE LOOP OWNS THE WRITE HALF AND THE SEQUENCE COUNTER; HERE THE EVENT PUMP *IS* THAT LOOP, SO
-//THE ASK GOES OUT WHERE IT IS DECIDED - THROUGH send_packet, WHICH KEEPS THE ROSTER CLOCK HONEST
+//A PICTURE THE CACHE COULD NOT ANSWER, QUEUED FOR THE SERVER
 pub(crate) async fn request_picture(state: &AppState, hash: [u8; 32])
+{
+    {
+        let fetching = state.image_fetching.lock().unwrap();
+        let mut queue = state.image_queue.lock().unwrap();
+
+        if fetching.contains(&hash) || queue.contains(&hash) { return }
+
+        queue.push_back(hash);
+    }
+
+    pump_pictures(state).await;
+}
+
+//A PICTURE CAME BACK, SO THE NEXT ONE MAY GO
+pub(crate) async fn picture_arrived(state: &AppState, hash: &[u8; 32])
+{
+    state.image_fetching.lock().unwrap().retain(|fetching| fetching != hash);
+
+    pump_pictures(state).await;
+}
+
+//SEND WHAT THE LIMIT ALLOWS
+async fn pump_pictures(state: &AppState)
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return };
 
-    send_packet(state, &write_stream, PacketCode::ImageDataRequest { hash }).await;
+    loop
+    {
+        let next =
+        {
+            let mut fetching = state.image_fetching.lock().unwrap();
+
+            if fetching.len() >= MAX_IMAGE_FETCHES { return }
+
+            let Some(hash) = state.image_queue.lock().unwrap().pop_front() else { return };
+
+            fetching.push(hash);
+            hash
+        };
+
+        send_packet(state, &write_stream, PacketCode::ImageDataRequest { hash: next }).await;
+    }
+}
+
+//THE PAGE OF THE LOBBY'S HISTORY BEFORE before
+#[tauri::command]
+pub(crate) async fn request_history(before: u64, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+
+    send_packet(&state, &write_stream, PacketCode::HistoryRequest { before }).await;
+
+    Ok(())
+}
+
+//THE COMPOSER CHANGED
+#[tauri::command]
+pub(crate) async fn typing(active: bool, state: State<'_, AppState>) -> Result<(), String>
+{
+    //AN EMPTY LINE RESETS THE CLOCK
+    if !active || !config::read_config::<bool>("typing_indicator")
+    {
+        *state.typing_sent.lock().unwrap() = None;
+        return Ok(())
+    }
+
+    //ONE PER TYPING_INTERVAL
+    {
+        let mut sent = state.typing_sent.lock().unwrap();
+
+        if sent.is_some_and(|sent| sent.elapsed() < consts::TYPING_INTERVAL) { return Ok(()) }
+
+        *sent = Some(Instant::now());
+    }
+
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Ok(()) };
+
+    send_packet(&state, &write_stream, PacketCode::TypingRequest).await;
+
+    Ok(())
 }
 
 //THE ONE QUESTION THE SERVER NEVER ANSWERS UNASKED: WHO IS SHARING A SCREEN. THE WINDOW ASKS
@@ -126,6 +203,7 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
     state.voice_activity.lock().unwrap().clear();
     state.username.lock().unwrap().clear();
     state.screen_channel.lock().unwrap().take();
+    state.forget_requests();
 
     //THE MUTED SET OUTLIVES A SESSION, AND THE WINDOW HAS NOTHING TO DRAW THE MICROPHONE FROM UNTIL THE
     //FIRST VOICE EVENT - WHICH IN A CALL NOBODY HAS STARTED NEVER ARRIVES, SO THE FIRST /mute WOULD LOOK

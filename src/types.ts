@@ -69,8 +69,8 @@ export interface PictureActions
     ask: boolean;
 }
 
-//WHAT THE BRIDGE SAYS ABOUT A CAPTION'S PICTURE. deferred IS ONE THE CACHE ALREADY HOLDS: IT COSTS A
-//DISK READ AND NOT A PACKET, SO IT CARRIES NO BUTTON AND IS ASKED FOR WHEN IT IS LOOKED AT
+//WHAT THE BRIDGE SAYS ABOUT A CAPTION'S PICTURE. deferred CARRIES NO BUTTON AND IS ASKED FOR WHEN IT IS
+//LOOKED AT
 export type PictureState = "absent" | "deferred" | "waiting";
 
 //WHAT THERE IS TO DRAW UNDER A CAPTION - AND, WHILE THERE IS NOTHING, WHAT THE CAPTION OFFERS INSTEAD.
@@ -140,8 +140,33 @@ export interface FileOwner
 //ONE THING IN THE PANE. A LIST (/files, /list, THE BAN LIST) IS AN ENTRY IN THE SCROLLBACK RATHER THAN A
 //WINDOW THAT COVERS IT - IT IS AN ANSWER TO SOMETHING THAT WAS ASKED, AND IT BELONGS WHERE IT WAS ASKED
 export type PaneEntry =
-    | { entry: "message"; message: ChatMessage; picture?: PictureStatus }
-    | { entry: "block"; title: string; rows: BlockRow[] };
+    | { entry: "message"; message: ChatMessage; picture?: PictureStatus; replayed?: boolean }
+    | { entry: "block"; title: string; rows: BlockRow[] }
+    | { entry: "transfer"; uid: string };
+
+//ONE USER'S PROFILE, AS profile.rs HANDS IT OVER
+export interface ProfileInfo
+{
+    username: string;
+    bio: string;
+    pronouns: string;
+    website: string;
+    status: string;
+    avatar: string | null; //HASH AS HEX
+}
+
+//ONE FILE ON ITS WAY, AND HOW FAR IT GOT
+export interface TransferInfo
+{
+    uid: string;
+    filename: string;
+    total: number;
+    upload: boolean;
+    image: boolean;
+    avatar: boolean;
+    done: number;
+    outcome: boolean | null; //null WHILE IT RUNS
+}
 
 export interface OnlineUser
 {
@@ -370,7 +395,13 @@ export type BridgeEvent =
     | { event: "authenticated"; data: { role: string } }
     | { event: "role"; data: { role: string; username: string | null } }
     | { event: "message"; data: { message: ChatMessage } }
-    | { event: "history"; data: { messages: ChatMessage[] } }
+    | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
+    | { event: "typing"; data: { username: string; ttl: number } }
+    | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }
+    | { event: "profiles_disabled"; data?: null }
+    | { event: "transfer"; data: { transfer: Omit<TransferInfo, "done" | "outcome"> } }
+    | { event: "transfer_progress"; data: { uid: string; done: number } }
+    | { event: "transfer_done"; data: { uid: string; ok: boolean } }
     | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
     | { event: "popup"; data: { text: string } }
     | { event: "tofu_prompt"; data: TofuPrompt }

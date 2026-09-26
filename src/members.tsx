@@ -21,12 +21,13 @@ import { Avatar, SectionLabel } from "./components";
 import { Icon } from "./icons";
 import { messageColor } from "./messages";
 import { deviceIcon } from "./roster";
+import type { People } from "./profile";
 
 //THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN. A ROW IS A BUTTON AND
-//IT OPENS THE CONVERSATION WITH THAT PERSON - OURS IS NOT ONE, SINCE THE SERVER REFUSES A PM TO OURSELVES
+//IT OPENS THAT PERSON'S PROFILE CARD, WHICH IS WHERE THE CONVERSATION WITH THEM STARTS
 export function MemberColumn(
 {
-    users, offline, username, config, narrow, drawer, setDrawer, showDirect, panelRef,
+    users, offline, username, config, narrow, drawer, people, panelRef,
 }: {
     users: OnlineUser[];
 
@@ -37,8 +38,7 @@ export function MemberColumn(
     config: ClientConfig;
     narrow: boolean;
     drawer: "left" | "right" | null;
-    setDrawer: (drawer: "left" | "right" | null) => void;
-    showDirect: (peer: { id: number; username: string } | null) => void;
+    people: People;
 
     //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
     panelRef: React.Ref<HTMLElement>;
@@ -55,11 +55,6 @@ export function MemberColumn(
                                 {
                                     const own = user.username === username;
 
-                                    //CLICKING SOMEBODY OPENS THE CONVERSATION WITH THEM, WHICH IS WHERE
-                                    //EVERY OTHER CHAT PROGRAM PUTS IT. OUR OWN ROW IS NOT ONE OF THOSE -
-                                    //THE SERVER REFUSES A PM TO OURSELVES, AND SO DOES THIS
-                                    const Row = own ? "div" : "button";
-
                                     //EVERYBODY IS NAMED IN THEIR OWN COLOR HERE TOO - THE ACCENT IS ONLY
                                     //WHAT IS LEFT ON OUR OWN ROW WHERE THERE IS NO COLOR TO USE
                                     const color = messageColor(config, user.username_color);
@@ -69,17 +64,14 @@ export function MemberColumn(
                                     const device = user.device ? deviceIcon(user.device) : null;
 
                                     return (
-                                        <Row
+                                        <button
                                             key={user.id}
-                                            type={own ? undefined : "button"}
-                                            onClick={own ? undefined : () => { showDirect(user); setDrawer(null); }}
-                                            className={`flex w-full items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"} ${own ? "" : "cursor-pointer"}`}
-                                            title={own
-                                                ? user.channel ? `#${user.channel}` : "lobby"
-                                                : `Message ${user.username}`}
+                                            type="button"
+                                            onClick={(event) => people.open(user.username, event.currentTarget)}
+                                            className={`flex w-full cursor-pointer items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                         >
                                             <div className="relative shrink-0">
-                                                <Avatar name={user.username} color={color} size={28} />
+                                                <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
                                                 <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
                                             </div>
 
@@ -96,13 +88,12 @@ export function MemberColumn(
                                             {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
 
                                             {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
-                                        </Row>
+                                        </button>
                                     );
                                 })}
 
-                                {/* THE SERVER'S OWN USERS WHO ARE NOT HERE. THERE IS NOTHING TO DO WITH
-                                    ONE - A PM NEEDS AN ID, AND SOMEBODY OFFLINE HAS NONE - SO THE ROW IS
-                                    A NAME AND NOT A BUTTON */}
+                                {/* THE SERVER'S OWN USERS WHO ARE NOT HERE. THEIR CARD HAS NO MESSAGE
+                                    BUTTON - A PM NEEDS AN ID, AND SOMEBODY OFFLINE HAS NONE */}
                                 {offline && offline.length > 0 && (
                                     <>
                                         <SectionLabel>Offline — {offline.length}</SectionLabel>
@@ -112,12 +103,14 @@ export function MemberColumn(
                                             const color = messageColor(config, user.username_color);
 
                                             return (
-                                                <div
+                                                <button
                                                     key={user.username}
-                                                    className={`flex w-full items-center gap-2 rounded-app px-2 ${narrow ? "py-2" : "py-1"}`}
+                                                    type="button"
+                                                    onClick={(event) => people.open(user.username, event.currentTarget)}
+                                                    className={`flex w-full items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                                 >
                                                     <div className="shrink-0 opacity-50">
-                                                        <Avatar name={user.username} color={color} size={28} />
+                                                        <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
                                                     </div>
 
                                                     <div
@@ -126,7 +119,7 @@ export function MemberColumn(
                                                     >
                                                         {user.username}
                                                     </div>
-                                                </div>
+                                                </button>
                                             );
                                         })}
                                     </>

@@ -18,7 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import React from "react";
 
-import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus } from "./types";
+import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus, TransferInfo } from "./types";
+import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
@@ -434,6 +435,64 @@ export function renderNotice(message: ChatMessage, key: number)
         );
 }
 
+//BYTES AS SOMETHING READABLE (tui/theme.rs::size)
+function size(bytes: number): string
+{
+    const units = ["B", "KB", "MB", "GB"];
+
+    let value = bytes;
+    let unit = 0;
+
+    while (value >= 1000 && unit < units.length - 1)
+    {
+        value /= 1000;
+        unit += 1;
+    }
+
+    return unit === 0 ? `${bytes}B` : `${value.toFixed(1)}${units[unit]}`;
+}
+
+//A TRANSFER'S ROW - WHAT IT IS, ITS BAR, AND WHAT IT HAS MOVED (tui/theme.rs::progress)
+export function renderTransfer(transfer: TransferInfo | undefined, key: number)
+{
+    if (!transfer) return null;
+
+    const { upload, image, avatar, filename, done, total, outcome } = transfer;
+
+    const kind = avatar ? "avatar" : image ? "image" : "file";
+    const name = avatar ? "" : ` "${filename}"`;
+    const percent = total === 0 ? 100 : Math.floor((Math.min(done, total) * 100) / total);
+
+    const label = outcome === null
+        ? `${upload ? "Uploading" : "Downloading"} ${kind}${name}`
+        : outcome
+            ? `${upload ? "Uploaded" : "Downloaded"} ${kind}${name}`
+            : `Transferring ${kind}${name} failed`;
+
+    const tone = outcome === null ? "text-muted" : outcome ? "text-ok" : "text-error";
+    const fill = outcome === null ? "bg-accent" : outcome ? "bg-ok" : "bg-error";
+
+    return (
+        <div key={key} className="flex gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
+            <div className="flex w-9 shrink-0 justify-end pt-[3px]">
+                <Icon name={upload ? "upload" : "download"} className={`h-4 w-4 ${tone}`} />
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className={`break-words text-[15px] leading-relaxed ${tone}`}>{label}</div>
+
+                <div className="mt-1 flex max-w-[420px] items-center gap-3">
+                    <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-border">
+                        <div className={`h-full rounded-full transition-[width] duration-200 ${fill}`} style={{ width: `${percent}%` }} />
+                    </div>
+
+                    <span className="shrink-0 font-mono text-[11px] text-faint">{percent}% · {size(done)}/{size(total)}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 //THE PICTURE UNDER A LINE THAT IS ONE. WHAT ARRIVED WITH ITS OWN BYTES IS SIMPLY DRAWN; WHAT THE HISTORY
 //ONLY NAMED IS A CAPTION OFFERING TO FETCH IT, WHICH IS THE TUI'S [ show ] AND THE ONLY THING THAT EVER
 //PUTS A STORED PICTURE ON THE WIRE - REPLAYING THEM WOULD MAKE EVERY LOGIN CARRY EVERY IMAGE EVER POSTED
@@ -514,7 +573,7 @@ function Caption({ image, status, pictures }: { image: MessageImage; status: Pic
 //SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
     //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
-    picture: PictureStatus, pictures: Pictures, lines: Lines)
+    picture: PictureStatus, pictures: Pictures, lines: Lines, people: People)
     {
         //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
         const author = message.direct?.outgoing ? username : message.username;
@@ -575,18 +634,29 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     </button>
                 )}
                 <div className="w-9 shrink-0">
-                    {!grouped && <Avatar name={author} color={messageColor(config, message.username_color)} />}
+                    {!grouped && (
+                        <button
+                            type="button"
+                            aria-label={`${author}'s profile`}
+                            onClick={(event) => people.open(author, event.currentTarget)}
+                            className="block rounded-full transition hover:brightness-110"
+                        >
+                            <Avatar name={author} color={messageColor(config, message.username_color)} src={people.avatar(author)} />
+                        </button>
+                    )}
                 </div>
 
                 <div className="min-w-0 flex-1">
                     {!grouped && (
                         <div className="flex items-baseline gap-2">
-                            <span
-                                className={`text-[15px] font-semibold ${own && !color ? "text-accent" : ""}`}
+                            <button
+                                type="button"
+                                onClick={(event) => people.open(author, event.currentTarget)}
+                                className={`text-[15px] font-semibold hover:underline ${own && !color ? "text-accent" : ""}`}
                                 style={{ color }}
                             >
                                 {author}
-                            </span>
+                            </button>
                             {config.show_id && message.id !== null && <span className="text-[11px] text-faint">#{message.id}</span>}
                             {whisper && (
                                 <span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">

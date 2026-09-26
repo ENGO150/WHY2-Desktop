@@ -20,6 +20,7 @@ import type { ScreenState, VoiceState, OnlineUser, DirectChat } from "./types";
 import { LOBBY } from "./types";
 import { Icon, IconButton } from "./icons";
 import { Avatar, SectionLabel } from "./components";
+import type { People } from "./profile";
 
 //THE LEFT COLUMN: THE SERVER AND, WHERE OUR ROLE HAS ONE, THE DOOR TO ITS CONFIG; THE CHANNELS WITH A +
 //THAT MAKES ONE; THE CONVERSATIONS WHILE THERE ARE ANY; THEN THE CALL, AND AT THE BOTTOM THE PERSON
@@ -28,7 +29,7 @@ export function Sidebar(
 {
     serverName, address, role, username, users, channels, currentChannel, directs, openDm,
     voice, screen, creating, setCreating, canServerSettings, hasVoice, narrow, drawer, theater,
-    setDrawer, send, setSpeaker, showDirect, closeDirect, openScreens, rail, panelRef,
+    setDrawer, send, setSpeaker, showDirect, closeDirect, openScreens, rail, people, panelRef,
 }: {
     serverName: string;
     address: string;
@@ -55,6 +56,7 @@ export function Sidebar(
     closeDirect: (id: number) => void;
     openScreens: () => void;
     rail: React.ReactNode;
+    people: People;
 
     //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
     panelRef: React.Ref<HTMLElement>;
@@ -63,14 +65,21 @@ export function Sidebar(
     //THE PERSON USING THE PROGRAM, WRITTEN ONCE AND HUNG IN ONE OF TWO PLACES - SEE THE aside BELOW
     const identity = (
         <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
-            <Avatar name={username} size={32} />
-            <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{username}</div>
-                <div className="flex items-center gap-1 text-[11px] text-muted">
-                    <Icon name="shield" className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{role}</span>
+            <button
+                type="button"
+                title="Your profile"
+                onClick={(event) => people.open(username, event.currentTarget)}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-app p-1 text-left transition-colors hover:bg-hover"
+            >
+                <Avatar name={username} size={32} src={people.avatar(username)} />
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">{username}</div>
+                    <div className="flex items-center gap-1 text-[11px] text-muted">
+                        <Icon name="shield" className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{role}</span>
+                    </div>
                 </div>
-            </div>
+            </button>
 
             {/* THE MICROPHONE READS WHAT IS ACTUALLY BEING SENT: THE CAPTURE CALLBACK COUNTS 0% AS OFF,
                 SO A SLIDER AT THE BOTTOM SHOWS UP HERE AS MUTED */}
@@ -206,7 +215,7 @@ export function Sidebar(
                                                         className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
                                                     >
                                                         <div className="relative shrink-0">
-                                                            <Avatar name={chat.username} size={22} />
+                                                            <Avatar name={chat.username} size={22} src={people.avatar(chat.username)} />
                                                             <span className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-sidebar ${online ? "bg-online" : "bg-border-strong"}`} />
                                                         </div>
 
@@ -253,7 +262,7 @@ export function Sidebar(
                                                 title={voice.enabled ? (user.muted ? "Unmute" : "Mute") : undefined}
                                                 className="flex w-full items-center gap-2 rounded-app px-2 py-1 text-left hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                                             >
-                                                <Avatar name={user.username} size={22} ring={user.speaking && !user.muted} />
+                                                <Avatar name={user.username} size={22} ring={user.speaking && !user.muted} src={people.avatar(user.username)} />
                                                 <span className={`min-w-0 flex-1 truncate text-sm ${user.muted ? "text-faint line-through" : user.speaking ? "text-text" : "text-muted"}`}>
                                                     {user.username}
                                                 </span>

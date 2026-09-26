@@ -21,7 +21,7 @@ use serde::{ Serialize, Deserialize };
 use why2_chat::
 {
     options,
-    network::codes::{ MessageColors, Device },
+    network::codes::{ MessageColors, Device, UserProfile },
 };
 
 
@@ -127,6 +127,30 @@ pub(crate) struct FileOwnerInfo
     pub(crate) id: usize,
     pub(crate) username: String,
     pub(crate) files: Vec<FileInfo>,
+}
+
+//ONE USER'S PROFILE
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct ProfileInfo
+{
+    pub(crate) username: String,
+    pub(crate) bio: String,
+    pub(crate) pronouns: String,
+    pub(crate) website: String,
+    pub(crate) status: String,
+    pub(crate) avatar: Option<String>, //HASH AS HEX
+}
+
+//ONE FILE ON ITS WAY
+#[derive(Serialize, Clone)]
+pub(crate) struct TransferInfo
+{
+    pub(crate) uid: String, //TEXT, JS LOSES u64
+    pub(crate) filename: String,
+    pub(crate) total: u64,
+    pub(crate) upload: bool,
+    pub(crate) image: bool,
+    pub(crate) avatar: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -287,8 +311,7 @@ pub(crate) struct VocabularyValue
 
 //ENUMS
 //WHAT THERE IS TO DRAW UNDER A CAPTION WHILE THE PICTURE ITSELF IS NOT HERE. absent CARRIES THE BUTTON,
-//waiting IS ONE ALREADY ASKED FOR, AND deferred IS ONE THE CACHE HOLDS - LOADED WHEN IT IS LOOKED AT
-//(tui/state.rs::Picture)
+//waiting IS ONE ALREADY ASKED FOR, AND deferred IS ONE LOADED WHEN IT IS LOOKED AT (tui/state.rs::Picture)
 #[derive(Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PictureState
@@ -354,7 +377,13 @@ pub(crate) enum UiEvent
     Authenticated { role: String },                               //WE ARE IN
     Role { role: String, username: Option<String> },              //A ROLE WAS SET (None IS OURS)
     Message { message: ChatMessage },                             //ONE LINE FOR THE PANE
-    History { messages: Vec<ChatMessage> },                       //THE LOBBY'S STORED MESSAGES
+    History { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool }, //ONE PAGE OF THE LOBBY'S HISTORY
+    Typing { username: String, ttl: u64 },                        //SOMEBODY HERE IS WRITING
+    Profile { profile: ProfileInfo, own: bool, open: bool, saved: bool }, //A PROFILE CAME BACK
+    ProfilesDisabled,                                             //THE SERVER KEEPS NONE
+    Transfer { transfer: TransferInfo },                          //A TRANSFER STARTED
+    TransferProgress { uid: String, done: u64 },                  //AND MOVED
+    TransferDone { uid: String, ok: bool },                       //AND ENDED
     ImageData { hash: String, image: Option<MessageImage> },      //A CAPTION'S PICTURE, ASKED FOR (None = IT IS GONE)
     Popup { text: String },                                       //A TOAST, GONE IN A MOMENT
     TofuPrompt                                                    //THE SESSION IS PARKED ON THIS ANSWER
@@ -458,6 +487,16 @@ impl ChatMessage
     {
         self.id = Some(id);
         self
+    }
+}
+
+impl ProfileInfo
+{
+    pub(crate) fn new(username: String, profile: UserProfile) -> Self
+    {
+        let UserProfile { bio, pronouns, website, status, avatar } = profile;
+
+        Self { username, bio, pronouns, website, status, avatar: avatar.as_ref().map(crate::picture::hex) }
     }
 }
 

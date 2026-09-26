@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.2", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.1", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.2", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -131,7 +131,8 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `emit_screen`), then the paths that do something: `net.rs` (the socket, the roster clock, `connect_to_server`),
 `input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
 `pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), `picture.rs` (a decoded
-image on its way to the webview, and the hash it is asked for by), `tray.rs` (where the window goes when it
+image on its way to the webview, and the hash it is asked for by), `profile.rs` (the quiet profile queue,
+`save_profile`, `set_avatar` — see **Profiles and avatars**), `tray.rs` (where the window goes when it
 is closed — see **The tray**), plus `settings.rs`, `palette.rs`,
 `color.rs` and `servers.rs` for the four things that are their own vocabulary.
 
@@ -144,7 +145,8 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
 `narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
-`servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`.
+`servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`, `profile.tsx` (the card a name opens and the editor
+for our own profile).
 
 **`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
 mark that stands on it until the window is ready. Everything else arrives with the bundle, and on a phone that
@@ -865,9 +867,11 @@ ellipsis, so under `narrow` everything but a switch goes **under** the label and
 label itself wraps rather than being cut — a setting's name is a phrase and not something measured in
 characters. A switch stays where every other settings screen puts it, on the right of the thing it turns off.
 
-The `Privacy` section is one row and it is the only key in the box that anybody else ever sees the effect
-of: `share_device` puts `Device::Desktop` (or `Device::Phone`) on the identity step, and every user list on
-the server then says which client this is — see **The roster**. Off is the default, here as in the crate.
+The `Privacy` section is the two keys in the box that anybody else ever sees the effect of: `share_device`
+puts `Device::Desktop` (or `Device::Phone`) on the identity step, and every user list on the server then
+says which client this is — see **The roster**; off is the default, here as in the crate.
+`typing_indicator` (2.2.2, on by default) is both halves of **Typing**: whether we say we are writing, and
+whether we show that anybody else is.
 
 `restart_server` is the one button that ends the session for everybody, so it is armed by one press and fired
 by the next, and is dead while there are unsaved rows in the box.
@@ -953,9 +957,10 @@ the button still on it — and the bytes that came anyway are still cached, so t
 image ever posted. So a history entry with an `image` becomes a caption — the filename, and a `Show` that
 invokes `request_image`. That command no longer puts a packet on the wire itself: it hands the hash to
 `client::fetch_image`, which answers out of the cache where it can and comes back as **`ImageRequest`**
-where it cannot — and *that* is what asks the server. `ClientEvent::History` also carries **which of its
-pictures we already hold**, and those captions go up as `deferred`: the crate does not walk the cache behind
-that event any more, so the picture is loaded **when the caption is actually looked at** — `Caption` in
+where it cannot — and *that* is what asks the server. Since 2.2.2 `ClientEvent::History` says nothing about
+the cache at all: with `auto_show_images` on **every** picture in a page goes up `deferred`, and with it off
+every one is `absent` — exactly `tui/event.rs`. A `deferred` one is loaded **when the caption is actually
+looked at** — `Caption` in
 `messages.tsx` puts an `IntersectionObserver` on the row and asks once, which is `tui/state.rs::load_visible`
 with a browser doing the measuring. A login that unpacked every picture it had ever been sent is a second of
 disk and decoding for lines nobody scrolled back to. It carries no button either way: what the cache holds
@@ -975,8 +980,13 @@ askable again (`Try again`) — the picture may have left the history, and the a
 that went missing.
 
 The server holds one client to one `ImageData` per `IMAGE_REQUEST_DELAY` and **serves it late rather than
-refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it. Both
-places that ask go through `send_packet` (`request_picture` in `net.rs`), so the roster clock stays honest.
+refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it — a
+picture nothing names any more is answered with empty bytes since 2.2.2, which decodes to `None` and marks
+the caption `gone`. The late serving is a **sleep in that client's own read loop on the server**, so every
+ask queued behind it holds up whatever we send next, a message included: `request_picture` therefore
+**queues** rather than sends, and `pump_pictures` keeps at most `MAX_IMAGE_FETCHES` (2, the TUI's own) on
+the wire, the next one going out as `picture_arrived` sees an answer. Every ask goes through `send_packet`,
+so the roster clock stays honest.
 The TUI queues its asks onto the redraw tick because that loop owns the write half and the sequence
 counter; here `pump_events` **is** that loop, so the ask goes out where it is decided. `AppState::events`
 is this session's `ClientEvent` sender, kept for the one thing outside the pump that reports through it —
@@ -1564,7 +1574,15 @@ string. The roster (`users` event) is authoritative for which channels exist —
 somebody sits in it — and history for a channel nobody is in any more is dropped.
 
 Unlike the TUI, which clears the pane on every switch, this app keeps per-channel history locally. The server
-only ever replays the lobby, once, at login (`history`).
+only ever replays the lobby — and since 2.2.2 **a page at a time**: login brings the newest `history_page`
+messages (`History { start, more, older: false }`, under a `Message history (<kept>):` title that counts
+everything the server keeps), and `request_history(before)` asks for the page above it. The entries are
+marked `replayed`, and an older page goes in **above the oldest replayed entry** of the lobby pane, whichever
+pane is in front. `maybePage` asks when the lobby is in front and its top is within `PAGE_MARGIN` — on a
+scroll, and after every pane change, so a first page shorter than the window keeps asking until it is full
+or `more` says there is nothing left (`tui/state.rs::load_visible`). A prepend keeps the view where it was:
+the listener notes `scrollHeight`/`scrollTop` before the update and a layout effect puts the difference
+back, before the pinned-to-bottom effect runs.
 
 ### Direct messages
 
@@ -1587,8 +1605,9 @@ there is: the line that answered the identity step, kept on its way through `sen
 
 Everything else is the shape the window already has:
 
-- Clicking somebody in the member column opens the conversation with them (our own row is not a button — the
-  server refuses a PM to ourselves). The open conversations are a section in the left sidebar under the
+- Clicking somebody — a member row, a face or a name in the pane — opens their **profile card**, and its
+  `Message` button is what opens the conversation (it is not drawn on our own card, since the server refuses
+  a PM to ourselves, nor on somebody offline, who has no id to send one to). The open conversations are a section in the left sidebar under the
   channels, with an unread count and an `×`; closing one is closing it **for good**, since nothing but this
   window ever held it.
 - The composer sends through the command path like everything else: in a conversation a plain line becomes
@@ -1633,6 +1652,71 @@ what says which — on the identity step, and it travels no further than the use
 word because a terminal has only words; this window has the line art already, so `deviceIcon` in `roster.ts`
 names one of `terminal`/`monitor`/`phone` and it sits on the right edge of the row, which is where the TUI
 anchors its own. The `/list` card carries both it and the name's color, since that card is the same list.
+
+### Profiles and avatars
+
+2.2.2 gave every account a **profile** — `bio`, `pronouns`, `website`, `status` and an `avatar` hash, kept by
+the server in `server_users.toml` and switched off by its `profiles` key. The TUI opens one as a read-only
+settings box (`/profile [USER]`) and ours as an editable one. This window does what every chat program does
+instead: **a name is a button**. A member row, an offline row, a face or a name in the pane, and our own row
+at the foot of the sidebar all open `ProfileCard` (`profile.tsx`) — beside what was clicked, a sheet on a
+phone, centred when there was nothing to stand beside — carrying the banner in the name's colour, the
+avatar, pronouns, status, the bio (linkified), the website (opened only when it is `http(s)`), where they are
+and what they are on, and a `Message` button that opens the conversation. Our own card carries `Edit
+profile` instead, which is `ProfileEditor`: the four fields held until `Save` (the server's answer is the
+profile as stored, so a refused field snaps back), and the avatar, which is **immediate** — `Change avatar`
+picks a file and `set_avatar` cuts and uploads it at once, `Remove avatar` drops it.
+
+**The server never sends a profile unasked, and no user list carries an avatar**, so showing faces is a
+question per name. `requestProfiles` in `App.tsx` asks once a session for every name it sees — the roster,
+the offline list, a join, the author of a message or a history line — and `request_profiles` in
+`profile.rs` puts them on a queue that one task drains at `PROFILE_GAP` (150 ms), well under the server's
+`max_packet_rate`. Those asks are **quiet**: the name goes on `profile_quiet`, and the `Profile` that answers
+it only fills the store. Anything else — a typed `/profile`, which goes down the ordinary command path — is
+answered with `open: true` and opens the card (or the editor, where it is ours). Opening a card asks again
+with `first: true`, which jumps the queue, since a card is worth a fresh look. A server with profiles off
+answers the first quiet ask with `DisabledFeature`; while no profile has come back yet that is taken to mean
+exactly that — `profiles_off`, the queue dropped, `UiEvent::ProfilesDisabled` — and the popup is swallowed,
+where otherwise every name on the roster would be one.
+
+**An avatar is a picture like any other.** The hash on a profile goes through `client::fetch_image` once a
+session (`AppState::avatars`), so the cache answers where it can and the rest joins the same two-at-a-time
+queue a caption does — the server's `ImageDataRequest` now serves any picture a profile names, not only the
+history's. It comes back as the ordinary `image_data` event; `avatarHashRef` is what says a hash is somebody's
+face, and `avatars` keeps its `data:` URL by hash. `people.avatar(name)` is the whole lookup, and `Avatar`
+draws the picture where there is one and **the letter on the name's colour where there is not** — so a server
+with profiles off, or somebody who never set one, looks exactly as it always did.
+
+Setting one is the TUI's `Upload::Avatar`: `open_upload` (the same checks and, on a phone, the same
+`content://` staging an upload gets), then `client::image::make_avatar` cuts it to its centred square —
+512 px PNG, or a 256 px GIF where it moves — refused over `MAX_AVATAR_SIZE`, written to
+`misc::avatar_temp` and asked for with `AvatarRequest { hash }`. The upload that follows is an ordinary
+transfer row (`Uploading avatar`), the crate deletes the temp file behind it, and the `Profile { saved }`
+the server sends when it lands is what the editor and every face redraw from.
+
+### Typing
+
+`typing_indicator` (2.2.2) is two packets and a clock. `signalTyping` in `App.tsx` tells the bridge on every
+edit of the composer whether a **message** is being written — a non-empty line, not a command, and not in a
+conversation, since a PM is not something the channel is told about — at most once per `TYPING_TICK`, and the
+`typing` command sends `TypingRequest` at most once per `consts::TYPING_INTERVAL` and forgets its clock the
+moment the line is empty, so the first keystroke of the next message goes out at once (`tui/state.rs::typed`).
+The server forwards it to the rest of the channel as `Typing(name)`, which becomes `UiEvent::Typing` with
+`TYPING_TIMEOUT` as its `ttl`; `typingUsers` keeps a deadline per name, a timer drops the stale ones, and a
+message from them, their leaving and our own channel switch drop them at once. The line — `name is typing…`,
+`a and b are typing…`, `n people are typing…`, the TUI's wording — sits under the composer, or over it on a
+phone where there is no room below. Both halves obey the settings row.
+
+### Transfers
+
+Since 2.2.2 every upload and download carries a `uid` and a size, `TransferProgress` ticks as the bytes go,
+and `UploadDone`/`Downloaded`/`DownloadFailed` say how it ended — which is what the TUI's progress rows are
+drawn from, and ours too: the old `Uploading x...` toasts are gone. `UiEvent::Transfer` puts a
+`{ entry: "transfer", uid }` into the current pane, the rows themselves live in `transfers` keyed by uid (as
+**text** — a random `u64` does not survive a JS number), and `renderTransfer` in `messages.tsx` draws the label,
+a bar and `percent · done/total` in the TUI's words and tones. The bridge emits progress **only when the
+whole percent changes** (`AppState::transfers`), since a download ticks per chunk. An avatar upload is named
+`avatar` rather than by its temp file.
 
 ### Colors
 

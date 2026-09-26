@@ -28,6 +28,8 @@ use tauri::{ Manager, AppHandle };
 
 use why2_chat::
 {
+    config,
+    consts,
     role::Role,
     options,
     network::
@@ -49,7 +51,7 @@ use why2_chat::
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::net::request_picture;
+use crate::net::{ request_picture, picture_arrived };
 use crate::picture;
 use crate::settings::client_settings;
 
@@ -177,6 +179,11 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //THE FILENAME IS NOT IN IT: THE LINE IT BELONGS TO HAS CARRIED THAT SINCE THE HISTORY ARRIVED
         ClientEvent::ImageData(hash, image) =>
         {
+            picture_arrived(&state, &hash).await;
+
+            //AN AVATAR THAT DID NOT COME MAY BE ASKED FOR AGAIN
+            if image.is_none() { state.avatars.lock().unwrap().remove(&hash); }
+
             let hex = picture::hex(&hash);
 
             let image = match image
@@ -206,29 +213,68 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::new(MessageKind::Private, "", text).direct(peer));
         },
 
-        //THE LOBBY'S STORED MESSAGES, SENT ONCE AT LOGIN, AND WHICH OF THEIR PICTURES THE CACHE HOLDS
-        ClientEvent::History(messages, cached) =>
+        //ONE PAGE OF THE LOBBY'S HISTORY - THE NEWEST AT LOGIN, AN OLDER ONE WHEN ASKED
+        ClientEvent::History(messages, start, more, kept, older) =>
         {
-            let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }|
+            //A PICTURE IS LOADED WHEN IT IS LOOKED AT
+            let state = match client::image::auto_show_images()
             {
-                //A PICTURE IS NAMED HERE AND NOT REPLAYED - THE HISTORY CARRIES ITS HASH, AND NOTHING GOES
-                //ON THE WIRE UNTIL SOMEBODY ASKS TO SEE IT. THE TEXT OF SUCH A LINE IS THE FILENAME.
-                //ONE WE ALREADY HOLD IS THE EXCEPTION: IT COSTS NOTHING BUT A DISK READ, SO IT CARRIES
-                //NO BUTTON AND IS LOADED WHEN THE CAPTION IS ACTUALLY LOOKED AT (tui/state.rs::load_visible)
-                match image
-                {
-                    Some(hash) => caption(username, text, hash, match cached.contains(&hash)
-                    {
-                        true => PictureState::Deferred,
-                        false => PictureState::Absent,
-                    }, colors.username_color),
-                    None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
-                }
+                true => PictureState::Deferred,
+                false => PictureState::Absent,
+            };
+
+            let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }| match image
+            {
+                Some(hash) => caption(username, text, hash, state, colors.username_color),
+                None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
             }).collect::<Vec<ChatMessage>>();
 
-            say(app, ChatMessage::title(format!("Message history ({}):", messages.len())));
-            emit(app, UiEvent::History { messages });
+            if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
+
+            emit(app, UiEvent::History { messages, start, more, older });
         },
+
+        //SOMEBODY IN OUR CHANNEL IS WRITING
+        ClientEvent::Typing(username) =>
+        {
+            if config::read_config::<bool>("typing_indicator") && !is_us(&state, &username)
+            {
+                emit(app, UiEvent::Typing { username, ttl: consts::TYPING_TIMEOUT.as_millis() as u64 });
+            }
+        },
+
+        //A PROFILE, ASKED FOR OR JUST STORED
+        ClientEvent::Profile(username, profile, own, saved) =>
+        {
+            state.profiles_seen.store(true, Ordering::Relaxed);
+
+            //A QUIET ANSWER ONLY FILLS THE STORE
+            let quiet =
+            {
+                let mut asked = state.profile_quiet.lock().unwrap();
+
+                match asked.iter().position(|asked| *asked == username)
+                {
+                    Some(index) => { asked.remove(index); true },
+                    None => false,
+                }
+            };
+
+            if saved { say(app, ChatMessage::ok("Profile saved.")); }
+
+            //THE PICTURE IS FETCHED LIKE A CAPTION'S, ONCE A SESSION
+            let fresh = profile.avatar.filter(|hash| state.avatars.lock().unwrap().insert(*hash));
+
+            if let (Some(hash), Some(events)) = (fresh, state.events.lock().unwrap().clone())
+            {
+                client::image::fetch_image(hash, events);
+            }
+
+            emit(app, UiEvent::Profile { profile: ProfileInfo::new(username, profile), own, open: !quiet && !saved, saved });
+        },
+
+        //OUR AVATAR COULD NOT BE CUT
+        ClientEvent::AvatarFailed(error) => popup(app, error),
 
         //THE SERVER STORED A COLOR. IT KEEPS THEM NOW, SO THERE IS NOTHING HERE TO WRITE DOWN - AND
         //NOTHING IN THE PANE CHANGES COLOR FOR IT, EVERY LINE KEEPING THE COLORS IT WAS SAID IN
@@ -434,11 +480,33 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::notice(hash));
         },
 
-        ClientEvent::Upload(filename) => popup(app, format!("Uploading {filename}...")),
-        ClientEvent::Image(filename) => popup(app, format!("Uploading image {filename}...")),
-        ClientEvent::Download(filename) => popup(app, format!("Downloading {filename}...")),
-        ClientEvent::Downloaded(filename) => popup(app, format!("Downloaded {filename} successfully!")),
-        ClientEvent::DownloadFailed(filename) => popup(app, format!("Downloading {filename} failed!")),
+        ClientEvent::Upload(uid, filename, total) => transfer(app, uid, filename, total, true, false),
+        ClientEvent::Image(uid, filename, total) => transfer(app, uid, filename, total, true, true),
+        ClientEvent::Download(uid, filename, total) => transfer(app, uid, filename, total, false, false),
+
+        //ONLY A NEW PERCENT IS WORTH AN EVENT
+        ClientEvent::TransferProgress(uid, done) =>
+        {
+            let moved = match state.transfers.lock().unwrap().get_mut(&uid)
+            {
+                Some((total, last)) =>
+                {
+                    let percent = percent(done, *total);
+                    let moved = percent != *last;
+
+                    *last = percent;
+                    moved
+                },
+
+                None => false,
+            };
+
+            if moved { emit(app, UiEvent::TransferProgress { uid: uid.to_string(), done }); }
+        },
+
+        ClientEvent::UploadDone(uid, _) | ClientEvent::Downloaded(uid, _) => transfer_done(app, &state, uid, true),
+        ClientEvent::DownloadFailed(uid, _) => transfer_done(app, &state, uid, false),
+
         ClientEvent::UploadLimit => popup(app, "Maximum concurrent uploads reached!"),
 
         ClientEvent::Uploaded(username, filename) =>
@@ -616,7 +684,25 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
         ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
-        ClientEvent::DisabledFeature => popup(app, "Server has disabled the feature you requested."),
+        ClientEvent::DisabledFeature =>
+        {
+            //A QUIET PROFILE ASK WAS REFUSED BEFORE ANY CAME BACK - THE SERVER KEEPS NONE
+            let quiet = !state.profile_quiet.lock().unwrap().is_empty() && !state.profiles_seen.load(Ordering::Relaxed);
+
+            match quiet
+            {
+                true =>
+                {
+                    state.profiles_off.store(true, Ordering::Relaxed);
+                    state.profile_quiet.lock().unwrap().clear();
+                    state.profile_queue.lock().unwrap().clear();
+
+                    emit(app, UiEvent::ProfilesDisabled);
+                },
+
+                false => popup(app, "Server has disabled the feature you requested."),
+            }
+        },
 
         //THE SERVER IS ABOUT TO DROP US OVER THIS, AND THE PANE GOES WITH THE SESSION - SO IT IS KEPT
         //FOR THE Quit THAT FOLLOWS AND SAID ON THE CONNECT SCREEN, WHICH IS WHERE IT WILL BE READ
@@ -692,8 +778,38 @@ pub(crate) async fn pump_events(app: AppHandle, mut rx: Receiver<ClientEvent>, s
     state.voice_roster.lock().unwrap().clear();
     state.voice_activity.lock().unwrap().clear();
     state.screen_channel.lock().unwrap().take();
+    state.forget_requests();
 
     reset_session();
+}
+
+//A TRANSFER STARTING (tui/state.rs::push_transfer)
+fn transfer(app: &AppHandle, uid: u64, filename: String, total: u64, upload: bool, image: bool)
+{
+    app.state::<AppState>().transfers.lock().unwrap().insert(uid, (total, 0));
+
+    //A CUT AVATAR IS NAMED AFTER ITS HASH
+    let avatar = upload && filename.starts_with(consts::AVATAR_TEMP_PREFIX);
+
+    emit(app, UiEvent::Transfer { transfer: TransferInfo { uid: uid.to_string(), filename, total, upload, image, avatar } });
+}
+
+//AND ENDING, WELL OR NOT
+fn transfer_done(app: &AppHandle, state: &AppState, uid: u64, ok: bool)
+{
+    if state.transfers.lock().unwrap().remove(&uid).is_none() { return }
+
+    emit(app, UiEvent::TransferDone { uid: uid.to_string(), ok });
+}
+
+//HOW FAR ALONG, IN WHOLE PERCENT (tui/state.rs::percent)
+fn percent(done: u64, total: u64) -> u64
+{
+    match total
+    {
+        0 => 100,
+        total => (done.min(total) * 100) / total,
+    }
 }
 
 //WHETHER A NAME THE SERVER BROADCAST IS OUR OWN. THE SHARE NOTIFICATIONS GO TO THE WHOLE SERVER, AND

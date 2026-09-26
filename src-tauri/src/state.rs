@@ -18,13 +18,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::
 {
-    collections::BTreeMap,
+    collections::{ BTreeMap, HashMap, HashSet, VecDeque },
     time::{ Duration, Instant },
     sync::
     {
         Arc,
         Mutex,
-        atomic::{ AtomicBool, AtomicU64 },
+        atomic::{ AtomicBool, AtomicU64, Ordering },
     },
 };
 
@@ -99,6 +99,38 @@ pub(crate) struct AppState
     //OR, WHERE IT HAS NO DECODER, DECODED HERE AND SENT ON AS JPEG
     pub(crate) screen_channel: Mutex<Option<Channel<InvokeResponseBody>>>,
     pub(crate) screen_decode: AtomicBool,
+
+    //PICTURES WAITING FOR THE SERVER, AND THE ONES ASKED
+    pub(crate) image_queue: Mutex<VecDeque<[u8; 32]>>,
+    pub(crate) image_fetching: Mutex<Vec<[u8; 32]>>,
+
+    //PROFILES TO ASK FOR, AND THE ONES ASKED QUIETLY
+    pub(crate) profile_queue: Mutex<VecDeque<String>>,
+    pub(crate) profile_quiet: Mutex<Vec<String>>,
+    pub(crate) profiles_pumping: AtomicBool,
+    pub(crate) profiles_off: AtomicBool,
+    pub(crate) profiles_seen: AtomicBool, //ONE CAME BACK THIS SESSION
+    pub(crate) avatars: Mutex<HashSet<[u8; 32]>>, //AVATARS ASKED FOR
+
+    pub(crate) typing_sent: Mutex<Option<Instant>>, //LAST TypingRequest
+    pub(crate) transfers: Mutex<HashMap<u64, (u64, u64)>>, //UID -> TOTAL, LAST PERCENT
+}
+
+impl AppState
+{
+    //PUT BACK EVERYTHING A SESSION ASKED FOR
+    pub(crate) fn forget_requests(&self)
+    {
+        self.image_queue.lock().unwrap().clear();
+        self.image_fetching.lock().unwrap().clear();
+        self.profile_queue.lock().unwrap().clear();
+        self.profile_quiet.lock().unwrap().clear();
+        self.profiles_off.store(false, Ordering::Relaxed);
+        self.profiles_seen.store(false, Ordering::Relaxed);
+        self.avatars.lock().unwrap().clear();
+        *self.typing_sent.lock().unwrap() = None;
+        self.transfers.lock().unwrap().clear();
+    }
 }
 
 //ONE LINE OF THE CHAT PANE. EVERY EVENT THAT HAS SOMETHING TO SAY BECOMES ONE OF THESE, SO THE

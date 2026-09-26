@@ -32,6 +32,7 @@ mod input;
 mod events;
 mod screen;
 mod picture;
+mod profile;
 mod clipboard;
 
 //THE PROGRAM GOING ON WITHOUT ITS WINDOW, WHICH IS A DESKTOP QUESTION ONLY - A PHONE HAS NO TRAY, AND
@@ -46,7 +47,7 @@ mod android;
 
 use std::
 {
-    collections::BTreeMap,
+    collections::{ BTreeMap, HashMap, HashSet, VecDeque },
     time::Instant,
     sync::
     {
@@ -76,7 +77,8 @@ use why2_chat::network::screen::client as screen_client;
 
 use state::AppState;
 
-use net::{ connect_to_server, refresh_screens, answer_tofu };
+use net::{ connect_to_server, refresh_screens, answer_tofu, request_history, typing };
+use profile::{ request_profiles, save_profile, set_avatar };
 use servers::{ get_servers, save_server, remove_server, get_auto_connect };
 use input::{ send_input, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
@@ -167,6 +169,16 @@ pub fn run()
             voice_activity: Mutex::new(Vec::new()),
             screen_channel: Mutex::new(None),
             screen_decode: AtomicBool::new(false),
+            image_queue: Mutex::new(VecDeque::new()),
+            image_fetching: Mutex::new(Vec::new()),
+            profile_queue: Mutex::new(VecDeque::new()),
+            profile_quiet: Mutex::new(Vec::new()),
+            profiles_pumping: AtomicBool::new(false),
+            profiles_off: AtomicBool::new(false),
+            profiles_seen: AtomicBool::new(false),
+            avatars: Mutex::new(HashSet::new()),
+            typing_sent: Mutex::new(None),
+            transfers: Mutex::new(HashMap::new()),
         })
         //THE FRAMES OF A WATCHED SHARE ARE PULLED OUT OF THE CRATE ONCE, FOR THE LIFE OF THE PROCESS: THE
         //SINK IS WHAT KEEPS IT FROM OPENING A WINDOW OF ITS OWN, AND IT MUST BE SET BEFORE ANY ATTACH.
@@ -245,6 +257,11 @@ pub fn run()
             answer_tofu,
             upload_file_from_path,
             request_image,
+            request_history,
+            typing,
+            request_profiles,
+            save_profile,
+            set_avatar,
             picture_actions,
             copy_text,
             copy_image,

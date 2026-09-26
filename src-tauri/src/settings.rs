@@ -84,6 +84,7 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
 pub(crate) const PRIVACY_SETTINGS: &[SettingsKey] =
 &[
     ("Privacy", "Share device", "share_device", ClientKind::Toggle { invert: false }),
+    ("Privacy", "Typing indicator", "typing_indicator", ClientKind::Toggle { invert: false }),
 ];
 
 //THE ONE ROW IN THE BOX THAT IS NOT client.toml'S. THE WINDOW OPENS ON THE LIST AND DIALS NOTHING UNLESS

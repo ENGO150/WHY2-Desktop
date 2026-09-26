@@ -37,6 +37,8 @@ import type
     ScreenUser,
     FileOwner,
     PaneEntry,
+    ProfileInfo,
+    TransferInfo,
     ChatMessage,
     MessageImage,
     PictureActions,
@@ -79,7 +81,9 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines } from "./messages";
-import { renderNotice, renderChat, renderBlock, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
+import type { People, ProfileFields } from "./profile";
+import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
 import { sortRoster, sortOffline } from "./roster";
 import
@@ -115,6 +119,12 @@ const TAP_SLOP = 32;
 //AND HOW FAR A FINGER TRAVELS BEFORE IT IS MOVING THE PICTURE RATHER THAN TAPPING IT: A TAP IS NEVER
 //PERFECTLY STILL, AND A PAN THAT STARTED AT THE FIRST PIXEL WOULD EAT THE SECOND HALF OF EVERY ZOOM
 const PAN_SLOP = 8;
+
+//HOW CLOSE TO THE TOP OF THE LOBBY THE NEXT PAGE OF HISTORY IS ASKED FOR
+const PAGE_MARGIN = 160;
+
+//HOW OFTEN THE COMPOSER TELLS THE BRIDGE IT IS STILL BEING WRITTEN IN
+const TYPING_TICK = 1000;
 
 //AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
 //IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
@@ -257,6 +267,33 @@ function App()
     //HOVER WITH. IT IS AT THE POINTER FOR THE REASON THE PICTURE'S IS: A MESSAGE ROW IS THE WIDTH OF THE
     //PANE, AND A MENU BESIDE ONE WOULD OPEN OFF THE EDGE OF THE WINDOW
     const lineHold = useHoldMenu<string>("pointer");
+
+    //EVERYBODY'S PROFILE BY NAME, AND THE PICTURES THEY NAME BY HASH
+    const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
+    const [avatars, setAvatars] = useState<Record<string, string>>({});
+    const [profilesOff, setProfilesOff] = useState(false);
+
+    //THE CARD A NAME OPENED, AND OUR OWN PROFILE BEING EDITED
+    const [card, setCard] = useState<{ username: string; anchor: DOMRect | null } | null>(null);
+    const [editing, setEditing] = useState(false);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+    //WHO IS WRITING HERE, AND UNTIL WHEN WE BELIEVE IT
+    const [typingUsers, setTypingUsers] = useState<Record<string, number>>({});
+
+    //FILES ON THEIR WAY, BY UID
+    const [transfers, setTransfers] = useState<Record<string, TransferInfo>>({});
+
+    //NAMES ALREADY ASKED ABOUT, AND THE AVATAR HASHES WORTH KEEPING
+    const askedRef = useRef<Set<string>>(new Set());
+    const avatarHashRef = useRef<Set<string>>(new Set());
+
+    //THE LOBBY'S PAGING, AND THE SCROLL TO KEEP ACROSS A PREPEND
+    const pageRef = useRef<{ cursor: number | null; pending: boolean }>({ cursor: null, pending: false });
+    const keepScrollRef = useRef<{ height: number; top: number } | null>(null);
+
+    //WHAT THE BRIDGE WAS LAST TOLD ABOUT THE COMPOSER
+    const typingRef = useRef({ active: false, at: 0 });
 
     //WHAT IS UP FOR DOWNLOAD, WHILE THE WINDOW SHOWING IT IS OPEN, AND WHAT IS BEING LOOKED FOR IN IT
     const [files, setFiles] = useState<FileOwner[] | null>(null);
@@ -438,6 +475,17 @@ function App()
 
     const pane = dm ? dm.pane : paneByChannel[currentChannel] ?? [];
 
+    //AN OLDER PAGE WENT IN ABOVE, SO THE VIEW STAYS ON WHAT IT WAS SHOWING
+    useLayoutEffect(() =>
+    {
+        const kept = keepScrollRef.current;
+        const node = paneRef.current;
+
+        keepScrollRef.current = null;
+
+        if (kept && node) node.scrollTop = kept.top + (node.scrollHeight - kept.height);
+    }, [paneByChannel]);
+
     useEffect(() =>
     {
         if (!pinnedRef.current) return;
@@ -445,6 +493,43 @@ function App()
         const node = paneRef.current;
         if (node) node.scrollTop = node.scrollHeight;
     }, [paneByChannel, currentChannel, dms, openDm]);
+
+    //THE TOP OF THE LOBBY IS IN SIGHT, SO THE PAGE ABOVE IT IS ASKED FOR (tui/state.rs::load_visible)
+    const maybePage = () =>
+    {
+        const node = paneRef.current;
+        const page = pageRef.current;
+
+        if (!node || page.cursor === null || page.pending) return;
+        if (currentChannelRef.current !== LOBBY || openDmRef.current !== null) return;
+        if (node.scrollTop > PAGE_MARGIN) return;
+
+        page.pending = true;
+
+        invoke("request_history", { before: page.cursor }).catch(() => { page.pending = false; });
+    };
+
+    useEffect(maybePage, [paneByChannel, currentChannel, openDm]);
+
+    //NOBODY WHO STOPPED RESTATING IT IS STILL WRITING
+    useEffect(() =>
+    {
+        if (Object.keys(typingUsers).length === 0) return;
+
+        const timer = window.setInterval(() =>
+        {
+            const now = Date.now();
+
+            setTypingUsers((previous) =>
+            {
+                const kept = Object.entries(previous).filter(([, until]) => until > now);
+
+                return kept.length === Object.keys(previous).length ? previous : Object.fromEntries(kept);
+            });
+        }, 1000);
+
+        return () => window.clearInterval(timer);
+    }, [typingUsers]);
 
     //THE SCROLLBACK OF A CHANNEL NOBODY IS IN ANY MORE IS NOT WORTH KEEPING. WHICH ONES THOSE ARE IS THE
     //ROSTER'S ANSWER AND THE TWO CHANNEL EVENTS', NOT THIS EFFECT'S - A ROSTER IS SENT AT LOGIN AND ASKED
@@ -476,7 +561,7 @@ function App()
     //ONLY NAMED IS A CAPTION, AND WHICH OF THE TWO IT IS DECIDES NOTHING - WHAT DOES IS WHETHER THE
     //PICTURE IS ALREADY ON ITS WAY (waiting), IN THE CACHE AND A LOOK AWAY (deferred), OR SOMETHING TO
     //ASK FOR - absent, WHICH IS THE ONE THAT CARRIES THE [ show ] BUTTON
-    const entryFor = (message: ChatMessage): PaneEntry =>
+    const entryFor = (message: ChatMessage): Extract<PaneEntry, { entry: "message" }> =>
     {
         const image = message.image;
 
@@ -494,6 +579,31 @@ function App()
         //THE COUNT IN THE BOTTOM BORDER IS ABOUT THE PANE BEING LOOKED AT, AND A CONVERSATION IN FRONT
         //MEANS THIS IS NOT IT
         if (!pinnedRef.current && openDmRef.current === null) setUnread((previous) => previous + entries.length);
+    };
+
+    //THE PROFILES OF NAMES NOT ASKED ABOUT YET, QUIETLY
+    const requestProfiles = (names: string[]) =>
+    {
+        const fresh = Array.from(new Set(names)).filter((name) => name && !askedRef.current.has(name));
+
+        if (fresh.length === 0) return;
+
+        fresh.forEach((name) => askedRef.current.add(name));
+
+        invoke("request_profiles", { usernames: fresh, first: false }).catch(() => {});
+    };
+
+    const stoppedTyping = (name: string) =>
+    {
+        setTypingUsers((previous) =>
+        {
+            if (!(name in previous)) return previous;
+
+            const next = { ...previous };
+            delete next[name];
+
+            return next;
+        });
     };
 
     //A PRIVATE MESSAGE GOES TO THE CONVERSATION IT BELONGS TO, WHICH IS STARTED HERE IF THERE WAS NONE -
@@ -630,6 +740,19 @@ function App()
         setDecoding("");
         setCreating(null);
         setFiles(null);
+        setProfiles({});
+        setAvatars({});
+        setProfilesOff(false);
+        setCard(null);
+        setEditing(false);
+        setUploadingAvatar(false);
+        setTypingUsers({});
+        setTransfers({});
+
+        askedRef.current = new Set();
+        avatarHashRef.current = new Set();
+        pageRef.current = { cursor: null, pending: false };
+        typingRef.current = { active: false, at: 0 };
 
         pinnedRef.current = true;
         historyRef.current = { entries: [], pos: 0, stash: null, prefix: null };
@@ -903,12 +1026,119 @@ function App()
 
                     notifyMessage(message);
 
+                    //A MESSAGE IS THE PROOF THEY STOPPED
+                    if (message.kind === "user" || message.kind === "private")
+                    {
+                        if (!message.direct) stoppedTyping(message.username);
+
+                        requestProfiles([message.username]);
+                    }
+
                     break;
                 }
 
                 case "history":
                 {
-                    push(...payload.data.messages.map(entryFor));
+                    const { messages, start, more, older } = payload.data;
+                    const entries = messages.map((message): PaneEntry => ({ ...entryFor(message), replayed: true }));
+
+                    pageRef.current = { cursor: more ? start : null, pending: false };
+
+                    requestProfiles(messages.map((message) => message.username));
+
+                    if (!older)
+                    {
+                        push(...entries);
+                        break;
+                    }
+
+                    //THE LOBBY IS IN FRONT, SO ITS VIEW IS KEPT
+                    const node = paneRef.current;
+
+                    if (node && currentChannelRef.current === LOBBY && openDmRef.current === null)
+                    {
+                        keepScrollRef.current = { height: node.scrollHeight, top: node.scrollTop };
+                    }
+
+                    //ABOVE THE OLDEST REPLAYED LINE
+                    setPaneByChannel((previous) =>
+                    {
+                        const pane = previous[LOBBY] ?? [];
+                        const at = pane.findIndex((entry) => entry.entry === "message" && entry.replayed);
+
+                        if (at < 0) return previous;
+
+                        return { ...previous, [LOBBY]: [...pane.slice(0, at), ...entries, ...pane.slice(at)] };
+                    });
+
+                    break;
+                }
+
+                case "typing":
+                {
+                    const { username, ttl } = payload.data;
+
+                    setTypingUsers((previous) => ({ ...previous, [username]: Date.now() + ttl }));
+                    break;
+                }
+
+                //A PROFILE FILLS THE STORE, AND OPENS WHERE SOMEBODY TYPED /profile
+                case "profile":
+                {
+                    const { profile, own, open, saved } = payload.data;
+
+                    if (profile.avatar) avatarHashRef.current.add(profile.avatar);
+
+                    askedRef.current.add(profile.username);
+                    setProfiles((previous) => ({ ...previous, [profile.username]: profile }));
+
+                    if (own && saved) setUploadingAvatar(false);
+
+                    if (open && own) setEditing(true);
+                    else if (open) setCard({ username: profile.username, anchor: null });
+
+                    break;
+                }
+
+                case "profiles_disabled":
+                {
+                    setProfilesOff(true);
+                    break;
+                }
+
+                case "transfer":
+                {
+                    const transfer: TransferInfo = { ...payload.data.transfer, done: 0, outcome: null };
+
+                    setTransfers((previous) => ({ ...previous, [transfer.uid]: transfer }));
+                    push({ entry: "transfer", uid: transfer.uid });
+                    break;
+                }
+
+                case "transfer_progress":
+                {
+                    const { uid, done } = payload.data;
+
+                    setTransfers((previous) => (previous[uid]
+                        ? { ...previous, [uid]: { ...previous[uid], done } }
+                        : previous));
+                    break;
+                }
+
+                case "transfer_done":
+                {
+                    const { uid, ok } = payload.data;
+
+                    setTransfers((previous) =>
+                    {
+                        const transfer = previous[uid];
+
+                        if (!transfer) return previous;
+
+                        return { ...previous, [uid]: { ...transfer, done: ok ? transfer.total : transfer.done, outcome: ok } };
+                    });
+
+                    if (!ok) setUploadingAvatar(false);
                     break;
                 }
 
@@ -920,6 +1150,11 @@ function App()
                     const { hash, image } = payload.data;
 
                     setPaneByChannel((previous) => deliverPicture(previous, hash, image));
+
+                    //A PROFILE'S PICTURE
+                    const source = image?.source;
+
+                    if (source && avatarHashRef.current.has(hash)) setAvatars((previous) => ({ ...previous, [hash]: source }));
                     break;
                 }
 
@@ -1065,6 +1300,8 @@ function App()
 
                     setUsers(sortRoster(roster, usernameRef.current));
                     setOffline(payload.data.offline && sortOffline(payload.data.offline));
+
+                    requestProfiles([...roster, ...(payload.data.offline ?? [])].map((user) => user.username));
                     setActiveChannels(Array.from(new Set([LOBBY, ...roster.map((user) => user.channel ?? LOBBY)])));
                     break;
                 }
@@ -1080,6 +1317,8 @@ function App()
                         : sortRoster([...previous, joined], usernameRef.current));
 
                     setOffline((previous) => previous?.filter((user) => user.username !== joined.username) ?? null);
+
+                    requestProfiles([joined.username]);
                     break;
                 }
 
@@ -1094,6 +1333,8 @@ function App()
 
                     if (gone)
                     {
+                        stoppedTyping(gone.username);
+
                         setOffline((listed) =>
                         {
                             if (!listed || listed.some((user) => user.username === gone.username)) return listed;
@@ -1109,6 +1350,7 @@ function App()
                 case "channel_changed":
                 {
                     setCurrentChannel(payload.data.channel ?? LOBBY);
+                    setTypingUsers({});
 
                     //WALKING INTO A CHANNEL IS WALKING OUT OF WHATEVER CONVERSATION WAS IN FRONT OF IT
                     setOpenDm(null);
@@ -1271,7 +1513,7 @@ function App()
 
         //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
         swipeRef.current = narrow && event.touches.length === 1 && touch && connected
-            && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu
+            && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu && !card && !editing
             ? {
                 x: touch.clientX,
                 y: touch.clientY,
@@ -2255,7 +2497,7 @@ function App()
     //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
     useEffect(() =>
     {
-        if (!connected || settingsOpen || filesOpen || screensOpen || tofu) return;
+        if (!connected || settingsOpen || filesOpen || screensOpen || tofu || editing) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
@@ -2271,7 +2513,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [connected, settingsOpen, filesOpen, screensOpen, tofu]);
+    }, [connected, settingsOpen, filesOpen, screensOpen, tofu, editing]);
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
@@ -2331,6 +2573,8 @@ function App()
             if (lightbox && zoom) setZoom(null);
             else if (lightbox) closeLightbox();
             else if (theater) setView("chat");
+            else if (card) setCard(null);
+            else if (editing) setEditing(false);
             else if (addOpen) closeAdd();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
@@ -2698,10 +2942,26 @@ function App()
     };
 
     //ESCAPE PUTS THE PALETTE AWAY, AND ANYTHING TYPED AFTERWARDS BRINGS IT BACK
+    //TELL THE BRIDGE WHETHER A MESSAGE IS BEING WRITTEN, AT MOST ONCE A TICK
+    const signalTyping = (value: string) =>
+    {
+        const text = value.trimStart();
+        const active = openDmRef.current === null && text !== "" && !text.startsWith("/");
+        const now = Date.now();
+        const last = typingRef.current;
+
+        if (active === last.active && (!active || now - last.at < TYPING_TICK)) return;
+
+        typingRef.current = { active, at: now };
+
+        invoke("typing", { active }).catch(() => {});
+    };
+
     const writeInput = (value: string) =>
     {
         setChatInput(value);
         setDismissed(false);
+        signalTyping(value);
     };
 
     //WRITE THE HIGHLIGHTED ROW ONTO THE LINE, WHETHER IT IS A COMMAND OR ONE ANSWER OF A PARAMETER.
@@ -2842,6 +3102,7 @@ function App()
         pushHistory(historyRef.current, chatInput);
 
         setChatInput("");
+        signalTyping("");
     };
 
     const onPaneScroll = () =>
@@ -2852,6 +3113,8 @@ function App()
         pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 8;
 
         if (pinnedRef.current) setUnread(0);
+
+        maybePage();
     };
 
 
@@ -2935,6 +3198,41 @@ function App()
         );
     };
 
+    //A NAME'S PICTURE, AND THE CARD IT OPENS
+    const people: People =
+    {
+        avatar: (name: string) =>
+        {
+            const hash = profiles[name]?.avatar;
+
+            return hash ? avatars[hash] : undefined;
+        },
+
+        open: (name: string, anchor: HTMLElement | null) =>
+        {
+            setCard({ username: name, anchor: anchor?.getBoundingClientRect() ?? null });
+
+            //A CARD IS WORTH A FRESH LOOK
+            if (!profilesOff) invoke("request_profiles", { usernames: [name], first: true }).catch(() => {});
+        },
+    };
+
+    //THE NAME'S OWN COLOR, WHEREVER THE ROSTER HAS IT
+    const colorOf = (name: string) =>
+    {
+        const listed = users.find((user) => user.username === name) ?? offline?.find((user) => user.username === name);
+
+        return messageColor(config, listed?.username_color ?? null);
+    };
+
+    //WHO IS WRITING HERE, AS THE TUI'S BORDER SAYS IT
+    const typers = Object.keys(typingUsers).sort();
+
+    const typingLine = dm || typers.length === 0 ? null
+        : typers.length === 1 ? `${typers[0]} is typing…`
+            : typers.length === 2 ? `${typers[0]} and ${typers[1]} are typing…`
+                : `${typers.length} people are typing…`;
+
     //THE WHOLE PANE. THE GROUPING IS DECIDED HERE AND NOT PER MESSAGE, BECAUSE IT IS ABOUT WHAT CAME
     //BEFORE - AND ANYTHING THAT IS NOT SOMEBODY TALKING BREAKS THE RUN
     const paneNodes = (() =>
@@ -2948,6 +3246,13 @@ function App()
                 previous = null;
 
                 return renderBlock(entry.title, entry.rows, index, config);
+            }
+
+            if (entry.entry === "transfer")
+            {
+                previous = null;
+
+                return renderTransfer(transfers[entry.uid], index);
             }
 
             const message = entry.message;
@@ -2965,7 +3270,7 @@ function App()
             previous = author;
 
             return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
-                lines);
+                lines, people);
         });
     })();
 
@@ -3084,6 +3389,75 @@ function App()
     //AND THE ONE A LINE OPENS, WHICH IS THE ONLY WAY TO COPY ONE ON A PHONE
     const messageMenu = lineHold.menu && (
         <MessageMenu at={lineHold.menu} copy={copyMessage} close={lineHold.close} />
+    );
+
+    //THE CARD A NAME OPENED
+    const cardUser = card ? users.find((user) => user.username === card.username) ?? null : null;
+    const cardOwn = card !== null && card.username === username;
+
+    const profileCard = card && (
+        <ProfileCard
+            username={card.username}
+            profile={profiles[card.username] ?? null}
+            loading={!profilesOff}
+            avatar={people.avatar(card.username)}
+            color={colorOf(card.username)}
+            online={cardUser}
+            own={cardOwn}
+            role={cardOwn ? role : null}
+            config={config}
+            anchor={card.anchor}
+            narrow={narrow}
+            message={cardUser && !cardOwn
+                ? () => { setCard(null); setDrawer(null); showDirect(cardUser); }
+                : null}
+            edit={cardOwn && !profilesOff ? () => { setCard(null); setDrawer(null); setEditing(true); } : null}
+            close={() => setCard(null)}
+        />
+    );
+
+    //A NEW PICTURE IS CUT AND UPLOADED AT ONCE
+    const pickAvatar = async () =>
+    {
+        const selected = await open({ multiple: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+
+        if (typeof selected !== "string") return;
+
+        setUploadingAvatar(true);
+
+        invoke("set_avatar", { path: selected }).catch((error: unknown) =>
+        {
+            setUploadingAvatar(false);
+            setPopupMessage(String(error));
+        });
+    };
+
+    const saveProfile = (fields: ProfileFields) =>
+        invoke("save_profile", { profile: { username, avatar: null, ...fields } })
+            .catch((error: unknown) => { setPopupMessage(String(error)); throw error; });
+
+    const closeEditor = () =>
+    {
+        setEditing(false);
+
+        if (!narrow) chatInputRef.current?.focus();
+    };
+
+    const profileEditor = editing && (
+        <ProfileEditor
+            username={username}
+            profile={profiles[username] ?? null}
+            avatar={people.avatar(username)}
+            color={colorOf(username)}
+            uploading={uploadingAvatar}
+            dialogWrap={dialogWrap}
+            dialogCard={dialogCard}
+            narrow={narrow}
+            save={saveProfile}
+            pickAvatar={pickAvatar}
+            dropAvatar={() => { invoke("set_avatar", { path: null }).catch((error: unknown) => setPopupMessage(String(error))); }}
+            close={closeEditor}
+        />
     );
 
     //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
@@ -3257,6 +3631,7 @@ function App()
                         closeDirect={closeDirect}
                         openScreens={openScreens}
                         rail={rail}
+                        people={people}
                         panelRef={leftPanel}
                     />
 
@@ -3501,6 +3876,15 @@ function App()
                                     <Icon name="send" className="h-[18px] w-[18px]" />
                                 </button>
                             </form>
+
+                            {/* UNDER THE LINE WHERE THERE IS ROOM, OVER IT ON A PHONE */}
+                            {typingLine && (
+                                <div className={`pointer-events-none absolute z-10 truncate text-[11px] text-muted ${narrow
+                                    ? "bottom-full left-4 right-4 mb-0.5"
+                                    : "bottom-0.5 left-6 right-6"}`}>
+                                    <span className={narrow ? "rounded bg-chat/90 px-1.5 py-px" : ""}>{typingLine}</span>
+                                </div>
+                            )}
                         </div>
                     </section>
 
@@ -3513,8 +3897,7 @@ function App()
                             config={config}
                             narrow={narrow}
                             drawer={drawer}
-                            setDrawer={setDrawer}
-                            showDirect={showDirect}
+                            people={people}
                             panelRef={rightPanel}
                         />
                     )}
@@ -3539,6 +3922,8 @@ function App()
             )}
 
             {pictureBox}
+            {profileCard}
+            {profileEditor}
             {pictureMenu}
             {messageMenu}
             {settingsBox}
