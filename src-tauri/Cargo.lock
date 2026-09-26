@@ -8358,9 +8358,9 @@ dependencies = [
 
 [[package]]
 name = "why2"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38fc4866905c8ac50aa3b939d23ed950829713991f5c2cee18f33dde594fe529"
+checksum = "c265aaf4af2ab7bae0a670bea34d0928adcaf83a0202443e7cc7333922f2d432"
 dependencies = [
  "hmac",
  "rand 0.10.3",
@@ -8374,9 +8374,9 @@ dependencies = [
 
 [[package]]
 name = "why2-chat"
-version = "2.2.2"
+version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0e98398a7aea56fb92b79c69a1a36861ccfe7f1f9ddce472e0a7f9c99b8c80d"
+checksum = "99127881a2b8e12aeef1f75a6f18131b133cf18c151b04a0ebc028c955e36d24"
 dependencies = [
  "audiopus",
  "base64 0.23.1",
@@ -8447,9 +8447,9 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "1.7.0"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cf05ca94c9fba0c51316899caa1d1e74a064fc310a5efa7375e614343d415be"
+checksum = "d920ac99c3c8edce110cb8d07dbb324d6d026011dce85b1e9355b70f0adacc4f"
 dependencies = [
  "bytemuck",
  "safe_arch",
