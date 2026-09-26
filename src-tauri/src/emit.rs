@@ -53,7 +53,12 @@ pub(crate) fn emit(app: &AppHandle, event: UiEvent) //HAND ONE EVENT TO THE WEBV
 
 pub(crate) fn say(app: &AppHandle, message: ChatMessage) //PUSH ONE LINE INTO THE PANE
 {
-    emit(app, UiEvent::Message { message });
+    emit(app, UiEvent::Message { message, channel: None });
+}
+
+pub(crate) fn say_in(app: &AppHandle, message: ChatMessage, channel: Option<String>) //PUSH ONE LINE INTO A CHANNEL'S PANE
+{
+    emit(app, UiEvent::Message { message, channel });
 }
 
 pub(crate) fn popup(app: &AppHandle, text: impl Into<String>) //PUSH ONE TOAST

@@ -80,8 +80,8 @@ import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
-import type { Pictures, Lines } from "./messages";
-import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, MarkupPreview } from "./messages";
+import type { Pictures, Lines, HeldPicture } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
 import type { People, ProfileFields } from "./profile";
 import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
@@ -120,8 +120,6 @@ const TAP_SLOP = 32;
 //PERFECTLY STILL, AND A PAN THAT STARTED AT THE FIRST PIXEL WOULD EAT THE SECOND HALF OF EVERY ZOOM
 const PAN_SLOP = 8;
 
-//HOW CLOSE TO THE TOP OF THE LOBBY THE NEXT PAGE OF HISTORY IS ASKED FOR
-const PAGE_MARGIN = 160;
 
 //HOW OFTEN THE COMPOSER TELLS THE BRIDGE IT IS STILL BEING WRITTEN IN
 const TYPING_TICK = 1000;
@@ -184,7 +182,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: true, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
@@ -264,12 +262,12 @@ function App()
 
     //THE MENU A PICTURE OPENS - A RIGHT-CLICK, OR A HOLD ON A PHONE. IT IS THE GESTURE THE SERVER LISTS
     //ALREADY USE, WITH THE PICTURE ITSELF IN IT RATHER THAN AN ID: A LIVE ONE HAS NOT EVEN A HASH
-    const pictureHold = useHoldMenu<MessageImage>("pointer");
+    const pictureHold = useHoldMenu<HeldPicture>("pointer");
 
     //AND THE SAME GESTURE OVER A LINE OF TEXT, WHICH IS HOW COPYING IS ASKED FOR WHERE THERE IS NOTHING TO
     //HOVER WITH. IT IS AT THE POINTER FOR THE REASON THE PICTURE'S IS: A MESSAGE ROW IS THE WIDTH OF THE
     //PANE, AND A MENU BESIDE ONE WOULD OPEN OFF THE EDGE OF THE WINDOW
-    const lineHold = useHoldMenu<string>("pointer");
+    const lineHold = useHoldMenu<ChatMessage>("pointer");
 
     //EVERYBODY'S PROFILE BY NAME, AND THE PICTURES THEY NAME BY HASH
     const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
@@ -508,7 +506,7 @@ function App()
 
         if (!node || page.cursor === null || page.pending) return;
         if (currentChannelRef.current !== LOBBY || openDmRef.current !== null) return;
-        if (node.scrollTop > PAGE_MARGIN) return;
+        if (node.scrollTop >= node.clientHeight * (PRELOAD_SCREENS + 1)) return;
 
         page.pending = true;
 
@@ -576,14 +574,16 @@ function App()
         return { entry: "message", message, picture: image.state };
     };
 
-    const push = (...entries: PaneEntry[]) =>
-    {
-        const channel = currentChannelRef.current;
+    const push = (...entries: PaneEntry[]) => pushTo(currentChannelRef.current, ...entries);
 
+    //INTO ONE CHANNEL'S PANE, IN FRONT OR PARKED
+    const pushTo = (channel: string, ...entries: PaneEntry[]) =>
+    {
         setPaneByChannel((previous) => ({ ...previous, [channel]: [...(previous[channel] ?? []), ...entries] }));
 
         //THE COUNT IN THE BOTTOM BORDER IS ABOUT THE PANE BEING LOOKED AT, AND A CONVERSATION IN FRONT
         //MEANS THIS IS NOT IT
+        if (channel !== currentChannelRef.current) return;
         if (!pinnedRef.current && openDmRef.current === null) setUnread((previous) => previous + entries.length);
     };
 
@@ -1026,27 +1026,28 @@ function App()
                 {
                     let message = payload.data.message;
 
-                    //A PM CARRIES NO COLOUR, SO THE AUTHOR'S IS TAKEN OFF THE ROSTER
-                    if (message.direct && message.username_color === null)
+                    //ANOTHER CHANNEL'S LINE IS PARKED IN ITS PANE
+                    const channel = payload.data.channel ?? currentChannelRef.current;
+                    const here = channel === currentChannelRef.current;
+
+                    //OUR OWN PM'S NAME COLOUR IS TAKEN OFF THE ROSTER
+                    if (message.direct?.outgoing && message.username_color === null)
                     {
-                        const peer = message.direct;
-                        const author = usersRef.current.find((user) => peer.outgoing
-                            ? user.username === usernameRef.current
-                            : user.id === peer.id);
+                        const author = usersRef.current.find((user) => user.username === usernameRef.current);
 
                         message = { ...message, username_color: author?.username_color ?? null };
                     }
 
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
                     if (message.direct) pushDirect(message.direct, entryFor(message));
-                    else push(entryFor(message));
+                    else pushTo(channel, entryFor(message));
 
-                    notifyMessage(message);
+                    if (here) notifyMessage(message);
 
                     //A MESSAGE IS THE PROOF THEY STOPPED
                     if (message.kind === "user" || message.kind === "private")
                     {
-                        if (!message.direct) stoppedTyping(message.username);
+                        if (!message.direct && here) stoppedTyping(message.username);
 
                         requestProfiles([message.username]);
                     }
@@ -1088,6 +1089,35 @@ function App()
                         return { ...previous, [LOBBY]: [...pane.slice(0, at), ...entries, ...pane.slice(at)] };
                     });
 
+                    break;
+                }
+
+                //GONE FROM WHICHEVER PANE HOLDS IT
+                case "deleted":
+                {
+                    const { message_id } = payload.data;
+
+                    //A ROW ABOVE THE VIEW TAKES ITS HEIGHT WITH IT
+                    const node = paneRef.current;
+                    const row = node?.querySelector(`[data-message-id="${message_id}"]`);
+
+                    if (node && row && row.getBoundingClientRect().bottom <= node.getBoundingClientRect().top)
+                    {
+                        keepScrollRef.current = { height: node.scrollHeight, top: node.scrollTop };
+                    }
+
+                    setPaneByChannel((previous) =>
+                    {
+                        for (const channel of Object.keys(previous))
+                        {
+                            const pane = previous[channel];
+                            const kept = pane.filter((entry) => entry.entry !== "message" || entry.message.message_id !== message_id);
+
+                            if (kept.length !== pane.length) return { ...previous, [channel]: kept };
+                        }
+
+                        return previous;
+                    });
                     break;
                 }
 
@@ -1630,6 +1660,13 @@ function App()
         invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
+    //ONLY THE LOBBY IS STORED; OURS, OR ANYBODY'S AS A MODERATOR
+    const deletable = (message: ChatMessage | null) => message !== null && message.message_id !== null
+        && message.kind === "user" && openDm === null && currentChannel === LOBBY
+        && (message.username === username || role !== "user");
+
+    const deleteMessage = (message_id: number) => send(`/delete ${message_id}`);
+
     //WHERE A NOTIFICATION LEADS. THE KEY IS THE ONE notify_message FILED IT UNDER, WHICH IS THE PANE THE
     //LINE LANDED IN - SO TAPPING IT PUTS THAT PANE IN FRONT, WHICH IS THE WHOLE OF WHAT A CHAT
     //NOTIFICATION IS FOR. A CONVERSATION THAT DID NOT SURVIVE (THE SESSION ENDED WITH THE PROCESS, AND
@@ -2130,7 +2167,7 @@ function App()
         },
 
         open: openLightbox,
-        hold: (image: MessageImage) => pictureHold.bind(image),
+        hold: (picture: HeldPicture) => pictureHold.bind(picture),
         held: pictureHold.held,
     };
 
@@ -3324,7 +3361,7 @@ function App()
     //THE GESTURE FOR THE PICTURE IN FRONT, BOUND ONCE: THE HOLD AND THE PINCH ARE THE SAME TOUCHES, SO
     //THEY HAVE TO BE ONE SET OF HANDLERS AND NOT TWO THAT REPLACE EACH OTHER. IT IS ONLY EVER CALLED FROM
     //INSIDE THE LIGHTBOX, WHICH IS NOT DRAWN WITHOUT ONE
-    const holdPicture = pictureHold.bind(lightbox!);
+    const holdPicture = pictureHold.bind({ image: lightbox!, message: null });
 
     //A PICTURE AT THE SIZE IT WAS SENT AT, WITH THE WINDOW TO ITSELF. IT IS NOT A DIALOG - THERE IS
     //NOTHING TO ANSWER - SO IT IS THE PICTURE ON A DARKENED ROOM, AND A PRESS ANYWHERE PUTS IT AWAY
@@ -3407,13 +3444,14 @@ function App()
             at={pictureHold.menu}
             copy={actions.copy ? copyPicture : null}
             save={savePicture}
+            remove={deletable(pictureHold.menu.value.message) ? deleteMessage : null}
             close={pictureHold.close}
         />
     );
 
     //AND THE ONE A LINE OPENS, WHICH IS THE ONLY WAY TO COPY ONE ON A PHONE
     const messageMenu = lineHold.menu && (
-        <MessageMenu at={lineHold.menu} copy={copyMessage} close={lineHold.close} />
+        <MessageMenu at={lineHold.menu} copy={copyMessage} remove={deletable(lineHold.menu.value) ? deleteMessage : null} close={lineHold.close} />
     );
 
     //THE CARD A NAME OPENED

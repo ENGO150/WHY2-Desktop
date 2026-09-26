@@ -41,6 +41,7 @@ export interface ChatMessage
     username: string;
     text: string;
     id: number | null;
+    message_id: number | null; //THE SERVER'S ID, WHAT /delete TAKES
     username_color: number | null;
     message_color: number | null;
     direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
@@ -349,6 +350,7 @@ export interface VocabularyValue
 export interface ClientConfig
 {
     show_id: boolean;
+    show_message_ids: boolean;
     disable_colors: boolean;
     render_math: boolean;
 }
@@ -394,7 +396,8 @@ export type BridgeEvent =
     | { event: "password_rejected"; data: { min: number } }
     | { event: "authenticated"; data: { role: string } }
     | { event: "role"; data: { role: string; username: string | null } }
-    | { event: "message"; data: { message: ChatMessage } }
+    | { event: "message"; data: { message: ChatMessage; channel: string | null } } //null = THE CURRENT PANE
+    | { event: "deleted"; data: { message_id: number } }
     | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
     | { event: "typing"; data: { username: string; ttl: number } }
     | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }

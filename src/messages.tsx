@@ -32,6 +32,16 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { createPortal } from "react-dom";
 import { MENU_WIDTH, type HeldMenu } from "./servers";
 
+//SCREENS ABOVE AND BELOW THE VIEW WHOSE PICTURES AND HISTORY ARE LOADED (tui/consts.rs)
+export const PRELOAD_SCREENS = 1;
+
+//A PICTURE AS ITS MENU HOLDS IT, WITH THE LINE IT CAME ON WHERE THERE IS ONE
+export interface HeldPicture
+{
+    image: MessageImage;
+    message: ChatMessage | null;
+}
+
 //WHAT A PICTURE IN THE PANE CAN BE ASKED TO DO. NONE OF IT IS THE MESSAGE'S OWN BUSINESS - ONE PUTS A
 //PACKET ON THE WIRE, ONE OPENS A WINDOW AND ONE OPENS A MENU, AND ALL OF THEM BELONG TO THE COMPONENT
 //THAT HOLDS THE STATE. hold IS THE RIGHT-CLICK AND THE LONG PRESS, WHICH IS servers.tsx' OWN GESTURE
@@ -45,7 +55,7 @@ export interface Pictures
     //ANYTHING FOR THIS ONE
     load: (hash: string) => void;
     open: (image: MessageImage) => void;
-    hold: (image: MessageImage) => Record<string, unknown>;
+    hold: (picture: HeldPicture) => Record<string, unknown>;
     held: () => boolean;
 }
 
@@ -53,7 +63,7 @@ export interface Pictures
 export interface Lines
 {
     copy: (text: string) => void;
-    hold: (text: string) => Record<string, unknown>;
+    hold: (message: ChatMessage) => Record<string, unknown>;
     held: () => boolean;
 }
 
@@ -62,13 +72,16 @@ export interface Lines
 //ITSELF, CUT TO ONE ROW, SO A MENU OPENED IN A CROWDED PANE SAYS WHICH LINE IT IS ABOUT
 export function MessageMenu(
 {
-    at, copy, close,
+    at, copy, remove, close,
 }: {
-    at: HeldMenu<string>;
+    at: HeldMenu<ChatMessage>;
     copy: (text: string) => void;
+    remove: ((message_id: number) => void) | null;
     close: () => void;
 })
 {
+    const message = at.value;
+
     const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
 
     return createPortal(
@@ -77,12 +90,19 @@ export function MessageMenu(
             style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
             className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
         >
-            <div className="truncate px-2 py-1.5 text-sm font-semibold">{at.value}</div>
+            <div className="truncate px-2 py-1.5 text-sm font-semibold">{message.text}</div>
 
-            <button type="button" onClick={() => { close(); copy(at.value); }} className={item}>
+            <button type="button" onClick={() => { close(); copy(message.text); }} className={item}>
                 <Icon name="copy" className="h-4 w-4" />
                 Copy message
             </button>
+
+            {remove && message.message_id !== null && (
+                <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
+                    <Icon name="trash" className="h-4 w-4" />
+                    Delete message
+                </button>
+            )}
         </div>,
         document.body,
     );
@@ -96,14 +116,17 @@ export function MessageMenu(
 //CLIPS WHATEVER LEAVES IT
 export function PictureMenu(
 {
-    at, copy, save, close,
+    at, copy, save, remove, close,
 }: {
-    at: HeldMenu<MessageImage>;
+    at: HeldMenu<HeldPicture>;
     copy: ((image: MessageImage) => void) | null;
     save: (image: MessageImage) => void;
+    remove: ((message_id: number) => void) | null;
     close: () => void;
 })
 {
+    const { image, message } = at.value;
+
     const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
 
     return createPortal(
@@ -112,19 +135,26 @@ export function PictureMenu(
             style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
             className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
         >
-            <div className="truncate px-2 py-1.5 text-sm font-semibold">{at.value.filename}</div>
+            <div className="truncate px-2 py-1.5 text-sm font-semibold">{image.filename}</div>
 
             {copy && (
-                <button type="button" onClick={() => { close(); copy(at.value); }} className={item}>
+                <button type="button" onClick={() => { close(); copy(image); }} className={item}>
                     <Icon name="copy" className="h-4 w-4" />
                     Copy image
                 </button>
             )}
 
-            <button type="button" onClick={() => { close(); save(at.value); }} className={item}>
+            <button type="button" onClick={() => { close(); save(image); }} className={item}>
                 <Icon name="download" className="h-4 w-4" />
                 Save image
             </button>
+
+            {remove && message?.message_id != null && (
+                <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
+                    <Icon name="trash" className="h-4 w-4" />
+                    Delete image
+                </button>
+            )}
         </div>,
         document.body,
     );
@@ -496,7 +526,7 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 //THE PICTURE UNDER A LINE THAT IS ONE. WHAT ARRIVED WITH ITS OWN BYTES IS SIMPLY DRAWN; WHAT THE HISTORY
 //ONLY NAMED IS A CAPTION OFFERING TO FETCH IT, WHICH IS THE TUI'S [ show ] AND THE ONLY THING THAT EVER
 //PUTS A STORED PICTURE ON THE WIRE - REPLAYING THEM WOULD MAKE EVERY LOGIN CARRY EVERY IMAGE EVER POSTED
-export function renderPicture(image: MessageImage, status: PictureStatus, pictures: Pictures)
+export function renderPicture(message: ChatMessage, image: MessageImage, status: PictureStatus, pictures: Pictures)
 {
     if (image.source)
     {
@@ -504,7 +534,7 @@ export function renderPicture(image: MessageImage, status: PictureStatus, pictur
             <button
                 type="button"
                 title={image.filename}
-                {...pictures.hold(image)}
+                {...pictures.hold({ image, message })}
                 onClick={() => { if (!pictures.held()) pictures.open(image); }}
                 className="picture-hold mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
             >
@@ -536,13 +566,14 @@ function Caption({ image, status, pictures }: { image: MessageImage; status: Pic
 
         if (status !== "deferred" || !node || asked.current) return;
 
+        //THE PANE, GROWN BY PRELOAD_SCREENS EACH WAY
         const observer = new IntersectionObserver((entries) =>
         {
             if (!entries.some((entry) => entry.isIntersecting) || asked.current) return;
 
             asked.current = true;
             pictures.load(image.hash!);
-        });
+        }, { root: node.closest(".scroller"), rootMargin: `${PRELOAD_SCREENS * 100}% 0px` });
 
         observer.observe(node);
 
@@ -599,6 +630,9 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //BACK, SINCE A HEADING KEEPS IT WHERE THERE IS ONE AND TAKES ITS OWN WHERE THERE IS NOT
         const body = messageColor(config, message.message_color);
 
+        //THE ID /delete TAKES, ON EVERY LINE THAT HAS ONE
+        const messageId = config.show_message_ids && message.message_id !== null ? `#${message.message_id}` : null;
+
         //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
         //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
         //UNDER IT EVER SEES ONE. EVERY OTHER CLICK ONLY COSTS THE FLAG BEING READ AND PUT BACK
@@ -613,7 +647,8 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         return (
             <div
                 key={key}
-                {...(copyable ? lines.hold(message.text) : {})}
+                {...(copyable ? lines.hold(message) : {})}
+                data-message-id={message.message_id ?? undefined}
                 onClickCapture={copyable ? swallowHeld : undefined}
                 className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
@@ -634,6 +669,9 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     </button>
                 )}
                 <div className="w-9 shrink-0">
+                    {grouped && messageId && (
+                        <span className="block whitespace-nowrap pt-[3px] text-right font-mono text-[10px] text-faint">{messageId}</span>
+                    )}
                     {!grouped && (
                         <button
                             type="button"
@@ -657,7 +695,8 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                             >
                                 {author}
                             </button>
-                            {config.show_id && message.id !== null && <span className="text-[11px] text-faint">#{message.id}</span>}
+                            {config.show_id && message.id !== null && <span className="text-[11px] text-faint">({message.id})</span>}
+                            {messageId && <span className="font-mono text-[11px] text-faint">{messageId}</span>}
                             {whisper && (
                                 <span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">
                                     private
@@ -671,7 +710,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         style={{ color: body, "--msg-color": body } as React.CSSProperties}
                     >
                         {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {message.image ? renderPicture(message.image, picture, pictures) : markup(message.text, config.render_math)}
+                        {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
                     </div>
                 </div>
             </div>

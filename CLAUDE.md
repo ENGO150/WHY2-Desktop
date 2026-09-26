@@ -557,9 +557,9 @@ interface face like every other name.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
-`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the three `client.toml` keys that
-still change how the pane looks (`show_id`, `disable_colors`, `render_math`), which the TUI re-reads on every
-redraw.
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the four `client.toml` keys that
+still change how the pane looks (`show_id`, `show_message_ids`, `disable_colors`, `render_math`), which the
+TUI re-reads on every redraw.
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
@@ -650,8 +650,8 @@ bundled — nothing is fetched at runtime.
 **`render_math` is the switch, and it is the crate's own key** (`client.toml`, default on): it is a row in
 the settings dialog like any other, `get_client_config` hands it over beside `show_id` and `disable_colors`,
 and `markup(text, config.render_math)` is where it lands — with it off `parse` never opens a math segment,
-so a dollar sign is a dollar sign. That makes it the **third** key this side reads rather than only writes,
-and the reason is the same as the other two: it changes how a line **already in the pane** is drawn, so
+so a dollar sign is a dollar sign. That makes it one of the keys this side reads rather than only writes,
+and the reason is the same as the others': it changes how a line **already in the pane** is drawn, so
 flipping the row repaints the conversation. The code markup deliberately has no such switch — a fenced block
 is what the sender meant either way.
 
@@ -939,10 +939,12 @@ carry it in `StoredMessage`, and `ChatMessage::named` is what puts it on — the
 a picture line's text is the filename, which is this client's wording rather than something the sender typed.
 `ImageData` deliberately carries none: it is keyed by hash and only fills a caption one of those already
 made. Nothing is said about it on the way out any more: `PacketCode::Image` carries no color at all, since
-the server holds everybody's and looks the sender's up where the line is built (see **Colors**). The six events behind a picture are the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
+the server holds everybody's and looks the sender's up where the line is built (see **Colors**). The seven events behind a picture are the TUI's, one for one: `ImageDisplay` is a picture with its own bytes, `ImageFailed` is one that passed the
 server's header check and still would not decode (an error line, word for word with `tui/event.rs`),
-`ImageData` is the answer to a caption somebody asked to see, and the three the client cache added —
-`ImageOffer`, `ImagePending` and `ImageRequest` — are below.
+`ImageData` is the answer to a caption somebody asked to see, `ImageParked` is one posted in a channel we
+are not standing in (see **Channels and message routing**), and the three the client cache added —
+`ImageOffer`, `ImagePending` and `ImageRequest` — are below. Every one that puts a line up carries the
+line's `message_id` (see **Message IDs**).
 
 **A picture is not pushed twice.** The crate keeps every picture it has seen (`cache.rs`, keyed by content
 and scoped by the server's fingerprint, encrypted and authenticated at rest), so a repost arrives as
@@ -962,7 +964,10 @@ the cache at all: with `auto_show_images` on **every** picture in a page goes up
 every one is `absent` — exactly `tui/event.rs`. A `deferred` one is loaded **when the caption is actually
 looked at** — `Caption` in
 `messages.tsx` puts an `IntersectionObserver` on the row and asks once, which is `tui/state.rs::load_visible`
-with a browser doing the measuring. A login that unpacked every picture it had ever been sent is a second of
+with a browser doing the measuring. "Looked at" is **within reach**, as it is in the TUI since 2.2.3: the
+observer's root is the pane itself (`closest(".scroller")` — against the viewport, a row scrolled out of the
+pane is clipped by it before any margin applies) grown by `PRELOAD_SCREENS` screens each way, so a picture is
+already whole when it scrolls in rather than popping open under the reader. A login that unpacked every picture it had ever been sent is a second of
 disk and decoding for lines nobody scrolled back to. It carries no button either way: what the cache holds
 costs a disk read and not a packet, and a button for it would be asking to be given what is already ours.
 
@@ -1567,18 +1572,28 @@ because the periodic rekey runs the same check, which is why the overlay renders
 
 ### Channels and message routing
 
-Messages carry no channel field. `App.tsx` keeps `paneByChannel` and files each incoming entry into
-**whatever channel is current at the time it arrives**, read via `currentChannelRef` (a ref, not state — the
-listener is registered once with `[]` deps and would otherwise capture a stale channel). The lobby is the empty
-string. The roster (`users` event) is authoritative for which channels exist — one lives exactly as long as
-somebody sits in it — and history for a channel nobody is in any more is dropped.
+Since 2.2.3 the server sends **every** channel's messages and pictures to every client and tags them with
+the channel (`Some(None)` the lobby, `Some(Some(name))` a named one, `None` every pane — nothing sends that
+yet); the client decides where they go. So `UiEvent::Message` carries `channel: Option<String>` — the lobby
+as `""`, and `None` for everything else the bridge says, which lands in the current pane as it always did.
+`App.tsx` keeps `paneByChannel` and files a line into its channel's pane through `pushTo`: the one in front,
+or a **parked** one that keeps filling while we are away — which is what makes stepping back into a channel
+show what was said there. `currentChannelRef` (a ref, not state — the listener is registered once with `[]`
+deps and would otherwise capture a stale channel) is what "in front" is read from. A parked line counts no
+unread, stops nobody's typing and **posts no notification**: every channel on the server now reaches us, and
+a notification per line of every conversation we are not in would be noise. A picture for another channel
+is `ClientEvent::ImageParked` — cached by the crate, never decoded — and goes up as a caption, `deferred`
+(or `absent` with `auto_show_images` off), loaded when its pane is looked at like a replayed one. The lobby
+is the empty string. The roster (`users` event) is authoritative for which channels exist — one lives exactly
+as long as somebody sits in it — and history for a channel nobody is in any more is dropped.
 
 Unlike the TUI, which clears the pane on every switch, this app keeps per-channel history locally. The server
 only ever replays the lobby — and since 2.2.2 **a page at a time**: login brings the newest `history_page`
 messages (`History { start, more, older: false }`, under a `Message history (<kept>):` title that counts
 everything the server keeps), and `request_history(before)` asks for the page above it. The entries are
 marked `replayed`, and an older page goes in **above the oldest replayed entry** of the lobby pane, whichever
-pane is in front. `maybePage` asks when the lobby is in front and its top is within `PAGE_MARGIN` — on a
+pane is in front. `maybePage` asks when the lobby is in front and its top is within `PRELOAD_SCREENS` + 1
+screens (`tui/state.rs::load_visible`'s own lookahead, which the pictures share) — on a
 scroll, and after every pane change, so a first page shorter than the window keeps asking until it is full
 or `more` says there is nothing left (`tui/state.rs::load_visible`). A prepend keeps the view where it was:
 the listener notes `scrollHeight`/`scrollTop` before the update and a layout effect puts the difference
@@ -1602,6 +1617,12 @@ either way** — that is what `DirectPeer { id, username, outgoing }` carries. T
 recipient, so an outgoing line arrives with an empty `username` and `renderChat` puts ours in — nothing the
 server sends ever names us. `AppState::username` is the one answer to that, and it comes from the only place
 there is: the line that answered the identity step, kept on its way through `send_input`.
+
+Since 2.2.3 both carry `MessageColors`, and they describe the line **as the TUI draws it**: the name colour
+belongs to the name shown and the message colour to whoever wrote the text. On an incoming PM both are the
+sender's and go on as they are. On the echo the name colour is the **recipient's** (the TUI prints
+`[PM TO] recipient`), while this window writes our own name over it — so the bridge drops that half and the
+listener puts ours back off the roster, keeping the message colour, which is ours.
 
 Everything else is the shape the window already has:
 
@@ -1693,6 +1714,28 @@ Setting one is the TUI's `Upload::Avatar`: `open_upload` (the same checks and, o
 `misc::avatar_temp` and asked for with `AvatarRequest { hash }`. The upload that follows is an ordinary
 transfer row (`Uploading avatar`), the crate deletes the temp file behind it, and the `Profile { saved }`
 the server sends when it lands is what the editor and every face redraw from.
+
+### Message IDs
+
+2.2.3 gave every message a server-assigned id (`message_id`, not the sender's session `id`) — one counter for
+the lobby and every channel, carried on `Message`, on the picture events and on every `StoredMessage` a
+history page replays. `ChatMessage::message_id` is where it travels, and it is what `/delete ID` takes.
+
+**It is drawn as a dim `#N`** where `show_message_ids` (`client.toml`, default on, a settings row) says so:
+beside the name on the first line of a run and in the avatar column of every line after it, since the TUI
+puts it on every line and a run here has one header. The client id beside the name is `(id)` rather than
+`#id` for that reason — it is the TUI's own spelling, and two `#` numbers side by side are one too many.
+
+**Deleting is `/delete ID`**, a command like any other and in the palette through `get_commands`; the server
+checks it (own message, or a lower rank's as a moderator) and refuses with `InvalidUsage`. Only the lobby is
+stored, so only a lobby line can be deleted, and the window offers it where it can: **Delete message** in a
+line's hold menu and **Delete image** in a picture's, drawn by `deletable` in `App.tsx` for a `user` line in
+the lobby that is ours or while our role is above `user` — the author's rank is not known here, so a
+moderator is offered what the server may still refuse. It is in the menu and not on a hover button, since a
+button on the row is one brush away from something that cannot be undone. A success is broadcast as
+`Deleted(message_id)` → `UiEvent::Deleted`, and the listener drops the entry from whichever pane holds it —
+outright, no tombstone. A row above the view hands the scroll back its height (`keepScrollRef`, found by
+`data-message-id`), so the reader is not moved.
 
 ### Typing
 

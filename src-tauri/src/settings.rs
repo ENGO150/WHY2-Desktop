@@ -77,6 +77,7 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     ("Interface", "Math rendering", "render_math", ClientKind::Toggle { invert: false }),
 
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
+    ("Interface", "Show message IDs", "show_message_ids", ClientKind::Toggle { invert: false }),
 ];
 
 //ON, THE IDENTITY STEP TELLS THE SERVER WHICH CLIENT THIS IS - AND EVERY USER LIST THEN SAYS SO. IT IS
@@ -114,6 +115,7 @@ pub(crate) fn get_client_config() -> ClientConfig
     ClientConfig
     {
         show_id: config::read_config("show_id"),
+        show_message_ids: config::read_config("show_message_ids"),
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),
     }

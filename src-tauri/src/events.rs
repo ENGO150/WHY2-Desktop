@@ -44,6 +44,7 @@ use why2_chat::
             UserScreen,
             ServerSetting,
             StoredMessage,
+            MessageColors,
         },
     },
 };
@@ -58,10 +59,10 @@ use crate::settings::client_settings;
 //A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT - THE HISTORY'S OWN, AND THE ONES A SERVER OFFERS
 //RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND state IS WHAT THERE
 //IS TO DO ABOUT THE PICTURE ITSELF (tui/state.rs::push_caption)
-fn caption(username: String, filename: String, hash: [u8; 32], state: PictureState, color: Option<u8>)
+fn caption(username: String, filename: String, message_id: u64, hash: [u8; 32], state: PictureState, color: Option<u8>)
     -> ChatMessage
 {
-    ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).picture(MessageImage
+    ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).with_message_id(message_id).picture(MessageImage
     {
         filename,
         hash: Some(picture::hex(&hash)),
@@ -129,19 +130,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             emit(app, UiEvent::Role { role: role.to_string(), username });
         },
 
-        ClientEvent::Message(text, username, id, colors) =>
+        //None = EVERY PANE, Some(None) = THE LOBBY
+        ClientEvent::Message(text, username, id, message_id, colors, channel) =>
         {
-            say(app, ChatMessage::new(MessageKind::User, username, text).with_id(id).colored(colors));
+            let message = ChatMessage::new(MessageKind::User, username, text).with_id(id).with_message_id(message_id).colored(colors);
+
+            say_in(app, message, channel.map(Option::unwrap_or_default));
         },
 
         //A PICTURE SOMEBODY SENT, DECODED BY THE CRATE AND READY TO DRAW. IT IS A LINE THEY SAID LIKE ANY
         //OTHER - THEIR NAME AND THEIR FACE OVER IT - WITH THE PICTURE WHERE THE TEXT WOULD BE
-        ClientEvent::ImageDisplay(username, filename, image, color) =>
+        ClientEvent::ImageDisplay(username, filename, message_id, image, color) =>
         {
             match picture::encode(image, filename.clone(), None).await
             {
                 Some(image) => say(app, ChatMessage::new(MessageKind::User, username, filename.clone())
-                    .named(color).picture(image)),
+                    .named(color).with_message_id(message_id).picture(image)),
 
                 //IT DECODED AND STILL WOULD NOT ENCODE, WHICH IS THE SAME NEWS TO EVERYBODY LOOKING AT IT
                 None => say(app, ChatMessage::error(
@@ -152,25 +156,37 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //AN OFFER THE CACHE COULD NOT ANSWER. THE CAPTION GOES UP AS A LINE LIKE ANY OTHER, THE PICTURE
         //IS ASKED FOR HERE, AND THE ImageData THAT COMES BACK FILLS IT - NOBODY CHOOSES TO SEE A PICTURE
         //THAT IS BEING SENT TO THEM ANYWAY, SO THERE IS NO BUTTON ON IT
-        ClientEvent::ImagePending(username, filename, hash, color) =>
+        ClientEvent::ImagePending(username, filename, message_id, hash, color) =>
         {
-            say(app, caption(username, filename, hash, PictureState::Waiting, color));
+            say(app, caption(username, filename, message_id, hash, PictureState::Waiting, color));
 
             request_picture(&state, hash).await;
         },
 
         //THE SAME LINE WITH THE BUTTON STILL ON IT: auto_show_images IS OFF, SO NOBODY ASKED FOR THIS
         //PICTURE AND NOTHING IS COMING UNTIL SOMEBODY CLICKS
-        ClientEvent::ImageOffer(username, filename, hash, color) =>
+        ClientEvent::ImageOffer(username, filename, message_id, hash, color) =>
         {
-            say(app, caption(username, filename, hash, PictureState::Absent, color));
+            say(app, caption(username, filename, message_id, hash, PictureState::Absent, color));
+        },
+
+        //ANOTHER CHANNEL'S PICTURE, LOADED WHEN ITS PANE IS LOOKED AT
+        ClientEvent::ImageParked(channel, username, filename, message_id, hash, color) =>
+        {
+            let state = match client::image::auto_show_images()
+            {
+                true => PictureState::Deferred,
+                false => PictureState::Absent,
+            };
+
+            say_in(app, caption(username, filename, message_id, hash, state, color), Some(channel));
         },
 
         //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
         ClientEvent::ImageRequest(hash) => request_picture(&state, hash).await,
 
         //IT PASSED THE SERVER'S HEADER CHECK AND STILL WOULD NOT DECODE, SO SAY SO WHERE IT WOULD HAVE BEEN
-        ClientEvent::ImageFailed(username, filename, _) =>
+        ClientEvent::ImageFailed(username, filename, ..) =>
         {
             say(app, ChatMessage::error(format!("{username} sent an image that could not be displayed ({filename}).")));
         },
@@ -197,20 +213,21 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         //THE LINE CARRIES WHO IT IS WITH RATHER THAN SAYING SO IN ITS OWN TEXT: THE WINDOW FILES IT INTO
         //THAT PERSON'S CONVERSATION, WHERE "TO" AND "FROM" ARE WHICH SIDE THE LINE IS ON
-        ClientEvent::PrivateMessageRecv(from, id, text) =>
+        ClientEvent::PrivateMessageRecv(from, id, text, colors) =>
         {
             let peer = DirectPeer { id, username: from.clone(), outgoing: false };
 
-            say(app, ChatMessage::new(MessageKind::Private, from, text).with_id(id).direct(peer));
+            say(app, ChatMessage::new(MessageKind::Private, from, text).with_id(id).colored(colors).direct(peer));
         },
 
         //THE ECHO OF ONE WE SENT NAMES THE RECIPIENT, SO IT CARRIES NO AUTHOR AT ALL - THE AUTHOR IS US,
         //AND THIS SIDE OF THE BRIDGE IS THE ONE PLACE THAT NEVER LEARNS OUR OWN NAME
-        ClientEvent::PrivateMessageSent(to, id, text) =>
+        //ITS NAME COLOR IS THE RECIPIENT'S, SO OURS COMES OFF THE ROSTER
+        ClientEvent::PrivateMessageSent(to, id, text, colors) =>
         {
             let peer = DirectPeer { id, username: to, outgoing: true };
 
-            say(app, ChatMessage::new(MessageKind::Private, "", text).direct(peer));
+            say(app, ChatMessage::new(MessageKind::Private, "", text).colored(MessageColors { username_color: None, ..colors }).direct(peer));
         },
 
         //ONE PAGE OF THE LOBBY'S HISTORY - THE NEWEST AT LOGIN, AN OLDER ONE WHEN ASKED
@@ -223,10 +240,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { username, text, colors, image }| match image
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image }| match image
             {
-                Some(hash) => caption(username, text, hash, state, colors.username_color),
-                None => ChatMessage::new(MessageKind::User, username, text).colored(colors),
+                Some(hash) => caption(username, text, message_id, hash, state, colors.username_color),
+                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).colored(colors),
             }).collect::<Vec<ChatMessage>>();
 
             if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
@@ -515,6 +532,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         },
 
         ClientEvent::Muted => say(app, ChatMessage::notice("You have been muted by a moderator.")),
+
+        ClientEvent::Deleted(message_id) => emit(app, UiEvent::Deleted { message_id }),
 
         //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
         //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING

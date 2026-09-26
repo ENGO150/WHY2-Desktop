@@ -36,6 +36,7 @@ pub(crate) struct ChatMessage
     pub(crate) username: String,
     pub(crate) text: String,
     pub(crate) id: Option<usize>,
+    pub(crate) message_id: Option<u64>, //THE SERVER'S ID, WHAT /delete TAKES
     pub(crate) username_color: Option<u8>,
     pub(crate) message_color: Option<u8>,
     pub(crate) direct: Option<DirectPeer>, //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
@@ -177,6 +178,7 @@ pub(crate) struct OfflineUserInfo
 pub(crate) struct ClientConfig
 {
     pub(crate) show_id: bool,
+    pub(crate) show_message_ids: bool,
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
 }
@@ -376,7 +378,8 @@ pub(crate) enum UiEvent
     PasswordRejected { min: u64 },                                //TRY A LONGER ONE
     Authenticated { role: String },                               //WE ARE IN
     Role { role: String, username: Option<String> },              //A ROLE WAS SET (None IS OURS)
-    Message { message: ChatMessage },                             //ONE LINE FOR THE PANE
+    Message { message: ChatMessage, channel: Option<String> },    //ONE LINE FOR A PANE (None = THE CURRENT ONE)
+    Deleted { message_id: u64 },                                  //A STORED MESSAGE WENT
     History { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool }, //ONE PAGE OF THE LOBBY'S HISTORY
     Typing { username: String, ttl: u64 },                        //SOMEBODY HERE IS WRITING
     Profile { profile: ProfileInfo, own: bool, open: bool, saved: bool }, //A PROFILE CAME BACK
@@ -424,6 +427,7 @@ impl ChatMessage
             username: username.into(),
             text: text.into(),
             id: None,
+            message_id: None,
             username_color: None,
             message_color: None,
             direct: None,
@@ -486,6 +490,12 @@ impl ChatMessage
     pub(crate) fn with_id(mut self, id: usize) -> Self
     {
         self.id = Some(id);
+        self
+    }
+
+    pub(crate) fn with_message_id(mut self, message_id: u64) -> Self
+    {
+        self.message_id = Some(message_id);
         self
     }
 }
