@@ -126,6 +126,9 @@ const PAGE_MARGIN = 160;
 //HOW OFTEN THE COMPOSER TELLS THE BRIDGE IT IS STILL BEING WRITTEN IN
 const TYPING_TICK = 1000;
 
+//HOW SOON A CLICK FOLLOWS THE PRESS THAT CLOSED A CARD
+const CARD_TOGGLE = 500;
+
 //AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
 //IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
 //THE WINDOW BEING RESIZED UNDER IT
@@ -275,6 +278,9 @@ function App()
 
     //THE CARD A NAME OPENED, AND OUR OWN PROFILE BEING EDITED
     const [card, setCard] = useState<{ username: string; anchor: DOMRect | null } | null>(null);
+
+    //THE CARD THE LAST PRESS CLOSED, AND WHEN
+    const closedCardRef = useRef<{ username: string; at: number } | null>(null);
     const [editing, setEditing] = useState(false);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -3210,6 +3216,14 @@ function App()
 
         open: (name: string, anchor: HTMLElement | null) =>
         {
+            const closed = closedCardRef.current;
+
+            closedCardRef.current = null;
+
+            //THE SAME NAME AGAIN CLOSES IT
+            if (card?.username === name) { setCard(null); return; }
+            if (closed?.username === name && performance.now() - closed.at < CARD_TOGGLE) return;
+
             setCard({ username: name, anchor: anchor?.getBoundingClientRect() ?? null });
 
             //A CARD IS WORTH A FRESH LOOK
@@ -3412,7 +3426,11 @@ function App()
                 ? () => { setCard(null); setDrawer(null); showDirect(cardUser); }
                 : null}
             edit={cardOwn && !profilesOff ? () => { setCard(null); setDrawer(null); setEditing(true); } : null}
-            close={() => setCard(null)}
+            close={() =>
+            {
+                closedCardRef.current = { username: card.username, at: performance.now() };
+                setCard(null);
+            }}
         />
     );
 
