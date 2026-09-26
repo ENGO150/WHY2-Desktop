@@ -386,8 +386,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             emit(app, UiEvent::Files { owners });
         },
 
-        //ASKED FOR BY /server bans, AND SENT AGAIN AFTER EVERY PARDON - THE IDS RENUMBER WHEN ONE IS
-        //LIFTED, SO THE ANSWER TO A PARDON IS THE NEW LIST RATHER THAN AN 'OK' OVER A STALE ONE
+        //ASKED FOR BY /server bans, AND SENT AGAIN AFTER EVERY BAN AND PARDON - THE IDS RENUMBER WHEN ONE
+        //IS LIFTED, SO THE ANSWER IS THE NEW LIST RATHER THAN AN 'OK' OVER A STALE ONE
         ClientEvent::ServerBans(users, ips) =>
         {
             if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::system("No bans.")) }

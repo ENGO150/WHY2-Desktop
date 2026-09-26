@@ -295,7 +295,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
     //AN ACTION THAT TAKES A PARAMETER NEEDS ONE, WHATEVER IT IS
     if !sub.args.is_empty() && tail.is_empty() { return popup(app, "Invalid usage!") }
 
-    //MOST ACTIONS ARE AIMED AT A USER AND TAKE AN ID - THE REST READ THE TAIL AS TEXT
+    //SOME ACTIONS TAKE AN ID - THE REST READ THE TAIL AS TEXT
     let id = match sub.takes_id()
     {
         true => match tail.parse::<usize>()
@@ -311,24 +311,22 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
     {
         Subcommand::Mute      => PacketCode::ServerMute { id: id.unwrap() },
         Subcommand::Kick      => PacketCode::ServerKick { id: id.unwrap() },
-        Subcommand::Ban       => PacketCode::ServerBan { id: id.unwrap() },
-        Subcommand::BanIp     => PacketCode::ServerBanIp { id: id.unwrap() },
+        Subcommand::Ban       => PacketCode::ServerBan { target: tail.to_owned() },
+        Subcommand::BanIp     => PacketCode::ServerBanIp { target: tail.to_owned() },
         Subcommand::Pardon    => PacketCode::ServerPardon { id: id.unwrap() },
         Subcommand::PardonIp  => PacketCode::ServerPardonIp { id: id.unwrap() },
         Subcommand::Bans      => PacketCode::ServerBansRequest,
         Subcommand::Say       => PacketCode::ServerSay { message: tail.to_owned() },
         Subcommand::Settings  => PacketCode::ServerSettingsRequest,
 
-        //THE ONE ACTION THAT AIMS AT A USER AND STILL TAKES SOMETHING ELSE - THE ROLE IS RESOLVED HERE,
-        //SO A NAME NOBODY KNOWS IS INVALID USAGE ON THE SPOT RATHER THAN A PACKET THE SERVER REFUSES
+        //THE ONE ACTION THAT AIMS AT A USER AND STILL TAKES A ROLE
         Subcommand::Role =>
         {
             let Some((target, role)) = tail.split_once(char::is_whitespace) else { return popup(app, "Invalid usage!") };
 
-            let Ok(id) = target.parse::<usize>() else { return popup(app, "Invalid usage!") };
             let Ok(role) = role.trim().parse::<Role>() else { return popup(app, "Invalid role!") };
 
-            PacketCode::ServerRoleRequest { id, role }
+            PacketCode::ServerRoleRequest { target: target.to_owned(), role }
         },
     };
 

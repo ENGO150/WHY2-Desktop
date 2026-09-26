@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.2", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.4-rc.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.2", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.4-rc.1", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -1675,9 +1675,12 @@ somebody registered.
 channel then moves to the row's tooltip, and is on their card either way. An offline row carries the same
 presence dot an online one does, in `faint`. **A right-click, or a hold on a phone, opens `MemberMenu`**
 (`members.tsx`, the same `useHoldMenu` the server lists use, at the pointer): `View profile` always,
-`Send message` for somebody online who is not us, and `Kick`/`Ban` — `/server kick|ban <ID>` — only where
-`get_commands` lists that action for our role, and only for somebody online, since both take an id. Those
-two are armed by one press and fired by the next, as `restart_server` is. The menu goes away if its
+`Send message` for somebody online who is not us, and `Kick`/`Ban`/`Ban IP` only where `get_commands`
+lists that action for our role. Since 2.2.4 a ban and a role take a **username** as well as an id, so `Ban`
+sends `/server ban <name>` and is offered on an **offline** row too; `Kick` (`/server kick <ID>`) and
+`Ban IP` (`/server banip <name>`, which needs a live session to take the address from) are online only.
+All three are armed by one press and fired by the next, as `restart_server` is, and the server answers a
+ban with the ban list, which lands in the pane as a `/server bans` would. The menu goes away if its
 person leaves while it is open, rather than holding an id the server may hand to somebody else.
 
 **What somebody is running is on the row, as an icon.** `share_device` (`client.toml`, off by default, a

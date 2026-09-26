@@ -27,8 +27,8 @@ import { deviceIcon } from "./roster";
 import { useHoldMenu, MENU_WIDTH, type HeldMenu } from "./servers";
 import type { People } from "./profile";
 
-//HEADER AND FOUR ITEMS
-const MENU_HEIGHT = 200;
+//HEADER AND FIVE ITEMS
+const MENU_HEIGHT = 240;
 
 //WHO A ROW'S MENU IS ABOUT
 interface HeldMember
@@ -42,6 +42,7 @@ export interface Moderation
 {
     kick: boolean;
     ban: boolean;
+    banip: boolean;
 }
 
 //THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN. A ROW IS A BUTTON AND
@@ -195,6 +196,9 @@ export function MemberColumn(
     );
 }
 
+//WHAT THE MENU CAN DO TO SOMEBODY
+type Action = "kick" | "ban" | "banip";
+
 //THE MENU A ROW OPENS
 function MemberMenu(
 {
@@ -211,19 +215,20 @@ function MemberMenu(
 {
     const { username, user } = at.value;
 
-    //KICK AND BAN TAKE A SECOND PRESS
-    const [armed, setArmed] = useState<"kick" | "ban" | null>(null);
+    //MODERATION TAKES A SECOND PRESS
+    const [armed, setArmed] = useState<Action | null>(null);
 
     const target = own ? null : user;
 
     const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
 
-    const moderate = (action: "kick" | "ban") =>
+    //KICK BY ID, BANS BY NAME
+    const moderate = (action: Action) =>
     {
         if (armed !== action) { setArmed(action); return; }
 
         close();
-        send(`/server ${action} ${target!.id}`);
+        send(`/server ${action} ${action === "kick" ? target!.id : username}`);
     };
 
     return createPortal(
@@ -253,10 +258,17 @@ function MemberMenu(
                 </button>
             )}
 
-            {target && moderation.ban && (
+            {!own && moderation.ban && (
                 <button type="button" onClick={() => moderate("ban")} className={`${item} text-error`}>
                     <Icon name="ban" className="h-4 w-4" />
                     {armed === "ban" ? "Press again to ban" : "Ban"}
+                </button>
+            )}
+
+            {target && moderation.banip && (
+                <button type="button" onClick={() => moderate("banip")} className={`${item} text-error`}>
+                    <Icon name="globe" className="h-4 w-4" />
+                    {armed === "banip" ? "Press again to ban IP" : "Ban IP"}
                 </button>
             )}
         </div>,
