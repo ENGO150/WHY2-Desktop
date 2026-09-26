@@ -32,10 +32,15 @@ function waiting(entry: PaneEntry, hash: string, status: PictureStatus[]): boole
 
 //A PANE MAP WITH ONE ENTRY REWRITTEN: THE FIRST ONE, OLDEST FIRST, THAT IS STILL WAITING FOR THIS
 //PICTURE. NOTHING ELSE IS COPIED, SO EVERY PANE THAT DID NOT CHANGE IS THE SAME ARRAY IT WAS
-function rewrite(panes: Panes, hash: string, status: PictureStatus[], change: (entry: PaneEntry) => PaneEntry): Panes
+function rewrite(panes: Panes, hash: string, status: PictureStatus[], change: (entry: PaneEntry) => PaneEntry, front: string): Panes
 {
-    for (const channel of Object.keys(panes))
+    //THE PANE IN FRONT FIRST, THE PARKED ONES AFTER IT
+    const order = [front, ...Object.keys(panes).filter((channel) => channel !== front)];
+
+    for (const channel of order)
     {
+        if (!panes[channel]) continue;
+
         const index = panes[channel].findIndex((entry) => waiting(entry, hash, status));
         if (index < 0) continue;
 
@@ -50,16 +55,16 @@ function rewrite(panes: Panes, hash: string, status: PictureStatus[], change: (e
 
 //A CAPTION THAT SCROLLED INTO VIEW AND WHOSE PICTURE THE CACHE ALREADY HOLDS: THE DISK READ IS ASKED FOR
 //HERE AND NOT WHEN THE HISTORY ARRIVED (tui/state.rs::load_visible)
-export function markLoading(panes: Panes, hash: string): Panes
+export function markLoading(panes: Panes, hash: string, front: string): Panes
 {
-    return rewrite(panes, hash, ["deferred"], (entry) => ({ ...entry, picture: "waiting" }));
+    return rewrite(panes, hash, ["deferred"], (entry) => ({ ...entry, picture: "waiting" }), front);
 }
 
 //ASKED FOR. A CAPTION THAT WAS ANSWERED WITH NOTHING IS ASKABLE AGAIN - THE PICTURE MAY HAVE LEFT THE
 //HISTORY, AND IT MAY ALSO HAVE BEEN THE ONE ANSWER THAT WENT MISSING
-export function markWaiting(panes: Panes, hash: string): Panes
+export function markWaiting(panes: Panes, hash: string, front: string): Panes
 {
-    return rewrite(panes, hash, ["absent", "gone"], (entry) => ({ ...entry, picture: "waiting" }));
+    return rewrite(panes, hash, ["absent", "gone"], (entry) => ({ ...entry, picture: "waiting" }), front);
 }
 
 //AND THE ANSWER TO IT - OR THE LACK OF ONE, WHICH THE CAPTION THEN SAYS. THE FILENAME IS THE LINE'S OWN
@@ -67,7 +72,7 @@ export function markWaiting(panes: Panes, hash: string): Panes
 //A PICTURE FILLS A CAPTION NOBODY CLICKED AS WELL AS ONE THAT IS WAITING - AN ANSWER NOBODY ASKED FOR IS
 //WHAT A CACHE HIT *IS*, AND THAT IS THE WHOLE POINT OF HAVING KEPT IT. A REFUSAL ONLY MARKS A LINE THAT
 //DID ASK (tui/state.rs::deliver_image)
-export function deliverPicture(panes: Panes, hash: string, image: MessageImage | null): Panes
+export function deliverPicture(panes: Panes, hash: string, image: MessageImage | null, front: string): Panes
 {
     return rewrite(panes, hash, image ? ["absent", "waiting"] : ["waiting"], (entry) =>
     {
@@ -81,7 +86,7 @@ export function deliverPicture(panes: Panes, hash: string, image: MessageImage |
             picture: undefined,
             message: { ...entry.message, image: { ...image, filename: previous?.filename ?? image.filename, hash } },
         };
-    });
+    }, front);
 }
 
 //WHAT A PICTURE IS CALLED WHEN SOMEBODY KEEPS IT. THE NAME IS THE SENDER'S, BUT THE FILE IS THE COPY

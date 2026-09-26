@@ -982,7 +982,11 @@ fills the oldest line still without that picture**, because the same picture can
 the second one asked for itself. `absent` counts as well as `waiting` — an answer nobody clicked for is
 what a cache hit *is* — while a **refusal only marks a line that actually asked**. A `gone` caption is
 askable again (`Try again`) — the picture may have left the history, and the answer may also be the one
-that went missing.
+that went missing. **The pane in front is searched first** and the parked ones only after it (`rewrite`'s
+`front`, which all three take): the TUI only ever looks in the pane on screen, and walking the map in key
+order put the lobby first — so a picture posted in a channel, whose hash the lobby also held as a caption
+(the same picture posted there before, or replayed from the history), was marked and filled **in the lobby**
+while the caption that was clicked sat waiting.
 
 The server holds one client to one `ImageData` per `IMAGE_REQUEST_DELAY` and **serves it late rather than
 refusing it**, so there is nothing to retry: the answer always comes, and the caption waits for it — a

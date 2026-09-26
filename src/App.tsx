@@ -1196,7 +1196,9 @@ function App()
                 {
                     const { hash, image } = payload.data;
 
-                    setPaneByChannel((previous) => deliverPicture(previous, hash, image));
+                    const front = currentChannelRef.current;
+
+                    setPaneByChannel((previous) => deliverPicture(previous, hash, image, front));
 
                     //A PROFILE'S PICTURE
                     const source = image?.source;
@@ -2152,7 +2154,9 @@ function App()
     {
         show: (hash: string) =>
         {
-            setPaneByChannel((previous) => markWaiting(previous, hash));
+            const front = currentChannelRef.current;
+
+            setPaneByChannel((previous) => markWaiting(previous, hash, front));
 
             invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
         },
@@ -2161,7 +2165,9 @@ function App()
         //AND IT IS USUALLY THE CACHE THAT ANSWERS IT, SINCE THAT IS WHY THE LINE WAS DEFERRED AT ALL
         load: (hash: string) =>
         {
-            setPaneByChannel((previous) => markLoading(previous, hash));
+            const front = currentChannelRef.current;
+
+            setPaneByChannel((previous) => markLoading(previous, hash, front));
 
             invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
         },
