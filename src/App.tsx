@@ -1024,7 +1024,18 @@ function App()
 
                 case "message":
                 {
-                    const message = payload.data.message;
+                    let message = payload.data.message;
+
+                    //A PM CARRIES NO COLOUR, SO THE AUTHOR'S IS TAKEN OFF THE ROSTER
+                    if (message.direct && message.username_color === null)
+                    {
+                        const peer = message.direct;
+                        const author = usersRef.current.find((user) => peer.outgoing
+                            ? user.username === usernameRef.current
+                            : user.id === peer.id);
+
+                        message = { ...message, username_color: author?.username_color ?? null };
+                    }
 
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
                     if (message.direct) pushDirect(message.direct, entryFor(message));
