@@ -670,7 +670,9 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                 )}
                 <div className="w-9 shrink-0">
                     {grouped && messageId && (
-                        <span className="block whitespace-nowrap pt-[3px] text-right font-mono text-[10px] text-faint">{messageId}</span>
+                        <span className="block whitespace-nowrap text-right text-[15px] leading-relaxed">
+                            <span className="font-mono text-[10px] text-faint">{messageId}</span>
+                        </span>
                     )}
                     {!grouped && (
                         <button
