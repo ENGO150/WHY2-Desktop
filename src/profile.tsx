@@ -31,6 +31,7 @@ import { deviceIcon } from "./roster";
 export interface People
 {
     avatar: (username: string) => string | undefined;
+    status: (username: string) => string | undefined;
     open: (username: string, anchor: HTMLElement | null) => void;
 }
 

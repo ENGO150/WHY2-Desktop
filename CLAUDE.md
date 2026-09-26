@@ -1671,6 +1671,15 @@ them to itself, and the member column then has no such section rather than an em
 person into it and a join takes them back out, since the server has no guests and everybody who left is
 somebody registered.
 
+**A row's second line is their profile `status`** where they set one, and the `#channel` otherwise — the
+channel then moves to the row's tooltip, and is on their card either way. An offline row carries the same
+presence dot an online one does, in `faint`. **A right-click, or a hold on a phone, opens `MemberMenu`**
+(`members.tsx`, the same `useHoldMenu` the server lists use, at the pointer): `View profile` always,
+`Send message` for somebody online who is not us, and `Kick`/`Ban` — `/server kick|ban <ID>` — only where
+`get_commands` lists that action for our role, and only for somebody online, since both take an id. Those
+two are armed by one press and fired by the next, as `restart_server` is. The menu goes away if its
+person leaves while it is open, rather than holding an id the server may hand to somebody else.
+
 **What somebody is running is on the row, as an icon.** `share_device` (`client.toml`, off by default, a
 `Privacy` row in the settings dialog) is what puts `Device::Desktop` — or `Device::Phone`, the target being
 what says which — on the identity step, and it travels no further than the user lists. The TUI prints the

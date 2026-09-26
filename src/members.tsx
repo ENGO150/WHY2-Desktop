@@ -16,18 +16,39 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
+
 import type { OnlineUser, OfflineUser, ClientConfig } from "./types";
 import { Avatar, SectionLabel } from "./components";
 import { Icon } from "./icons";
 import { messageColor } from "./messages";
 import { deviceIcon } from "./roster";
+import { useHoldMenu, MENU_WIDTH, type HeldMenu } from "./servers";
 import type { People } from "./profile";
+
+//HEADER AND FOUR ITEMS
+const MENU_HEIGHT = 200;
+
+//WHO A ROW'S MENU IS ABOUT
+interface HeldMember
+{
+    username: string;
+    user: OnlineUser | null;
+}
+
+//WHAT OUR ROLE LETS US DO TO SOMEBODY
+export interface Moderation
+{
+    kick: boolean;
+    ban: boolean;
+}
 
 //THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN. A ROW IS A BUTTON AND
 //IT OPENS THAT PERSON'S PROFILE CARD, WHICH IS WHERE THE CONVERSATION WITH THEM STARTS
 export function MemberColumn(
 {
-    users, offline, username, config, narrow, drawer, people, panelRef,
+    users, offline, username, config, narrow, drawer, people, panelRef, moderation, message, send,
 }: {
     users: OnlineUser[];
 
@@ -42,8 +63,23 @@ export function MemberColumn(
 
     //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
     panelRef: React.Ref<HTMLElement>;
+
+    moderation: Moderation;
+    message: (user: OnlineUser) => void;
+    send: (input: string) => void;
 })
 {
+    const { menu, close, bind, held } = useHoldMenu<HeldMember>("pointer", MENU_HEIGHT);
+
+    //A ROW'S PRESS, UNLESS IT WAS THE END OF A HOLD
+    const press = (name: string) => (event: React.MouseEvent<HTMLElement>) =>
+    {
+        if (held()) return;
+
+        close();
+        people.open(name, event.currentTarget);
+    };
+
     return (
                         <aside ref={panelRef} className={narrow
                             ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
@@ -63,12 +99,17 @@ export function MemberColumn(
                                     //WINDOW HAS THE LINE ART, AND IT SITS ON THE RIGHT EDGE EITHER WAY
                                     const device = user.device ? deviceIcon(user.device) : null;
 
+                                    const status = people.status(user.username);
+
                                     return (
                                         <button
                                             key={user.id}
                                             type="button"
-                                            onClick={(event) => people.open(user.username, event.currentTarget)}
-                                            className={`flex w-full cursor-pointer items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
+                                            title={user.channel ? `${user.username} in #${user.channel}` : undefined}
+                                            onClick={press(user.username)}
+                                            {...bind({ username: user.username, user })}
+                                            data-member={user.username}
+                                            className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                         >
                                             <div className="relative shrink-0">
                                                 <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
@@ -82,7 +123,9 @@ export function MemberColumn(
                                                 >
                                                     {user.username}
                                                 </div>
-                                                {user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
+                                                {status
+                                                    ? <div className="truncate text-[11px] text-muted">{status}</div>
+                                                    : user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
                                             </div>
 
                                             {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
@@ -101,23 +144,32 @@ export function MemberColumn(
                                         {offline.map((user) =>
                                         {
                                             const color = messageColor(config, user.username_color);
+                                            const status = people.status(user.username);
 
                                             return (
                                                 <button
                                                     key={user.username}
                                                     type="button"
-                                                    onClick={(event) => people.open(user.username, event.currentTarget)}
-                                                    className={`flex w-full items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
+                                                    onClick={press(user.username)}
+                                                    {...bind({ username: user.username, user: null })}
+                                                    data-member={user.username}
+                                                    className={`flex w-full select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                                 >
-                                                    <div className="shrink-0 opacity-50">
-                                                        <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
+                                                    <div className="relative shrink-0">
+                                                        <div className="opacity-50">
+                                                            <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
+                                                        </div>
+                                                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-faint" />
                                                     </div>
 
-                                                    <div
-                                                        className={`min-w-0 flex-1 truncate text-sm ${color ? "opacity-60" : "text-faint"}`}
-                                                        style={color ? { color } : undefined}
-                                                    >
-                                                        {user.username}
+                                                    <div className="min-w-0 flex-1">
+                                                        <div
+                                                            className={`truncate text-sm ${color ? "opacity-60" : "text-faint"}`}
+                                                            style={color ? { color } : undefined}
+                                                        >
+                                                            {user.username}
+                                                        </div>
+                                                        {status && <div className="truncate text-[11px] text-faint">{status}</div>}
                                                     </div>
                                                 </button>
                                             );
@@ -126,6 +178,88 @@ export function MemberColumn(
                                 )}
 
                             </div>
+
+                            {menu && (menu.value.user === null || users.some((user) => user.id === menu.value.user!.id)) && (
+                                <MemberMenu
+                                    key={menu.value.username}
+                                    at={menu}
+                                    own={menu.value.username === username}
+                                    moderation={moderation}
+                                    profile={() => people.open(menu.value.username, document.querySelector<HTMLElement>(`[data-member="${CSS.escape(menu.value.username)}"]`))}
+                                    message={message}
+                                    send={send}
+                                    close={close}
+                                />
+                            )}
                         </aside>
+    );
+}
+
+//THE MENU A ROW OPENS
+function MemberMenu(
+{
+    at, own, moderation, profile, message, send, close,
+}: {
+    at: HeldMenu<HeldMember>;
+    own: boolean;
+    moderation: Moderation;
+    profile: () => void;
+    message: (user: OnlineUser) => void;
+    send: (input: string) => void;
+    close: () => void;
+})
+{
+    const { username, user } = at.value;
+
+    //KICK AND BAN TAKE A SECOND PRESS
+    const [armed, setArmed] = useState<"kick" | "ban" | null>(null);
+
+    const target = own ? null : user;
+
+    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
+
+    const moderate = (action: "kick" | "ban") =>
+    {
+        if (armed !== action) { setArmed(action); return; }
+
+        close();
+        send(`/server ${action} ${target!.id}`);
+    };
+
+    return createPortal(
+        <div
+            data-hold-menu
+            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
+            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+        >
+            <div className="truncate px-2 py-1.5 text-sm font-semibold">{username}</div>
+
+            <button type="button" onClick={() => { close(); profile(); }} className={item}>
+                <Icon name="user" className="h-4 w-4" />
+                View profile
+            </button>
+
+            {target && (
+                <button type="button" onClick={() => { close(); message(target); }} className={item}>
+                    <Icon name="send" className="h-4 w-4" />
+                    Send message
+                </button>
+            )}
+
+            {target && moderation.kick && (
+                <button type="button" onClick={() => moderate("kick")} className={`${item} text-error`}>
+                    <Icon name="logout" className="h-4 w-4" />
+                    {armed === "kick" ? "Press again to kick" : "Kick"}
+                </button>
+            )}
+
+            {target && moderation.ban && (
+                <button type="button" onClick={() => moderate("ban")} className={`${item} text-error`}>
+                    <Icon name="ban" className="h-4 w-4" />
+                    {armed === "ban" ? "Press again to ban" : "Ban"}
+                </button>
+            )}
+        </div>,
+        document.body,
     );
 }

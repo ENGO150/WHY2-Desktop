@@ -465,6 +465,11 @@ function App()
     const canServerSettings = commands.some((command) => command.name === "server"
         && command.subcommands.some((sub) => sub.triggers.includes("settings")));
 
+    //KICK AND BAN, THE SAME WAY
+    const serverAction = (name: string) => commands.some((command) => command.name === "server"
+        && command.subcommands.some((sub) => sub.name === name));
+    const moderation = { kick: serverAction("kick"), ban: serverAction("ban") };
+
     //AND THE CALL AND THE SCREEN SHARE ARE ASKED THE SAME WAY. THE ANDROID BUILD IS COMPILED WITHOUT
     //client_voice/client_screen, SO THE COMMANDS THEY WOULD BE DRIVEN THROUGH ARE NOT IN THE LIST AT ALL -
     //WHICH MAKES THE COMMAND LIST THE ONE HONEST ANSWER TO "CAN THIS BUILD DO IT", ON EITHER PLATFORM
@@ -3268,6 +3273,8 @@ function App()
             return hash ? avatars[hash] : undefined;
         },
 
+        status: (name: string) => profiles[name]?.status.trim() || undefined,
+
         open: (name: string, anchor: HTMLElement | null) =>
         {
             const closed = closedCardRef.current;
@@ -3972,6 +3979,9 @@ function App()
                             drawer={drawer}
                             people={people}
                             panelRef={rightPanel}
+                            moderation={moderation}
+                            message={(user) => { setCard(null); setDrawer(null); showDirect(user); }}
+                            send={send}
                         />
                     )}
                 </>

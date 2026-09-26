@@ -182,7 +182,7 @@ export interface HeldMenu<T>
 //THE GESTURE IS THE SAME WHEREVER IT IS ASKED FOR AND WHAT IT OPENS A MENU *ABOUT* IS NOT - A SERVER IN
 //THE TWO LISTS, A PICTURE IN THE PANE - SO WHAT IT CARRIES IS THE CALLER'S, WHOLE AND NOT AS AN ID TO
 //LOOK BACK UP: A PICTURE HAS NO ID, THE LIVE ONES NOT EVEN A HASH
-export function useHoldMenu<T>(anchor: "element" | "pointer" = "element")
+export function useHoldMenu<T>(anchor: "element" | "pointer" = "element", height = MENU_HEIGHT)
 {
     const [menu, setMenu] = useState<HeldMenu<T> | null>(null);
     const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -234,7 +234,7 @@ export function useHoldMenu<T>(anchor: "element" | "pointer" = "element")
         {
             value,
             x: Math.max(8, Math.min(left, window.innerWidth - MENU_WIDTH - 8)),
-            y: Math.max(8, Math.min(top, window.innerHeight - MENU_HEIGHT - 8)),
+            y: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
         });
     };
 
