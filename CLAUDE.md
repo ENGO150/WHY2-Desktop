@@ -1679,8 +1679,11 @@ presence dot an online one does, in `faint`. **A right-click, or a hold on a pho
 lists that action for our role. Since 2.2.4 a ban and a role take a **username** as well as an id, so `Ban`
 sends `/server ban <name>` and is offered on an **offline** row too; `Kick` (`/server kick <ID>`) and
 `Ban IP` (`/server banip <name>`, which needs a live session to take the address from) are online only.
-All three are armed by one press and fired by the next, as `restart_server` is, and the server answers a
-ban with the ban list, which lands in the pane as a `/server bans` would. The menu goes away if its
+`Set role` unfolds the ranks (`get_vocabulary` `roles`, asked when it opens) and sends
+`/server role <name> <role>`, online or offline — the roster carries nobody's rank, so every rank is offered
+and the server refuses what it will not grant. Every one of those is armed by one press and fired by the
+next, as `restart_server` is, and the server answers a ban with the ban list, which lands in the pane as a
+`/server bans` would. The menu goes away if its
 person leaves while it is open, rather than holding an id the server may hand to somebody else.
 
 **What somebody is running is on the row, as an icon.** `share_device` (`client.toml`, off by default, a

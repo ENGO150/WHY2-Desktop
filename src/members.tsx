@@ -16,10 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { createPortal } from "react-dom";
 
-import type { OnlineUser, OfflineUser, ClientConfig } from "./types";
+import type { OnlineUser, OfflineUser, ClientConfig, VocabularyValue } from "./types";
 import { Avatar, SectionLabel } from "./components";
 import { Icon } from "./icons";
 import { messageColor } from "./messages";
@@ -27,8 +28,8 @@ import { deviceIcon } from "./roster";
 import { useHoldMenu, MENU_WIDTH, type HeldMenu } from "./servers";
 import type { People } from "./profile";
 
-//HEADER AND FIVE ITEMS
-const MENU_HEIGHT = 240;
+//HEADER, SIX ITEMS AND THE ROLES
+const MENU_HEIGHT = 360;
 
 //WHO A ROW'S MENU IS ABOUT
 interface HeldMember
@@ -43,6 +44,7 @@ export interface Moderation
     kick: boolean;
     ban: boolean;
     banip: boolean;
+    role: boolean;
 }
 
 //THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN. A ROW IS A BUTTON AND
@@ -197,7 +199,7 @@ export function MemberColumn(
 }
 
 //WHAT THE MENU CAN DO TO SOMEBODY
-type Action = "kick" | "ban" | "banip";
+type Action = "kick" | "ban" | "banip" | `role:${string}`;
 
 //THE MENU A ROW OPENS
 function MemberMenu(
@@ -218,6 +220,20 @@ function MemberMenu(
     //MODERATION TAKES A SECOND PRESS
     const [armed, setArmed] = useState<Action | null>(null);
 
+    //THE ROLE LIST, WHILE OPEN
+    const [roles, setRoles] = useState<string[] | null>(null);
+    const [picking, setPicking] = useState(false);
+
+    //ASK FOR THE RANKS
+    useEffect(() =>
+    {
+        if (!picking || roles) return;
+
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "roles", typed: "" })
+            .then((values) => setRoles(values.map((value) => value.value)))
+            .catch(() => setRoles([]));
+    }, [picking, roles]);
+
     const target = own ? null : user;
 
     const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
@@ -229,6 +245,17 @@ function MemberMenu(
 
         close();
         send(`/server ${action} ${action === "kick" ? target!.id : username}`);
+    };
+
+    //SET A RANK
+    const grant = (role: string) =>
+    {
+        const action: Action = `role:${role}`;
+
+        if (armed !== action) { setArmed(action); return; }
+
+        close();
+        send(`/server role ${username} ${role}`);
     };
 
     return createPortal(
@@ -271,6 +298,20 @@ function MemberMenu(
                     {armed === "banip" ? "Press again to ban IP" : "Ban IP"}
                 </button>
             )}
+
+            {!own && moderation.role && (
+                <button type="button" onClick={() => setPicking(!picking)} className={item}>
+                    <Icon name="shield" className="h-4 w-4" />
+                    <span className="flex-1">Set role</span>
+                    <Icon name="chevron" className={`h-4 w-4 text-faint transition-transform ${picking ? "rotate-180" : ""}`} />
+                </button>
+            )}
+
+            {!own && moderation.role && picking && roles?.map((role) => (
+                <button key={role} type="button" onClick={() => grant(role)} className={`${item} pl-8`}>
+                    {armed === `role:${role}` ? `Press again to make ${role}` : role}
+                </button>
+            ))}
         </div>,
         document.body,
     );
