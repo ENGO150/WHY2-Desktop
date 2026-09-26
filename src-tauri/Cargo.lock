@@ -8374,9 +8374,9 @@ dependencies = [
 
 [[package]]
 name = "why2-chat"
-version = "2.2.3"
+version = "2.2.4-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99127881a2b8e12aeef1f75a6f18131b133cf18c151b04a0ebc028c955e36d24"
+checksum = "0e63421e56d3758b68e132853c72c76c04408787252a18b64cd223f4695a98cb"
 dependencies = [
  "audiopus",
  "base64 0.23.1",
