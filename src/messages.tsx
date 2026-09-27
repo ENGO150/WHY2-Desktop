@@ -36,6 +36,9 @@ import { MENU_WIDTH, type HeldMenu } from "./servers";
 //SCREENS ABOVE AND BELOW THE VIEW WHOSE PICTURES AND HISTORY ARE LOADED (tui/consts.rs)
 export const PRELOAD_SCREENS = 1;
 
+//THE TALLEST A PICTURE IS DRAWN IN THE PANE
+const PICTURE_HEIGHT = 340;
+
 //A PICTURE AS ITS MENU HOLDS IT, WITH THE LINE IT CAME ON WHERE THERE IS ONE
 export interface HeldPicture
 {
@@ -544,6 +547,7 @@ export function renderPicture(message: ChatMessage, image: MessageImage, status:
                     alt={image.filename}
                     width={image.width || undefined}
                     height={image.height || undefined}
+                    style={pictureBox(image)}
                     className="block max-h-[340px] w-auto max-w-full object-contain"
                 />
             </button>
@@ -551,6 +555,14 @@ export function renderPicture(message: ChatMessage, image: MessageImage, status:
     }
 
     return <Caption image={image} status={status} pictures={pictures} />;
+}
+
+//ITS SIZE BEFORE IT IS DECODED
+function pictureBox(image: MessageImage): React.CSSProperties | undefined
+{
+    if (!image.width || !image.height) return undefined;
+
+    return { width: Math.min(image.width, PICTURE_HEIGHT * image.width / image.height), aspectRatio: `${image.width} / ${image.height}` };
 }
 
 //A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT. ONE THE CACHE HOLDS IS LOADED WHEN IT IS ACTUALLY

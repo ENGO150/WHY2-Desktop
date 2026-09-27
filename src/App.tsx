@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -300,8 +300,10 @@ function App()
     const pageRef = useRef<{ cursor: number | null; pending: boolean }>({ cursor: null, pending: false });
     const keepScrollRef = useRef<{ height: number; top: number } | null>(null);
 
-    //THE ROW TO HOLD STILL WHILE A PICTURE GROWS
-    const anchorRef = useRef<{ row: Element; top: number } | null>(null);
+    //THE ROW BEING READ, AND WHERE IT STOOD IN THE PANE
+    const anchorRef = useRef<{ row: HTMLElement; at: number } | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    const resizeRef = useRef<ResizeObserver | null>(null);
 
     //WHAT THE BRIDGE WAS LAST TOLD ABOUT THE COMPOSER
     const typingRef = useRef({ active: false, at: 0 });
@@ -496,6 +498,76 @@ function App()
 
     const pane = dm ? dm.pane : paneByChannel[currentChannel] ?? [];
 
+    //THE ROW IN THE MIDDLE OF THE VIEW
+    const noteAnchor = () =>
+    {
+        const node = paneRef.current;
+        const rows = contentRef.current?.children;
+
+        anchorRef.current = null;
+
+        //HIDDEN, SO THERE IS NOTHING TO MEASURE
+        if (!node || !rows || rows.length === 0 || node.clientHeight === 0) return;
+
+        const middle = node.scrollTop + node.clientHeight / 2;
+
+        let low = 0;
+        let high = rows.length - 1;
+
+        while (low < high)
+        {
+            const half = (low + high) >> 1;
+            const row = rows[half] as HTMLElement;
+
+            if (row.offsetTop + row.offsetHeight > middle) high = half;
+            else low = half + 1;
+        }
+
+        const row = rows[low] as HTMLElement;
+
+        anchorRef.current = { row, at: row.offsetTop };
+    };
+
+    //WHATEVER GREW ABOVE IT, THE ANCHOR STAYS WHERE IT WAS ON SCREEN
+    const holdAnchor = (follow: boolean) =>
+    {
+        const node = paneRef.current;
+        const anchor = anchorRef.current;
+
+        if (!node) return;
+
+        if (node.clientHeight === 0) anchorRef.current = null;
+        else if (pinnedRef.current)
+        {
+            if (follow) node.scrollTop = node.scrollHeight;
+        }
+        else if (anchor && anchor.row.isConnected)
+        {
+            const moved = anchor.row.offsetTop - anchor.at;
+
+            if (moved !== 0) node.scrollTop += moved;
+        }
+
+        noteAnchor();
+    };
+
+    //THE PANE'S CONTENT, WATCHED FOR ANYTHING CHANGING SIZE
+    const watchContent = useCallback((node: HTMLDivElement | null) =>
+    {
+        if (node === contentRef.current) return;
+
+        resizeRef.current?.disconnect();
+        resizeRef.current = null;
+        contentRef.current = node;
+
+        if (!node) return;
+
+        resizeRef.current = new ResizeObserver(() => holdAnchor(true));
+        resizeRef.current.observe(node);
+    }, []);
+
+    const paneKeyRef = useRef("");
+
     //AN OLDER PAGE WENT IN ABOVE, SO THE VIEW STAYS ON WHAT IT WAS SHOWING
     useLayoutEffect(() =>
     {
@@ -506,13 +578,14 @@ function App()
 
         if (kept && node) node.scrollTop = kept.top + (node.scrollHeight - kept.height);
 
-        //A PICTURE CAME IN, SO THE TOP ROW STAYS PUT
-        const anchor = anchorRef.current;
+        //ROWS MOVED UNDER THE ANCHOR, SO IT IS PICKED AGAIN
+        const key = openDm === null ? `#${currentChannel}` : `@${openDm}`;
 
-        anchorRef.current = null;
+        if (kept || key !== paneKeyRef.current) noteAnchor();
+        else holdAnchor(false);
 
-        if (anchor && node && anchor.row.isConnected) node.scrollTop += anchor.row.getBoundingClientRect().top - anchor.top;
-    }, [paneByChannel]);
+        paneKeyRef.current = key;
+    }, [paneByChannel, dms, currentChannel, openDm]);
 
     useEffect(() =>
     {
@@ -1223,17 +1296,6 @@ function App()
                     const { hash, image } = payload.data;
 
                     const front = currentChannelRef.current;
-
-                    //THE FIRST ROW IN VIEW
-                    const node = paneRef.current;
-
-                    if (node && !pinnedRef.current)
-                    {
-                        const edge = node.getBoundingClientRect().top;
-                        const row = Array.from(node.children).find((child) => child.getBoundingClientRect().bottom > edge);
-
-                        if (row) anchorRef.current = { row, top: row.getBoundingClientRect().top };
-                    }
 
                     setPaneByChannel((previous) => deliverPicture(previous, hash, image, front));
 
@@ -3305,6 +3367,9 @@ function App()
         const node = paneRef.current;
         if (!node) return;
 
+        //GROWTH SINCE THE LAST LOOK IS TAKEN BACK BEFORE ANYTHING READS THE POSITION
+        holdAnchor(false);
+
         pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 8;
 
         if (pinnedRef.current) setUnread(0);
@@ -3996,20 +4061,22 @@ function App()
 
                         <div className={`relative min-h-0 flex-1 flex-col ${watching && view === "screen" ? "hidden" : "flex"}`}>
                             <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative [overflow-anchor:none] min-h-0 flex-1 pb-4">
-                                {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
-                                    IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
-                                <div className="px-4 pb-2 pt-8">
-                                    <h1 className="text-2xl font-bold">{dm ? dm.username : `Welcome to #${channelLabel}`}</h1>
-                                    <p className="mt-1 text-sm text-muted">
-                                        {dm
-                                            ? `This is the beginning of your conversation with ${dm.username}. Nobody else can read it, and nothing keeps it past this session.`
-                                            : currentChannel
-                                                ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
-                                                : `This is the beginning of ${serverName || "the server"}.`}
-                                    </p>
-                                </div>
+                                <div ref={watchContent}>
+                                    {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
+                                        IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
+                                    <div className="px-4 pb-2 pt-8">
+                                        <h1 className="text-2xl font-bold">{dm ? dm.username : `Welcome to #${channelLabel}`}</h1>
+                                        <p className="mt-1 text-sm text-muted">
+                                            {dm
+                                                ? `This is the beginning of your conversation with ${dm.username}. Nobody else can read it, and nothing keeps it past this session.`
+                                                : currentChannel
+                                                    ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
+                                                    : `This is the beginning of ${serverName || "the server"}.`}
+                                        </p>
+                                    </div>
 
-                                {paneNodes}
+                                    {paneNodes}
+                                </div>
                             </div>
 
                             {/* THE PANE FOLLOWS THE BOTTOM ONLY WHILE IT IS ALREADY THERE - SCROLLING UP PARKS

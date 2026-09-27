@@ -971,14 +971,19 @@ looked at** — `Caption` in
 with a browser doing the measuring. "Looked at" is **within reach**, as it is in the TUI since 2.2.3: the
 observer's root is the pane itself (`closest(".scroller")` — against the viewport, a row scrolled out of the
 pane is clipped by it before any margin applies) grown by `PRELOAD_SCREENS` screens each way, so a picture is
-already whole when it scrolls in rather than popping open under the reader. **A picture that grows above the view
-does not move it**: a caption is one line and the picture that replaces it is up to 340 pixels, so
-scrolling up faster than the preload reaches used to shove what was being read down the pane at every
-arrival. The `image_data` arm notes the first row in view and where it stood (`anchorRef`), and the layout
-effect behind the commit moves `scrollTop` by however far that row went, before anything is painted. Rows
-are keyed by index, which is fine here — a delivery rewrites a caption in place and never changes the
-array's shape. WebKitGTK has no CSS scroll anchoring to do this, and the pane says `overflow-anchor: none`
-so Chromium on a phone does not correct the same shift a second time. A login that unpacked every picture it had ever been sent is a second of
+already whole when it scrolls in rather than popping open under the reader. **What is being read stays where it
+is on screen while the pane changes size around it**: a caption is one line and the picture that replaces
+it is up to 340 pixels, and scrolling faster than the preload reaches used to shove the line being read
+about at every arrival. `anchorRef` is the row in the **middle** of the view and its `offsetTop` in the
+pane, which scrolling never changes and only something growing above it does — so `holdAnchor` can take the
+difference back out whenever it looks: in the `ResizeObserver` on the pane's content (`watchContent`), in the
+layout effect behind a commit, and first thing in `onPaneScroll`, since a scroll mid-fling can read layout
+the observer has not reported yet. A pane pinned to the bottom follows it instead. Rows are keyed by index,
+so the anchor is only trusted while the pane keeps its shape: a page going in above and a switch of pane
+pick it again, and a hidden pane (the theater) has no layout to trust at all. A picture also carries its
+size before it is decoded (`pictureBox`) — preflight's `height: auto` otherwise left it nothing until then.
+WebKitGTK has no CSS scroll anchoring to do any of this, and the pane says `overflow-anchor: none` so
+Chromium on a phone does not correct the same shift a second time. A login that unpacked every picture it had ever been sent is a second of
 disk and decoding for lines nobody scrolled back to. It carries no button either way: what the cache holds
 costs a disk read and not a packet, and a button for it would be asking to be given what is already ours.
 
