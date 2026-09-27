@@ -62,7 +62,7 @@ export function Sidebar(
     panelRef: React.Ref<HTMLElement>;
 })
 {
-    //THE PERSON USING THE PROGRAM, WRITTEN ONCE AND HUNG IN ONE OF TWO PLACES - SEE THE aside BELOW
+    //THE PERSON USING THE PROGRAM
     const identity = (
         <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
             <button
@@ -101,10 +101,7 @@ export function Sidebar(
                         ? `drawer safe-top safe-bottom fixed bottom-0 left-0 top-[var(--chrome-top)] z-40 w-[86%] max-w-[368px] shadow-2xl ${drawer === "left" ? "translate-x-0" : "drawer-shut -translate-x-full"}`
                         : "w-[308px] shrink-0"} flex-col border-r border-border bg-sidebar ${theater ? "hidden" : "flex"}`}>
                     <div className="flex min-h-0 flex-1">
-                        {/* THE SERVER RAIL BELONGS TO THIS COLUMN RATHER THAN BESIDE IT: ON A PHONE THE
-                            WHOLE LEFT SIDE IS ONE DRAWER, AND A RAIL THAT SLID IN ON ITS OWN WOULD BE A
-                            SECOND ONE OVER THE FIRST. IT IS ONLY AS TALL AS THE PART OF THE COLUMN THAT
-                            SCROLLS, SO THE ROW UNDER IT CAN RUN THE WHOLE WIDTH WHERE IT HAS TO */}
+                        {/* THE SERVER RAIL */}
                         {rail}
 
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -321,17 +318,11 @@ export function Sidebar(
                                     <IconButton icon="hangup" label="Disconnect" tone="error" onClick={() => send("/voice")} />
                                 </div>
                             )}
-
-                            {!narrow && identity}
                         </div>
                     </div>
 
-                    {/* AND ON A PHONE IT IS OUT HERE INSTEAD, UNDER THE RAIL RATHER THAN BESIDE IT. THE
-                        DRAWER IS 86% OF THE GLASS AND THE RAIL TAKES 68px OF IT, WHICH WITH AN AVATAR AND
-                        THREE FINGERTIP-WIDE BUTTONS LEAVES THE NAME AND THE ROLE ABOUT FORTY PIXELS
-                        BETWEEN THEM - THE ROW IS THE ONE THING HERE WITH NOTHING TO SCROLL, SO IT IS THE
-                        ONE THAT CAN HAVE THE WHOLE WIDTH */}
-                    {narrow && identity}
+                    {/* UNDER THE RAIL, ACROSS THE WHOLE COLUMN */}
+                    {identity}
                     </aside>
     );
 }
