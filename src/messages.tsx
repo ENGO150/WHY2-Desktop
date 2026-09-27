@@ -23,7 +23,8 @@ import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar } from "./components";
-import { branches, linkParts } from "./format";
+import { branches, linkParts, sentAt } from "./format";
+import { mentions } from "./palette";
 import { deviceIcon } from "./roster";
 import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, type Shape } from "./markup";
 import hljs from "highlight.js/lib/common";
@@ -633,6 +634,12 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //THE ID /delete TAKES, ON EVERY LINE THAT HAS ONE
         const messageId = config.show_message_ids && message.message_id !== null ? `#${message.message_id}` : null;
 
+        //WHEN IT WAS SENT, WHERE THE SERVER SAID
+        const time = config.show_timestamps && message.timestamp !== null ? message.timestamp : null;
+
+        //SOMEBODY ELSE NAMING US
+        const mentioned = !own && !message.image && !message.direct?.outgoing && mentions(message.text, username);
+
         //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
         //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
         //UNDER IT EVER SEES ONE. EVERY OTHER CLICK ONLY COSTS THE FLAG BEING READ AND PUT BACK
@@ -650,7 +657,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                 {...(copyable ? lines.hold(message) : {})}
                 data-message-id={message.message_id ?? undefined}
                 onClickCapture={copyable ? swallowHeld : undefined}
-                className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
+                className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${mentioned ? "border-l-2 border-warning bg-warning/[0.08]" : whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
                 {/* AND THE BUTTON THAT DOES IT, WHICH IS THE POINTER'S HALF OF THE GESTURE: IT FLOATS OVER
                     THE ROW ON HOVER AND COSTS THE LINE NOTHING WHILE IT IS NOT THERE. WHERE THERE IS
@@ -669,9 +676,9 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     </button>
                 )}
                 <div className="w-9 shrink-0">
-                    {grouped && messageId && (
-                        <span className="block whitespace-nowrap text-right text-[15px] leading-relaxed">
-                            <span className="font-mono text-[10px] text-faint">{messageId}</span>
+                    {grouped && time !== null && (
+                        <span className="block whitespace-nowrap text-right text-[15px] leading-relaxed opacity-0 group-hover:opacity-100">
+                            <span className="text-[10px] text-faint" title={new Date(time * 1000).toLocaleString()}>{sentAt(time, true)}</span>
                         </span>
                     )}
                     {!grouped && (
@@ -698,7 +705,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                                 {author}
                             </button>
                             {config.show_id && message.id !== null && <span className="text-[11px] text-faint">({message.id})</span>}
-                            {messageId && <span className="font-mono text-[11px] text-faint">{messageId}</span>}
+                            {time !== null && <span className="text-[11px] text-faint" title={new Date(time * 1000).toLocaleString()}>{sentAt(time)}</span>}
                             {whisper && (
                                 <span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">
                                     private
@@ -707,12 +714,21 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         </div>
                     )}
 
-                    <div
-                        className="message-body select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
-                        style={{ color: body, "--msg-color": body } as React.CSSProperties}
-                    >
-                        {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                        {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
+                    <div className="flex items-end gap-3">
+                        <div
+                            className="message-body min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
+                            style={{ color: body, "--msg-color": body } as React.CSSProperties}
+                        >
+                            {message.prefix && <span className="text-faint">{message.prefix} </span>}
+                            {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
+                        </div>
+
+                        {/* THE ID TRAILS THE LAST ROW */}
+                        {messageId && (
+                            <span className="shrink-0 whitespace-nowrap text-[15px] leading-relaxed">
+                                <span className="font-mono text-[10px] text-faint">{messageId}</span>
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>

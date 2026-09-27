@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.4-rc.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.4", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.4-rc.1", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.4", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -146,7 +146,7 @@ picture belongs to), `roster.ts` (the order the member column is in, and which i
 `narrow.ts` — and the views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
 `servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`, `profile.tsx` (the card a name opens and the editor
-for our own profile).
+for our own profile), `account.tsx` (the `/account` form — see **Account**).
 
 **`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
 mark that stands on it until the window is ready. Everything else arrives with the bundle, and on a phone that
@@ -557,8 +557,9 @@ interface face like every other name.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
-`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the four `client.toml` keys that
-still change how the pane looks (`show_id`, `show_message_ids`, `disable_colors`, `render_math`), which the
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the five `client.toml` keys that
+still change how the pane looks (`show_id`, `show_message_ids`, `show_timestamps`, `disable_colors`,
+`render_math`), which the
 TUI re-reads on every redraw.
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
@@ -763,7 +764,9 @@ The **whether** is the window's and is written once, in `App.tsx::notifyMessage`
 told which platform it is on, and nothing needs to be. Two things earn a notification — the window is away
 (`awayRef`, fed by `visibilitychange` **and** `blur`), or the line landed somewhere other than the pane being
 read. What nobody said is not news, an outgoing echo is not either, and neither is our own channel line the
-server broadcast back to us. That paragraph is the whole policy, on both targets.
+server broadcast back to us. A line parked in another channel's pane posts nothing **unless it mentions us**
+(see **Mentions**), which is the one reason a channel we are not in is worth a line in the shade. That
+paragraph is the whole policy, on both targets.
 
 The **how** is `notify_message` in `emit.rs`, and it is the one place the two differ. Android hands the key,
 the title and the body to `Notifier.kt`, which files the line under the key and points a tap back at that
@@ -1584,8 +1587,8 @@ as `""`, and `None` for everything else the bridge says, which lands in the curr
 or a **parked** one that keeps filling while we are away — which is what makes stepping back into a channel
 show what was said there. `currentChannelRef` (a ref, not state — the listener is registered once with `[]`
 deps and would otherwise capture a stale channel) is what "in front" is read from. A parked line counts no
-unread, stops nobody's typing and **posts no notification**: every channel on the server now reaches us, and
-a notification per line of every conversation we are not in would be noise. A picture for another channel
+unread, stops nobody's typing and **posts no notification** unless it mentions us: every channel on the
+server now reaches us, and a notification per line of every conversation we are not in would be noise. A picture for another channel
 is `ClientEvent::ImageParked` — cached by the crate, never decoded — and goes up as a caption, `deferred`
 (or `absent` with `auto_show_images` off), loaded when its pane is looked at like a replayed one. The lobby
 is the empty string. The roster (`users` event) is authoritative for which channels exist — one lives exactly
@@ -1668,8 +1671,9 @@ this side originates still goes through `send_packet` so the clock it reads stay
 **A server may also send the users nobody is connected as** — `show_offline_users`, which is its own config
 key — and those arrive with the same `List`. `null` there is not an empty list: it is a server that keeps
 them to itself, and the member column then has no such section rather than an empty one. A leave files that
-person into it and a join takes them back out, since the server has no guests and everybody who left is
-somebody registered.
+person into it and a join takes them back out, since the server has no guests — **unless the leave says
+the account went with them** (`Leave`'s `registered`, 2.2.4, carried as `UserLeft { registered }`): somebody
+who deleted their account is gone, not offline.
 
 **A row's second line is their profile `status`** where they set one, and the `#channel` otherwise — the
 channel then moves to the row's tooltip, and is on their card either way. An offline row carries the same
@@ -1678,7 +1682,8 @@ presence dot an online one does, in `faint`. **A right-click, or a hold on a pho
 `Send message` for somebody online who is not us, and `Kick`/`Ban`/`Ban IP` only where `get_commands`
 lists that action for our role. Since 2.2.4 a ban and a role take a **username** as well as an id, so `Ban`
 sends `/server ban <name>` and is offered on an **offline** row too; `Kick` (`/server kick <ID>`) and
-`Ban IP` (`/server banip <name>`, which needs a live session to take the address from) are online only.
+`Ban IP` (`/server banip <ID>` — the release took the username back off it, since the server keeps no
+last-seen address) are online only.
 `Set role` unfolds the ranks (`get_vocabulary` `roles`, asked when it opens) and sends
 `/server role <name> <role>`, online or offline — the roster carries nobody's rank, so every rank is offered
 and the server refuses what it will not grant. Every one of those is armed by one press and fired by the
@@ -1740,10 +1745,58 @@ the server sends when it lands is what the editor and every face redraw from.
 the lobby and every channel, carried on `Message`, on the picture events and on every `StoredMessage` a
 history page replays. `ChatMessage::message_id` is where it travels, and it is what `/delete ID` takes.
 
-**It is drawn as a dim `#N`** where `show_message_ids` (`client.toml`, default on, a settings row) says so:
-beside the name on the first line of a run and in the avatar column of every line after it, since the TUI
-puts it on every line and a run here has one header. The client id beside the name is `(id)` rather than
-`#id` for that reason — it is the TUI's own spelling, and two `#` numbers side by side are one too many.
+**It is drawn as a dim `#N` trailing the line** where `show_message_ids` (`client.toml`, default on, a
+settings row) says so: right-aligned against the **last row** of every line's text, the TUI's own place for
+it since 2.2.4 (`Theme::message_id`), so the name and the time line up down the pane. It is a column of its
+own beside `.message-body` (`items-end`, the same `text-[15px] leading-relaxed` line box around a smaller
+span), which is what keeps it on the text's baseline. The client id beside the name is `(id)` rather than
+`#id` — it is the TUI's own spelling.
+
+### Timestamps
+
+2.2.4 puts **when the server saw a message** (`timestamp: Option<u64>`, unix seconds) on `Message`, on the
+four picture events that put a line up and on `StoredMessage`, so a replayed line shows the time the live one
+did; `ChatMessage::timestamp` (`.at()`) carries it. The server's `message_timestamps` turns it off, and then
+it is `None` everywhere. `sentAt` in `format.ts` is `Theme::timestamp`: local time, `HH:MM` today and the
+date in front of it otherwise. It sits beside the name on the first line of a run, and in the avatar column
+of the lines after it **on hover only** (`HH:MM`, the whole date in the tooltip) — every line carrying a clock
+is a column of clocks. `show_timestamps` (`client.toml`, default on) is a settings row and one of the keys
+`get_client_config` hands over, since it changes how a line already in the pane is drawn.
+
+**The crate's message stripes are deliberately not here** (`message_stripes`, every other message shaded):
+a terminal needs them to tell a wrapped message from the next one, and a window with avatars, run headers
+and a hover highlight does not. The key is neither a settings row nor read.
+
+### Mentions
+
+2.2.4's `@name` and `@everyone`. **A line that mentions us is tinted** — `mentions` in `palette.ts` is
+`palette::mentions` (a name made of `[A-Za-z0-9_-]`, not glued to one before it, case-insensitive), asked
+of every `user` line, replayed ones included, and every incoming `private` one, never our own or a picture's.
+The tint is the whisper's shape in `warning` (a left rule and a faint wash), and wins over it — the TUI's
+`MENTION` wins over its stripe the same way. **A mention also notifies from a parked channel** (see
+**Notifications**), which the TUI has no equivalent of.
+
+**The palette completes one**: a word starting with `@` at the end of the line, on any line and ahead of the
+command check (`mention` in `palette.ts`, `palette::mention`), offers `@everyone` and every name on the roster
+and the offline list but ours, as a `values` menu whose `arg` is `null` — which is what titles it
+`Mentions`. `mentionable` in `App.tsx` is `refresh_palette`'s list. The server refuses `everyone` as a
+username, so the two cannot collide.
+
+### Account
+
+2.2.4's `/account passwd` and `/account delete`, both **our own password asked again** and never a line in
+the composer. `send_command_code` answers `None` for `Command::Account`, and `account_command` in `input.rs`
+turns the action into `UiEvent::OpenAccount`, which opens `AccountDialog` (`account.tsx`, `tui/account.rs`'s
+form): the current password, and the new one twice for `passwd` — a mismatch clears the confirmation — and
+a delete **armed by one press and fired by the next**, any edit disarming it. `account_request` sends
+`AccountPasswdRequest` / `AccountDeleteRequest`; the form waits (`busy`) for `Passwd { ok }` /
+`AccountDeleted { ok }`, and a refusal starts it over with the reason (`round` remounts it, which is the
+TUI's `rejected`). The two actions are also on **our own profile card**, sending the same `/account <action>`.
+
+A changed password is **written into the stored server row** where that row keeps one, which is the TUI's
+`reconnect.passwd`: a reconnect replays the new one. A deleted account puts `Account deleted.` in
+`disconnect_reason` for the `Quit` behind it, and **drops the row's stored password** — dialling the row
+again would otherwise register the name afresh with it, unasked.
 
 **Deleting is `/delete ID`**, a command like any other and in the palette through `get_commands`; the server
 checks it (own message, or a lower rank's as a moderator) and refuses with `InvalidUsage`. Only the lobby is

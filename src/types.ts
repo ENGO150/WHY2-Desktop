@@ -32,6 +32,9 @@ export interface StoredServer
     name: string | null;
 }
 
+//WHAT AN /account FORM DOES
+export type AccountAction = "passwd" | "delete";
+
 export type MessageKind = "user" | "private" | "plain" | "system" | "notice" | "ok" | "error" | "title";
 
 export interface ChatMessage
@@ -42,6 +45,7 @@ export interface ChatMessage
     text: string;
     id: number | null;
     message_id: number | null; //THE SERVER'S ID, WHAT /delete TAKES
+    timestamp: number | null;  //WHEN THE SERVER SAW IT, UNIX SECONDS
     username_color: number | null;
     message_color: number | null;
     direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
@@ -351,6 +355,7 @@ export interface ClientConfig
 {
     show_id: boolean;
     show_message_ids: boolean;
+    show_timestamps: boolean;
     disable_colors: boolean;
     render_math: boolean;
 }
@@ -379,7 +384,7 @@ export interface PaletteEntry
 export type PaletteState =
     | { mode: "hidden" }
     | { mode: "menu"; entries: PaletteEntry[] }
-    | { mode: "values"; arg: CommandArgInfo; matches: VocabularyValue[]; start: number }
+    | { mode: "values"; arg: CommandArgInfo | null; matches: VocabularyValue[]; start: number } //null arg = A MENTION
     | { mode: "signature"; entry: PaletteEntry; active: number | null };
 
 //THE SHAPE OF THE PALETTE BEFORE ITS VOCABULARY IS IN HAND - EVERYTHING BUT THE VALUES MODE IS ALREADY
@@ -410,10 +415,13 @@ export type BridgeEvent =
     | { event: "tofu_prompt"; data: TofuPrompt }
     | { event: "users"; data: { users: OnlineUser[]; offline: OfflineUser[] | null } }
     | { event: "user_joined"; data: { user: OnlineUser } }
-    | { event: "user_left"; data: { id: number } }
+    | { event: "user_left"; data: { id: number; registered: boolean } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
     | { event: "files"; data: { owners: FileOwner[] } }
     | { event: "open_settings"; data?: null }
+    | { event: "open_account"; data: { action: AccountAction } }
+    | { event: "passwd"; data: { ok: boolean } }
+    | { event: "account_deleted"; data: { ok: boolean } }
     | { event: "client_settings"; data: { settings: ClientSetting[] } }
     | { event: "voice"; data: { voice: VoiceState } }
     | { event: "screen"; data: { screen: ScreenState } }

@@ -137,3 +137,15 @@ export function linkParts(text: string): TextPart[]
 
     return parts;
 }
+
+//WHEN A MESSAGE WAS SENT, IN LOCAL TIME - THE DATE ONLY WHEN IT IS NOT TODAY (Theme::timestamp)
+export function sentAt(timestamp: number, short = false): string
+{
+    const time = new Date(timestamp * 1000);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const clock = `${pad(time.getHours())}:${pad(time.getMinutes())}`;
+
+    if (short || time.toDateString() === new Date().toDateString()) return clock;
+
+    return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())} ${clock}`;
+}

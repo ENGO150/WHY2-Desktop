@@ -59,10 +59,10 @@ use crate::settings::client_settings;
 //A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT - THE HISTORY'S OWN, AND THE ONES A SERVER OFFERS
 //RATHER THAN PUSHES. THE TEXT IS THE FILENAME, WHICH IS WHAT THE CAPTION SAYS, AND state IS WHAT THERE
 //IS TO DO ABOUT THE PICTURE ITSELF (tui/state.rs::push_caption)
-fn caption(username: String, filename: String, message_id: u64, hash: [u8; 32], state: PictureState, color: Option<u8>)
-    -> ChatMessage
+fn caption(username: String, filename: String, message_id: u64, timestamp: Option<u64>, hash: [u8; 32], state: PictureState,
+    color: Option<u8>) -> ChatMessage
 {
-    ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).with_message_id(message_id).picture(MessageImage
+    ChatMessage::new(MessageKind::User, username, filename.clone()).named(color).with_message_id(message_id).at(timestamp).picture(MessageImage
     {
         filename,
         hash: Some(picture::hex(&hash)),
@@ -131,21 +131,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         },
 
         //None = EVERY PANE, Some(None) = THE LOBBY
-        ClientEvent::Message(text, username, id, message_id, colors, channel) =>
+        ClientEvent::Message(text, username, id, message_id, colors, channel, timestamp) =>
         {
-            let message = ChatMessage::new(MessageKind::User, username, text).with_id(id).with_message_id(message_id).colored(colors);
+            let message = ChatMessage::new(MessageKind::User, username, text).with_id(id).with_message_id(message_id)
+                .at(timestamp).colored(colors);
 
             say_in(app, message, channel.map(Option::unwrap_or_default));
         },
 
         //A PICTURE SOMEBODY SENT, DECODED BY THE CRATE AND READY TO DRAW. IT IS A LINE THEY SAID LIKE ANY
         //OTHER - THEIR NAME AND THEIR FACE OVER IT - WITH THE PICTURE WHERE THE TEXT WOULD BE
-        ClientEvent::ImageDisplay(username, filename, message_id, image, color) =>
+        ClientEvent::ImageDisplay(username, filename, message_id, timestamp, image, color) =>
         {
             match picture::encode(image, filename.clone(), None).await
             {
                 Some(image) => say(app, ChatMessage::new(MessageKind::User, username, filename.clone())
-                    .named(color).with_message_id(message_id).picture(image)),
+                    .named(color).with_message_id(message_id).at(timestamp).picture(image)),
 
                 //IT DECODED AND STILL WOULD NOT ENCODE, WHICH IS THE SAME NEWS TO EVERYBODY LOOKING AT IT
                 None => say(app, ChatMessage::error(
@@ -156,22 +157,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //AN OFFER THE CACHE COULD NOT ANSWER. THE CAPTION GOES UP AS A LINE LIKE ANY OTHER, THE PICTURE
         //IS ASKED FOR HERE, AND THE ImageData THAT COMES BACK FILLS IT - NOBODY CHOOSES TO SEE A PICTURE
         //THAT IS BEING SENT TO THEM ANYWAY, SO THERE IS NO BUTTON ON IT
-        ClientEvent::ImagePending(username, filename, message_id, hash, color) =>
+        ClientEvent::ImagePending(username, filename, message_id, timestamp, hash, color) =>
         {
-            say(app, caption(username, filename, message_id, hash, PictureState::Waiting, color));
+            say(app, caption(username, filename, message_id, timestamp, hash, PictureState::Waiting, color));
 
             request_picture(&state, hash).await;
         },
 
         //THE SAME LINE WITH THE BUTTON STILL ON IT: auto_show_images IS OFF, SO NOBODY ASKED FOR THIS
         //PICTURE AND NOTHING IS COMING UNTIL SOMEBODY CLICKS
-        ClientEvent::ImageOffer(username, filename, message_id, hash, color) =>
+        ClientEvent::ImageOffer(username, filename, message_id, timestamp, hash, color) =>
         {
-            say(app, caption(username, filename, message_id, hash, PictureState::Absent, color));
+            say(app, caption(username, filename, message_id, timestamp, hash, PictureState::Absent, color));
         },
 
         //ANOTHER CHANNEL'S PICTURE, LOADED WHEN ITS PANE IS LOOKED AT
-        ClientEvent::ImageParked(channel, username, filename, message_id, hash, color) =>
+        ClientEvent::ImageParked(channel, username, filename, message_id, timestamp, hash, color) =>
         {
             let state = match client::image::auto_show_images()
             {
@@ -179,7 +180,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            say_in(app, caption(username, filename, message_id, hash, state, color), Some(channel));
+            say_in(app, caption(username, filename, message_id, timestamp, hash, state, color), Some(channel));
         },
 
         //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
@@ -240,10 +241,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image }| match image
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp }| match image
             {
-                Some(hash) => caption(username, text, message_id, hash, state, colors.username_color),
-                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).colored(colors),
+                Some(hash) => caption(username, text, message_id, timestamp, hash, state, colors.username_color),
+                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors),
             }).collect::<Vec<ChatMessage>>();
 
             if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
@@ -290,6 +291,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             emit(app, UiEvent::Profile { profile: ProfileInfo::new(username, profile), own, open: !quiet && !saved, saved });
         },
 
+        //A PASSWORD CHANGE CAME BACK
+        ClientEvent::Passwd(ok) =>
+        {
+            if ok { say(app, ChatMessage::ok("Password changed.")); }
+
+            emit(app, UiEvent::Passwd { ok });
+        },
+
+        //AN ACCOUNT DELETION CAME BACK, THE SERVER HANGS UP NEXT
+        ClientEvent::AccountDeleted(ok) =>
+        {
+            if ok { *state.disconnect_reason.lock().unwrap() = Some(String::from("Account deleted.")); }
+
+            emit(app, UiEvent::AccountDeleted { ok });
+        },
+
         //OUR AVATAR COULD NOT BE CUT
         ClientEvent::AvatarFailed(error) => popup(app, error),
 
@@ -320,10 +337,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         },
 
         //THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
-        ClientEvent::Leave(username, id) =>
+        ClientEvent::Leave(username, id, registered) =>
         {
             say(app, ChatMessage::system(format!("{username} disconnected.")).from_server());
-            emit(app, UiEvent::UserLeft { id });
+            emit(app, UiEvent::UserLeft { id, registered });
 
             //Leave IS BROADCAST TO EVERY CHANNEL AND NAMES THE ID, SO IT IS ALSO THE ONLY THING THAT
             //RETIRES A VOICE ROW FOR SOMEBODY WHO DROPPED - THE SERVER SENDS NO VoiceLeave FOR ONE

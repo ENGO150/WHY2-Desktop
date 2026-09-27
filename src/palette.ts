@@ -125,11 +125,58 @@ export function actionShape(command: CommandInfo, tail: string, input: string): 
     return hint(actionEntry(command, sub), tail.slice(split), input);
 }
 
+//THE MENTION THAT REACHES EVERYBODY, AS IN consts::MENTION_EVERYONE
+export const MENTION_EVERYONE = "everyone";
+
+//A CHARACTER A USERNAME MAY HOLD
+export function mentionChar(c: string): boolean
+{
+    return /^[A-Za-z0-9_-]$/.test(c);
+}
+
+//AN @NAME BEING TYPED AT THE END OF THE LINE
+function mention(input: string, users: string[]): PaletteShape | null
+{
+    const typed = partial(input);
+
+    if (!typed.startsWith("@") || ![...typed.slice(1)].every(mentionChar)) return null;
+
+    const candidate = typed.toLowerCase();
+
+    const matches = [MENTION_EVERYONE, ...users]
+        .map((user) => `@${user}`)
+        .filter((value) => value.toLowerCase().startsWith(candidate))
+        .map((value) => ({ value, color: null }));
+
+    return matches.length > 0 ? { mode: "values", arg: null, matches, start: input.length - typed.length } : null;
+}
+
+//WHETHER text MENTIONS username OR EVERYONE, AS IN palette::mentions
+export function mentions(text: string, username: string): boolean
+{
+    if (!username) return false;
+
+    const name = username.toLowerCase();
+
+    for (const found of text.matchAll(/@([A-Za-z0-9_-]*)/g))
+    {
+        const before = found.index > 0 ? text[found.index - 1] : "";
+        const word = found[1].toLowerCase();
+
+        if ((before === "" || !mentionChar(before)) && (word === name || word === MENTION_EVERYONE)) return true;
+    }
+
+    return false;
+}
+
 //WHAT THE PALETTE SHOULD BE SHOWING FOR THIS LINE - palette::update, WITH THE VOCABULARY LEFT FOR LATER.
 //A COMMAND THAT IS A DOORWAY TO ACTIONS IS ONE ROW UNTIL ITS WORD IS FINISHED: /server IS NOT NINE
 //COMMANDS IN THE LIST, IT IS ONE THAT OPENS ITS OWN
-export function analyze(input: string, commands: CommandInfo[]): PaletteShape
+export function analyze(input: string, commands: CommandInfo[], users: string[]): PaletteShape
 {
+    const named = mention(input, users);
+    if (named) return named;
+
     if (!input.startsWith("/")) return { mode: "hidden" };
 
     const rest = input.slice(1);

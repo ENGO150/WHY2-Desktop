@@ -238,13 +238,13 @@ function MemberMenu(
 
     const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
 
-    //KICK BY ID, BANS BY NAME
+    //A BAN BY NAME, THE REST BY ID
     const moderate = (action: Action) =>
     {
         if (armed !== action) { setArmed(action); return; }
 
         close();
-        send(`/server ${action} ${action === "kick" ? target!.id : username}`);
+        send(`/server ${action} ${action === "ban" ? username : target!.id}`);
     };
 
     //SET A RANK

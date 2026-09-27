@@ -312,7 +312,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
         Subcommand::Mute      => PacketCode::ServerMute { id: id.unwrap() },
         Subcommand::Kick      => PacketCode::ServerKick { id: id.unwrap() },
         Subcommand::Ban       => PacketCode::ServerBan { target: tail.to_owned() },
-        Subcommand::BanIp     => PacketCode::ServerBanIp { target: tail.to_owned() },
+        Subcommand::BanIp     => PacketCode::ServerBanIp { id: id.unwrap() },
         Subcommand::Pardon    => PacketCode::ServerPardon { id: id.unwrap() },
         Subcommand::PardonIp  => PacketCode::ServerPardonIp { id: id.unwrap() },
         Subcommand::Bans      => PacketCode::ServerBansRequest,
@@ -328,9 +328,45 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
 
             PacketCode::ServerRoleRequest { target: target.to_owned(), role }
         },
+
+        //ACCOUNT ACTIONS
+        Subcommand::Delete | Subcommand::Passwd => return popup(app, "Invalid action!"),
     };
 
     send_packet(state, write_stream, code).await;
+}
+
+//ACCOUNT ACTIONS - /account <action>
+fn account_command(app: &AppHandle, parameters: Option<String>)
+{
+    let Some(info) = command::COMMAND_LIST.iter().find(|info| info.command == Command::Account) else { return };
+
+    let Some(sub) = parameters.as_deref().and_then(|action| info.action(action.trim())) else { return popup(app, "Invalid action!") };
+
+    emit(app, UiEvent::OpenAccount { action: match sub.subcommand
+    {
+        Subcommand::Delete => AccountAction::Delete,
+        _ => AccountAction::Passwd,
+    } });
+}
+
+//A FILLED ACCOUNT FORM
+#[tauri::command]
+pub(crate) async fn account_request(action: AccountAction, password: String, new_password: Option<String>,
+    state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+
+    let code = match (action, new_password)
+    {
+        (AccountAction::Passwd, Some(new_password)) => PacketCode::AccountPasswdRequest { old_password: password, new_password },
+        (AccountAction::Passwd, None) => return Err(String::from("Enter the new password.")),
+        (AccountAction::Delete, _) => PacketCode::AccountDeleteRequest { password },
+    };
+
+    send_packet(&state, &write_stream, code).await;
+
+    Ok(())
 }
 
 //TRANSLATES ONE EVENT OF THE SESSION INTO SOMETHING THE WEBVIEW CAN RENDER
@@ -435,6 +471,9 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     },
 
                     Command::Server => server_command(&app, &state, &write_stream, parameters).await,
+
+                    //A FORM, NOT A PACKET
+                    Command::Account => account_command(&app, parameters),
 
                     //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
                     //MESSAGES) OF ANYBODY IN IT, AND THE SERVER IS NEVER TOLD WHO WE ARE NOT LISTENING TO

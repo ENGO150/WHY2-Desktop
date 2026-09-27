@@ -64,7 +64,7 @@ import type
 import { ANSI_TRUE } from "./theme";
 import { Icon, IconButton } from "./icons";
 import { isKeyFrame, h264Config } from "./video";
-import { PALETTE_ROWS, analyze, entryTyped, formatArg } from "./palette";
+import { PALETTE_ROWS, analyze, entryTyped, formatArg, mentions } from "./palette";
 import { hasMarkup } from "./markup";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
@@ -75,6 +75,7 @@ import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
 import { ServerRail, AddServerDialog, useHoldMenu } from "./servers";
+import { AccountDialog, type AccountBox } from "./account";
 import { SettingsDialog } from "./settings-dialog";
 import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
@@ -182,7 +183,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: true, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: true, show_timestamps: true, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
@@ -280,6 +281,9 @@ function App()
     //THE CARD THE LAST PRESS CLOSED, AND WHEN
     const closedCardRef = useRef<{ username: string; at: number } | null>(null);
     const [editing, setEditing] = useState(false);
+
+    //THE /account FORM, WHILE UP
+    const [account, setAccount] = useState<AccountBox | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
     //WHO IS WRITING HERE, AND UNTIL WHEN WE BELIEVE IT
@@ -325,6 +329,7 @@ function App()
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
+    const accountRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const settingsRowRef = useRef<HTMLDivElement>(null);
@@ -338,6 +343,9 @@ function App()
 
     //AND WHAT ACTUALLY GOT US IN, WHICHEVER OF THE TWO IT CAME FROM - THAT IS WHAT IS WORTH REMEMBERING
     const typedRef = useRef({ username: "", password: "" });
+
+    //THE PASSWORD AN /account passwd SENT, UNTIL IT IS ANSWERED
+    const passwdRef = useRef<string | null>(null);
 
     //WHAT THE SERVER CALLS ITSELF, WHERE TO GO ONCE THIS SOCKET IS GONE, AND WHETHER ANYTHING HAS BEEN
     //DIALLED AT ALL - THE LIST IS READ ONCE AT STARTUP, AND StrictMode READS IT TWICE
@@ -474,6 +482,7 @@ function App()
     //client_voice/client_screen, SO THE COMMANDS THEY WOULD BE DRIVEN THROUGH ARE NOT IN THE LIST AT ALL -
     //WHICH MAKES THE COMMAND LIST THE ONE HONEST ANSWER TO "CAN THIS BUILD DO IT", ON EITHER PLATFORM
     const hasVoice = commands.some((command) => command.name === "voice");
+    const hasAccount = commands.some((command) => command.name === "account");
     const hasScreens = commands.some((command) => command.name === "screens");
 
     //AND NO DRAWER SURVIVES THE PICTURE TAKING THE WHOLE SCREEN
@@ -646,7 +655,7 @@ function App()
     //IDEA WHICH THAT IS. TWO THINGS EARN ONE: THE WINDOW IS AWAY, OR THE LINE LANDED SOMEWHERE ELSE THAN THE
     //PANE BEING READ - A DM WHILE A CHANNEL IS OPEN, A CHANNEL WHILE A CONVERSATION IS. WHAT NOBODY SAID (A
     //JOIN, A NOTICE, THIS CLIENT'S OWN NARRATION) IS NOT NEWS, AND NEITHER IS THE ECHO OF ONE WE SENT
-    const notifyMessage = (message: ChatMessage) =>
+    const notifyMessage = (message: ChatMessage, room: string) =>
     {
         if (message.kind !== "user" && message.kind !== "private") return;
         if (message.direct?.outgoing) return;
@@ -656,15 +665,15 @@ function App()
         //THE SERVER BROADCASTS A CHANNEL LINE TO THE WHOLE CHANNEL, INCLUDING WHOEVER SENT IT
         if (!peer && message.username === usernameRef.current) return;
 
-        const reading = peer ? openDmRef.current === peer.id : openDmRef.current === null;
+        const reading = peer ? openDmRef.current === peer.id : openDmRef.current === null && room === currentChannelRef.current;
 
         if (reading && !awayRef.current) return;
 
-        const channel = currentChannelRef.current || "lobby";
+        const channel = room || "lobby";
 
         //ONE KEY PER CONVERSATION, SO SOMEBODY WRITING FIVE TIMES REPLACES THEIR OWN LINE IN THE SHADE
         //RATHER THAN STACKING FIVE OF THEM
-        const key = peer ? `dm:${peer.id}` : `channel:${currentChannelRef.current}`;
+        const key = peer ? `dm:${peer.id}` : `channel:${room}`;
         const title = peer ? peer.username : `#${channel}`;
         const body = peer ? message.text : `${message.username}: ${message.text}`;
 
@@ -756,6 +765,7 @@ function App()
         setProfilesOff(false);
         setCard(null);
         setEditing(false);
+        setAccount(null);
         setUploadingAvatar(false);
         setTypingUsers({});
         setTransfers({});
@@ -1047,7 +1057,8 @@ function App()
                     if (message.direct) pushDirect(message.direct, entryFor(message));
                     else pushTo(channel, entryFor(message));
 
-                    if (here) notifyMessage(message);
+                    //A PARKED LINE ONLY WHEN IT NAMES US
+                    if (here || mentions(message.text, usernameRef.current)) notifyMessage(message, channel);
 
                     //A MESSAGE IS THE PROOF THEY STOPPED
                     if (message.kind === "user" || message.kind === "private")
@@ -1228,6 +1239,61 @@ function App()
 
                 //THE DEVICES COME ALONG WITH THE ROWS, ENUMERATED ONCE THE WAY THE TUI ENUMERATES THEM WHEN
                 ///settings IS TYPED - THE PICKER AND THE DEVICE ROWS BOTH READ THAT ONE LIST
+                //A FORM, SINCE A PASSWORD IS NOT TYPED INTO THE COMPOSER
+                case "open_account":
+                {
+                    setFiles(null);
+                    setAccount({ action: payload.data.action, busy: false, error: "", round: 0 });
+                    break;
+                }
+
+                case "passwd":
+                {
+                    if (!payload.data.ok)
+                    {
+                        refuseAccount("Wrong current password, or the new one does not meet the requirements.");
+                        break;
+                    }
+
+                    //THE STORED PASSWORD FOLLOWS
+                    const entry = entryRef.current;
+                    const changed = passwdRef.current;
+
+                    if (entry?.password && changed)
+                    {
+                        entryRef.current = { ...entry, password: changed };
+                        typedRef.current.password = changed;
+
+                        invoke<StoredServer[]>("save_server", { server: entryRef.current }).then(setServers).catch(console.error);
+                    }
+
+                    passwdRef.current = null;
+                    setAccount(null);
+                    break;
+                }
+
+                case "account_deleted":
+                {
+                    if (!payload.data.ok)
+                    {
+                        refuseAccount("Wrong password.");
+                        break;
+                    }
+
+                    //A STORED PASSWORD WOULD REGISTER THE NAME AGAIN
+                    const entry = entryRef.current;
+
+                    if (entry?.password)
+                    {
+                        entryRef.current = { ...entry, password: null };
+
+                        invoke<StoredServer[]>("save_server", { server: entryRef.current }).then(setServers).catch(console.error);
+                    }
+
+                    setAccount(null);
+                    break;
+                }
+
                 case "open_settings":
                 {
                     //TWO WINDOWS OVER THE SAME CHAT IS ONE TOO MANY - THE ONE BEING OPENED WINS
@@ -1377,10 +1443,11 @@ function App()
                 }
 
                 //AND THE OTHER WAY ROUND: THE SERVER HAS NO GUESTS, SO SOMEBODY WHO LEFT IS A REGISTERED
-                //USER - THE ROW WE ARE DROPPING IS ALSO WHERE THEIR NAME AND THEIR COLOR COME FROM
+                //USER UNLESS THEIR ACCOUNT WENT WITH THEM - THE ROW WE ARE DROPPING IS ALSO WHERE THEIR NAME
+                //AND THEIR COLOR COME FROM
                 case "user_left":
                 {
-                    const { id } = payload.data;
+                    const { id, registered } = payload.data;
                     const gone = usersRef.current.find((user) => user.id === id);
 
                     setUsers((previous) => previous.filter((user) => user.id !== id));
@@ -1389,7 +1456,7 @@ function App()
                     {
                         stoppedTyping(gone.username);
 
-                        setOffline((listed) =>
+                        if (registered) setOffline((listed) =>
                         {
                             if (!listed || listed.some((user) => user.username === gone.username)) return listed;
 
@@ -1567,7 +1634,7 @@ function App()
 
         //A WINDOW IN FRONT OF THE CONVERSATION IS WHAT THE DRAG BELONGS TO, NOT THE COLUMNS BEHIND IT
         swipeRef.current = narrow && event.touches.length === 1 && touch && connected
-            && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !tofu && !card && !editing
+            && !theater && !lightbox && !settingsOpen && !filesOpen && !screensOpen && !addOpen && !account && !tofu && !card && !editing
             ? {
                 x: touch.clientX,
                 y: touch.clientY,
@@ -1820,6 +1887,38 @@ function App()
         setErrorMsg("");
         setAdding(true);
         setDrawer(null);
+    };
+
+    //THE SERVER SAID NO: THE FORM STARTS OVER, OR THE PANE SAYS SO
+    const openAccountRef = useRef(false);
+    useEffect(() => { openAccountRef.current = account !== null; });
+
+    const refuseAccount = (error: string) =>
+    {
+        passwdRef.current = null;
+
+        if (!openAccountRef.current) { setPopupMessage(error); return; }
+
+        setAccount((box) => box && { ...box, busy: false, error, round: box.round + 1 });
+    };
+
+    //SEND A FILLED ACCOUNT FORM
+    const submitAccount = (password: string, newPassword: string | null) =>
+    {
+        if (!account) return;
+
+        passwdRef.current = newPassword;
+        setAccount({ ...account, busy: true, error: "" });
+
+        invoke("account_request", { action: account.action, password, newPassword }).catch((error: unknown) =>
+            setAccount((box) => box && { ...box, busy: false, error: String(error) || "Could not send the request." }));
+    };
+
+    const closeAccount = () =>
+    {
+        setAccount(null);
+
+        if (!narrow) chatInputRef.current?.focus();
     };
 
     const closeAdd = () =>
@@ -2210,9 +2309,18 @@ function App()
     useEffect(() => { previewRef.current = previewing; });
 
     //WHAT THE PALETTE WOULD SHOW IF ITS VOCABULARY WERE ALREADY IN HAND
+    //WHO AN @ CAN NAME, US LEFT OUT
+    const mentionable = useMemo(() =>
+    {
+        const names = new Set([...users.map((user) => user.username), ...(offline ?? []).map((user) => user.username)]);
+        names.delete(username);
+
+        return [...names].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }, [users, offline, username]);
+
     const shape = useMemo<PaletteShape>(
-        () => (dismissed ? { mode: "hidden" } : analyze(chatInput, commands)),
-        [chatInput, commands, dismissed],
+        () => (dismissed ? { mode: "hidden" } : analyze(chatInput, commands, mentionable)),
+        [chatInput, commands, mentionable, dismissed],
     );
 
     const wanted = shape.mode === "pending" ? shape.arg.values : null;
@@ -2641,6 +2749,7 @@ function App()
             else if (card) setCard(null);
             else if (editing) setEditing(false);
             else if (addOpen) closeAdd();
+            else if (account) closeAccount();
             else if (screensOpen) setScreensOpen(false);
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
@@ -3206,7 +3315,7 @@ function App()
 
     //WHAT THE PALETTE IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
     const paletteTitle = palette.mode === "values"
-        ? `${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()}`
+        ? palette.arg ? `${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()}` : "Mentions"
         : palette.mode === "menu" ? "Commands" : "Parameters";
 
     //ONE ROW PER COMMAND, OR THE SINGLE PARAMETER HINT. THE ACTIVE PARAMETER'S OWN DESCRIPTION TAKES OVER
@@ -3488,6 +3597,7 @@ function App()
                 ? () => { setCard(null); setDrawer(null); showDirect(cardUser); }
                 : null}
             edit={cardOwn && !profilesOff ? () => { setCard(null); setDrawer(null); setEditing(true); } : null}
+            account={cardOwn && hasAccount ? (action) => { setCard(null); setDrawer(null); send(`/account ${action}`); } : null}
             close={() =>
             {
                 closedCardRef.current = { username: card.username, at: performance.now() };
@@ -3580,6 +3690,19 @@ function App()
     //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
     //THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT: THE CONNECT SCREEN IS THE FORM'S OTHER HOME, AND
     //THAT ONE IS ONLY UP WHILE THERE IS NONE
+    const accountBox = account && (
+        <AccountDialog
+            key={account.round}
+            box={account}
+            cardRef={accountRef}
+            dialogWrap={dialogWrap}
+            dialogCard={dialogCard}
+            narrow={narrow}
+            submit={submitAccount}
+            close={closeAccount}
+        />
+    );
+
     const addBox = addOpen && (
         <AddServerDialog
             form={form}
@@ -4013,6 +4136,7 @@ function App()
             {filesBox}
             {screensBox}
             {addBox}
+            {accountBox}
             {loginScreen}
             {tofuBox}
         </main>

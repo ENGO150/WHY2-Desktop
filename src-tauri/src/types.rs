@@ -37,6 +37,7 @@ pub(crate) struct ChatMessage
     pub(crate) text: String,
     pub(crate) id: Option<usize>,
     pub(crate) message_id: Option<u64>, //THE SERVER'S ID, WHAT /delete TAKES
+    pub(crate) timestamp: Option<u64>,  //WHEN THE SERVER SAW IT, UNIX SECONDS
     pub(crate) username_color: Option<u8>,
     pub(crate) message_color: Option<u8>,
     pub(crate) direct: Option<DirectPeer>, //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
@@ -179,6 +180,7 @@ pub(crate) struct ClientConfig
 {
     pub(crate) show_id: bool,
     pub(crate) show_message_ids: bool,
+    pub(crate) show_timestamps: bool,
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
 }
@@ -350,6 +352,15 @@ pub(crate) enum ClientValue
     #[cfg(voice)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
 }
 
+//WHAT AN /account FORM DOES
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AccountAction
+{
+    Passwd,
+    Delete,
+}
+
 #[derive(Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MessageKind
@@ -399,13 +410,16 @@ pub(crate) enum UiEvent
     //THE ROSTER BEHIND THE SIDEBAR, AND THE REGISTERED USERS NOBODY IS CONNECTED AS (None = NOT OFFERED)
     Users { users: Vec<OnlineUserInfo>, offline: Option<Vec<OfflineUserInfo>> },
     UserJoined { user: OnlineUserInfo },                          //ADD ONE ROW WITHOUT ASKING AGAIN
-    UserLeft { id: usize },                                       //DROP ONE ROW WITHOUT ASKING AGAIN
+    UserLeft { id: usize, registered: bool },                     //DROP ONE ROW (registered = THE ACCOUNT STAYS)
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
     Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
     Screen { screen: ScreenState },                               //OUR OWN SHARE, WHOLE
     Screens { users: Vec<ScreenUserInfo> },                       //WHO ELSE IS SHARING, AS OF WHEN IT WAS ASKED
     Watching { username: Option<String> },                        //WHOSE SCREEN THE PANE IS DRAWING, IF ANY
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
+    OpenAccount { action: AccountAction },                        //  /account - THE FORM FOR ONE ACTION
+    Passwd { ok: bool },                                          //A PASSWORD CHANGE ANSWERED
+    AccountDeleted { ok: bool },                                  //AN ACCOUNT DELETION ANSWERED
     ClientSettings { settings: Vec<ClientSetting> },              //OUR OWN ROWS AGAIN, WHEN SOMETHING ELSE MOVED THEM
     Voice { voice: VoiceState },                                  //THE CALL, WHOLE - THE PANEL DRAWS ITSELF FROM IT
     ServerSettings { settings: Vec<SettingRow>, saved: bool },     //server.toml, EITHER ASKED FOR OR JUST STORED
@@ -428,6 +442,7 @@ impl ChatMessage
             text: text.into(),
             id: None,
             message_id: None,
+            timestamp: None,
             username_color: None,
             message_color: None,
             direct: None,
@@ -496,6 +511,12 @@ impl ChatMessage
     pub(crate) fn with_message_id(mut self, message_id: u64) -> Self
     {
         self.message_id = Some(message_id);
+        self
+    }
+
+    pub(crate) fn at(mut self, timestamp: Option<u64>) -> Self
+    {
+        self.timestamp = timestamp;
         self
     }
 }
