@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { SettingsBox, SettingsItem } from "./types";
+import type { SettingsBox, SettingsItem, AccountAction } from "./types";
 import { Icon, IconButton } from "./icons";
 import { Switch } from "./components";
 import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./settings";
@@ -28,7 +28,7 @@ import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./setting
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard, narrow,
-    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -44,6 +44,7 @@ export function SettingsDialog(
     activateRow: (index: number) => void;
     commitEdit: () => void;
     editSettings: (change: (box: SettingsBox) => SettingsBox | null) => void;
+    account: ((action: AccountAction) => void) | null; //OURS ONLY, WHERE THE SERVER HAS /account
     close: () => void;
 })
 {
@@ -204,6 +205,43 @@ export function SettingsDialog(
                     </header>
 
                     <div className="scroller flex-1 px-3 py-2">
+                        {/* THE ACCOUNT, WHICH IS THE SERVER'S AND NOT client.toml'S */}
+                        {account && (
+                            <>
+                                <div className="flex items-center gap-3 px-2 pb-1 pt-2">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Account</span>
+                                    <span className="h-px flex-1 bg-border" />
+                                </div>
+
+                                <div className="flex items-center gap-6 rounded-app border-l-2 border-transparent px-3 py-2.5">
+                                    <span className="min-w-0 flex-1 text-sm">Password</span>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => account("passwd")}
+                                        className="shrink-0 rounded-app border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-border-strong hover:text-text"
+                                    >
+                                        Change password
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center gap-6 rounded-app border-l-2 border-transparent px-3 py-2.5">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-sm">Delete account</div>
+                                        <div className="mt-0.5 pr-2 text-xs leading-snug text-faint">Removes the account from this server for good.</div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => account("delete")}
+                                        className="shrink-0 rounded-app border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-error hover:text-error"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </>
+                        )}
+
                         {listed.map(({ row, index }) =>
                         {
                             //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS

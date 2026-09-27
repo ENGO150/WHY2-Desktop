@@ -16,8 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { useEffect, useRef, useState } from "react";
-
 import type { ScreenState, VoiceState, OnlineUser, DirectChat } from "./types";
 import { LOBBY } from "./types";
 import { Icon, IconButton } from "./icons";
@@ -30,7 +28,7 @@ import type { People } from "./profile";
 export function Sidebar(
 {
     serverName, address, role, username, users, channels, currentChannel, directs, openDm,
-    voice, screen, creating, setCreating, canServerSettings, hasVoice, hasAccount, narrow, drawer, theater,
+    voice, screen, creating, setCreating, canServerSettings, hasVoice, narrow, drawer, theater,
     setDrawer, send, setSpeaker, showDirect, closeDirect, openScreens, rail, people, panelRef,
 }: {
     serverName: string;
@@ -48,7 +46,6 @@ export function Sidebar(
     setCreating: (value: string | null) => void;
     canServerSettings: boolean;
     hasVoice: boolean;
-    hasAccount: boolean;
     narrow: boolean;
     drawer: "left" | "right" | null;
     theater: boolean;
@@ -65,49 +62,9 @@ export function Sidebar(
     panelRef: React.Ref<HTMLElement>;
 })
 {
-    //THE ACCOUNT MENU, WHILE OPEN
-    const [accountOpen, setAccountOpen] = useState(false);
-    const accountRef = useRef<HTMLDivElement>(null);
-
-    //ESC OR A PRESS OUTSIDE
-    useEffect(() =>
-    {
-        if (!accountOpen) return;
-
-        const onDown = (event: MouseEvent | TouchEvent) =>
-        {
-            if (accountRef.current && event.target instanceof Node && !accountRef.current.contains(event.target)) setAccountOpen(false);
-        };
-
-        const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setAccountOpen(false); };
-
-        document.addEventListener("mousedown", onDown, true);
-        document.addEventListener("touchstart", onDown, true);
-        window.addEventListener("keydown", onKey);
-
-        return () =>
-        {
-            document.removeEventListener("mousedown", onDown, true);
-            document.removeEventListener("touchstart", onDown, true);
-            window.removeEventListener("keydown", onKey);
-        };
-    }, [accountOpen]);
-
-    //A SHUT DRAWER TAKES IT ALONG
-    useEffect(() => { if (narrow && drawer !== "left") setAccountOpen(false); }, [narrow, drawer]);
-
-    const account = (action: string) =>
-    {
-        setAccountOpen(false);
-        setDrawer(null);
-        send(`/account ${action}`);
-    };
-
-    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
-
     //THE PERSON USING THE PROGRAM, WRITTEN ONCE AND HUNG IN ONE OF TWO PLACES - SEE THE aside BELOW
     const identity = (
-        <div className="relative flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/60 px-2 py-2">
             <button
                 type="button"
                 title="Your profile"
@@ -133,25 +90,6 @@ export function Sidebar(
                     tone={voice.mic ? "default" : "error"}
                     onClick={() => send("/mute")}
                 />
-            )}
-            {hasAccount && (
-                <div ref={accountRef}>
-                    <IconButton icon="account" label="Account" active={accountOpen} onClick={() => setAccountOpen(!accountOpen)} />
-
-                    {accountOpen && (
-                        <div className="rise absolute bottom-full right-2 z-30 mb-1 w-52 rounded-app border border-border bg-overlay p-1 shadow-2xl">
-                            <button type="button" onClick={() => account("passwd")} className={item}>
-                                <Icon name="lock" className="h-4 w-4" />
-                                Change password
-                            </button>
-
-                            <button type="button" onClick={() => account("delete")} className={`${item} text-error`}>
-                                <Icon name="trash" className="h-4 w-4" />
-                                Delete account
-                            </button>
-                        </div>
-                    )}
-                </div>
             )}
             <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
             <IconButton icon="logout" label="Disconnect from the server" tone="error" onClick={() => send("/exit")} />

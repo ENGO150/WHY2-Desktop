@@ -3476,6 +3476,7 @@ function App()
             activateRow={activateRow}
             commitEdit={commitEdit}
             editSettings={editSettings}
+            account={!settings?.server && hasAccount ? (action) => { closeSettings(); send(`/account ${action}`); } : null}
             close={closeSettings}
         />
     );
@@ -3823,7 +3824,6 @@ function App()
                         setCreating={setCreating}
                         canServerSettings={canServerSettings}
                         hasVoice={hasVoice}
-                        hasAccount={hasAccount}
                         narrow={narrow}
                         drawer={drawer}
                         theater={theater}
