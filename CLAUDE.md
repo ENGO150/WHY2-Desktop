@@ -971,7 +971,14 @@ looked at** — `Caption` in
 with a browser doing the measuring. "Looked at" is **within reach**, as it is in the TUI since 2.2.3: the
 observer's root is the pane itself (`closest(".scroller")` — against the viewport, a row scrolled out of the
 pane is clipped by it before any margin applies) grown by `PRELOAD_SCREENS` screens each way, so a picture is
-already whole when it scrolls in rather than popping open under the reader. A login that unpacked every picture it had ever been sent is a second of
+already whole when it scrolls in rather than popping open under the reader. **A picture that grows above the view
+does not move it**: a caption is one line and the picture that replaces it is up to 340 pixels, so
+scrolling up faster than the preload reaches used to shove what was being read down the pane at every
+arrival. The `image_data` arm notes the first row in view and where it stood (`anchorRef`), and the layout
+effect behind the commit moves `scrollTop` by however far that row went, before anything is painted. Rows
+are keyed by index, which is fine here — a delivery rewrites a caption in place and never changes the
+array's shape. WebKitGTK has no CSS scroll anchoring to do this, and the pane says `overflow-anchor: none`
+so Chromium on a phone does not correct the same shift a second time. A login that unpacked every picture it had ever been sent is a second of
 disk and decoding for lines nobody scrolled back to. It carries no button either way: what the cache holds
 costs a disk read and not a packet, and a button for it would be asking to be given what is already ours.
 

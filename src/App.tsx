@@ -300,6 +300,9 @@ function App()
     const pageRef = useRef<{ cursor: number | null; pending: boolean }>({ cursor: null, pending: false });
     const keepScrollRef = useRef<{ height: number; top: number } | null>(null);
 
+    //THE ROW TO HOLD STILL WHILE A PICTURE GROWS
+    const anchorRef = useRef<{ row: Element; top: number } | null>(null);
+
     //WHAT THE BRIDGE WAS LAST TOLD ABOUT THE COMPOSER
     const typingRef = useRef({ active: false, at: 0 });
 
@@ -502,6 +505,13 @@ function App()
         keepScrollRef.current = null;
 
         if (kept && node) node.scrollTop = kept.top + (node.scrollHeight - kept.height);
+
+        //A PICTURE CAME IN, SO THE TOP ROW STAYS PUT
+        const anchor = anchorRef.current;
+
+        anchorRef.current = null;
+
+        if (anchor && node && anchor.row.isConnected) node.scrollTop += anchor.row.getBoundingClientRect().top - anchor.top;
     }, [paneByChannel]);
 
     useEffect(() =>
@@ -1213,6 +1223,17 @@ function App()
                     const { hash, image } = payload.data;
 
                     const front = currentChannelRef.current;
+
+                    //THE FIRST ROW IN VIEW
+                    const node = paneRef.current;
+
+                    if (node && !pinnedRef.current)
+                    {
+                        const edge = node.getBoundingClientRect().top;
+                        const row = Array.from(node.children).find((child) => child.getBoundingClientRect().bottom > edge);
+
+                        if (row) anchorRef.current = { row, top: row.getBoundingClientRect().top };
+                    }
 
                     setPaneByChannel((previous) => deliverPicture(previous, hash, image, front));
 
@@ -3974,7 +3995,7 @@ function App()
                         </div>
 
                         <div className={`relative min-h-0 flex-1 flex-col ${watching && view === "screen" ? "hidden" : "flex"}`}>
-                            <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative min-h-0 flex-1 pb-4">
+                            <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative [overflow-anchor:none] min-h-0 flex-1 pb-4">
                                 {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
                                     IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
                                 <div className="px-4 pb-2 pt-8">
