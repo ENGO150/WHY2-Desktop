@@ -20,7 +20,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { ProfileInfo, OnlineUser, ClientConfig, AccountAction } from "./types";
+import type { ProfileInfo, OnlineUser, ClientConfig } from "./types";
 import { avatarColor } from "./theme";
 import { Icon, IconButton } from "./icons";
 import { Avatar } from "./components";
@@ -50,7 +50,7 @@ function webUrl(text: string): boolean
 //THE POPUP A NAME OPENS
 export function ProfileCard(
 {
-    username, profile, loading, avatar, color, online, own, role, config, anchor, narrow, message, edit, account, close,
+    username, profile, loading, avatar, color, online, own, role, config, anchor, narrow, message, edit, close,
 }: {
     username: string;
     profile: ProfileInfo | null;
@@ -65,7 +65,6 @@ export function ProfileCard(
     narrow: boolean;
     message: (() => void) | null;
     edit: (() => void) | null;
-    account: ((action: AccountAction) => void) | null;
     close: () => void;
 })
 {
@@ -213,21 +212,6 @@ export function ProfileCard(
                 )}
 
                 {own && !edit && <div className="mt-3 text-xs text-faint">This is you.</div>}
-
-                {/* THE ACCOUNT ITSELF */}
-                {account && (
-                    <div className="mt-3 flex justify-between gap-2 text-xs">
-                        <button type="button" onClick={() => account("passwd")} className="flex items-center gap-1.5 text-muted transition-colors hover:text-text">
-                            <Icon name="lock" className="h-3.5 w-3.5" />
-                            Change password
-                        </button>
-
-                        <button type="button" onClick={() => account("delete")} className="flex items-center gap-1.5 text-error transition hover:brightness-125">
-                            <Icon name="trash" className="h-3.5 w-3.5" />
-                            Delete account
-                        </button>
-                    </div>
-                )}
             </div>
         </div>,
         document.body,

@@ -443,7 +443,8 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
   call: the voice roster whenever somebody is in voice in this channel — being in it ourselves is not the
   question — the `Voice connected` strip with the button that hangs up — and, on a phone, the one that moves the
   call between the loud speaker and the earpiece — the `Sharing your screen` strip beside it,
-  and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
+  and at the bottom the person using the program — face, name, role, microphone, the account menu (see
+  **Account**), **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
 - **Middle** — the channel header (`#name`, how many are online, and the buttons for files, screen sharing,
   voice and the member column), the messages, and the composer, whose `+` is the one upload button. The command palette
@@ -1791,7 +1792,9 @@ form): the current password, and the new one twice for `passwd` — a mismatch c
 a delete **armed by one press and fired by the next**, any edit disarming it. `account_request` sends
 `AccountPasswdRequest` / `AccountDeleteRequest`; the form waits (`busy`) for `Passwd { ok }` /
 `AccountDeleted { ok }`, and a refusal starts it over with the reason (`round` remounts it, which is the
-TUI's `rejected`). The two actions are also on **our own profile card**, sending the same `/account <action>`.
+TUI's `rejected`). The two actions are also the **account button** in the row with our own name at the foot
+of the sidebar (drawn while `get_commands` lists `/account`), a small menu that sends the same
+`/account <action>` — so nobody has to know the command exists.
 
 A changed password is **written into the stored server row** where that row keeps one, which is the TUI's
 `reconnect.passwd`: a reconnect replays the new one. A deleted account puts `Account deleted.` in

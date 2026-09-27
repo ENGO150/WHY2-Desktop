@@ -3597,7 +3597,6 @@ function App()
                 ? () => { setCard(null); setDrawer(null); showDirect(cardUser); }
                 : null}
             edit={cardOwn && !profilesOff ? () => { setCard(null); setDrawer(null); setEditing(true); } : null}
-            account={cardOwn && hasAccount ? (action) => { setCard(null); setDrawer(null); send(`/account ${action}`); } : null}
             close={() =>
             {
                 closedCardRef.current = { username: card.username, at: performance.now() };
@@ -3824,6 +3823,7 @@ function App()
                         setCreating={setCreating}
                         canServerSettings={canServerSettings}
                         hasVoice={hasVoice}
+                        hasAccount={hasAccount}
                         narrow={narrow}
                         drawer={drawer}
                         theater={theater}
