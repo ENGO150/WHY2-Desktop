@@ -50,6 +50,8 @@ export interface ChatMessage
     message_color: number | null;
     direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
     image: MessageImage | null; //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
+    reply: number | null;       //THE MESSAGE IT ANSWERS
+    hearts: string[];           //WHO HEARTED IT
 }
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
@@ -403,6 +405,8 @@ export type BridgeEvent =
     | { event: "role"; data: { role: string; username: string | null } }
     | { event: "message"; data: { message: ChatMessage; channel: string | null } } //null = THE CURRENT PANE
     | { event: "deleted"; data: { message_id: number } }
+    | { event: "hearts"; data: { message_id: number; hearts: string[] } }
+    | { event: "list_hearts"; data: { message_id: number } }
     | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
     | { event: "typing"; data: { username: string; ttl: number } }
     | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }

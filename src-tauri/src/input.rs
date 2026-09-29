@@ -475,6 +475,13 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     //A FORM, NOT A PACKET
                     Command::Account => account_command(&app, parameters),
 
+                    //THE PANE KNOWS WHO HEARTED IT
+                    Command::Hearts => match parameters.and_then(|id| id.trim().parse::<u64>().ok())
+                    {
+                        Some(message_id) => emit(&app, UiEvent::ListHearts { message_id }),
+                        None => popup(&app, "Usage: /hearts <ID>"),
+                    },
+
                     //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
                     //MESSAGES) OF ANYBODY IN IT, AND THE SERVER IS NEVER TOLD WHO WE ARE NOT LISTENING TO
                     //NO PARAMETER IS OUR OWN MICROPHONE, WHICH IS ALSO THE ONLY ROW OF THE PANEL WITH NO ID
@@ -547,7 +554,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
         },
         LoginState::Login => PacketCode::Login { password: input },
         LoginState::Register => PacketCode::Register { password: input },
-        LoginState::None => PacketCode::MessageRequest { text: input },
+        LoginState::None => PacketCode::MessageRequest { text: input, reply: None },
     };
 
     send_packet(&state, &write_stream, code).await;

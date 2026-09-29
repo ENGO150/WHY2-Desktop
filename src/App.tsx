@@ -37,6 +37,7 @@ import type
     ScreenUser,
     FileOwner,
     PaneEntry,
+    MessageKind,
     ProfileInfo,
     TransferInfo,
     ChatMessage,
@@ -158,6 +159,23 @@ const IMAGE_EXTENSIONS =
     "qoi", "hdr", "ff", "dds", "pnm", "pbm", "pgm", "ppm", "pam",
 ];
 
+//ONE MESSAGE OF A PANE, BY ITS SERVER ID
+function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
+{
+    for (const entry of pane) if (entry.entry === "message" && entry.message.message_id === message_id) return entry.message;
+
+    return null;
+}
+
+//A LINE THIS CLIENT WRITES ITSELF
+function localLine(kind: MessageKind, text: string): ChatMessage
+{
+    return {
+        kind, prefix: null, username: "", text, id: null, message_id: null, timestamp: null,
+        username_color: null, message_color: null, direct: null, image: null, reply: null, hearts: [],
+    };
+}
+
 function App()
 {
     const [uiState, setUiState] = useState<UIState>("server_select");
@@ -250,6 +268,9 @@ function App()
     //CANNOT ANSWER SINCE IT HAS DROPPED ITS OWN STATE BY THE TIME ANYTHING ELSE IS ASKED
     const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
     const pinchedRef = useRef(false);
+
+    //THE LAST TAP ON A LINE, FOR THE DOUBLE TAP THAT HEARTS IT
+    const lineTapRef = useRef<{ at: number; x: number; y: number; id: number } | null>(null);
 
     //AND THE ONE FINGER MOVING A PICTURE THAT IS ALREADY ZOOMED, WITH THE ANCHOR IT STARTED FROM AND THE
     //ONE IT HAS GOT TO. A ZOOM IS ONLY HALF THE GESTURE - THE OTHER HALF IS LOOKING AROUND WHAT IT WENT
@@ -389,6 +410,9 @@ function App()
     //AND THE ROSTER, WHICH IS WHERE A LEAVER'S NAME AND COLOR COME FROM - THE PACKET NAMES ONLY THE ID
     const usersRef = useRef<OnlineUser[]>([]);
 
+    //AND THE PANES, WHERE A REPLY'S TARGET IS LOOKED UP
+    const panesRef = useRef<Record<string, PaneEntry[]>>({});
+
     useEffect(() =>
     {
         currentChannelRef.current = currentChannel;
@@ -497,6 +521,14 @@ function App()
     const dm = openDm === null ? null : dms[openDm] ?? null;
 
     const pane = dm ? dm.pane : paneByChannel[currentChannel] ?? [];
+
+    panesRef.current = paneByChannel;
+
+    //THE MESSAGE BEING ANSWERED
+    const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+
+    //ONLY IN THE PANE IT WAS PICKED IN
+    useEffect(() => setReplyTo(null), [currentChannel, openDm, connected]);
 
     //THE ROW IN THE MIDDLE OF THE VIEW
     const noteAnchor = () =>
@@ -761,6 +793,16 @@ function App()
         const body = peer ? message.text : `${message.username}: ${message.text}`;
 
         invoke("notify_message", { key, title, body }).catch(() => {});
+    };
+
+    //A REPLY TO ONE OF OURS
+    const answersUs = (message: ChatMessage) =>
+    {
+        if (message.reply === null) return false;
+
+        const target = findMessage(panesRef.current[LOBBY] ?? [], message.reply);
+
+        return target !== null && target.username === usernameRef.current && message.username !== usernameRef.current;
     };
 
     //THE COLUMN TURNS TO ONE PERSON, OR BACK TO THE CHANNEL. EITHER WAY IT IS ANOTHER PANE WITH ANOTHER
@@ -1141,7 +1183,7 @@ function App()
                     else pushTo(channel, entryFor(message));
 
                     //A PARKED LINE ONLY WHEN IT NAMES US
-                    if (here || mentions(message.text, usernameRef.current)) notifyMessage(message, channel);
+                    if (here || mentions(message.text, usernameRef.current) || answersUs(message)) notifyMessage(message, channel);
 
                     //A MESSAGE IS THE PROOF THEY STOPPED
                     if (message.kind === "user" || message.kind === "private")
@@ -1216,6 +1258,50 @@ function App()
                         }
 
                         return previous;
+                    });
+                    break;
+                }
+
+                //A MESSAGE'S HEARTS, WHEREVER IT IS
+                case "hearts":
+                {
+                    const { message_id, hearts } = payload.data;
+
+                    setPaneByChannel((previous) =>
+                    {
+                        for (const channel of Object.keys(previous))
+                        {
+                            const pane = previous[channel];
+                            const at = pane.findIndex((entry) => entry.entry === "message" && entry.message.message_id === message_id);
+
+                            if (at < 0) continue;
+
+                            const entry = pane[at] as Extract<PaneEntry, { entry: "message" }>;
+                            const next = [...pane];
+                            next[at] = { ...entry, message: { ...entry.message, hearts } };
+
+                            return { ...previous, [channel]: next };
+                        }
+
+                        return previous;
+                    });
+                    break;
+                }
+
+                //  /hearts - WHO HEARTED A LOADED MESSAGE
+                case "list_hearts":
+                {
+                    const { message_id } = payload.data;
+
+                    const panes = panesRef.current;
+                    const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
+
+                    if (!message) push(entryFor(localLine("error", `Message #${message_id} is not loaded.`)));
+                    else if (message.hearts.length === 0) push(entryFor(localLine("notice", `Nobody hearted #${message_id}.`)));
+                    else push({
+                        entry: "block",
+                        title: `Hearts on #${message_id} (${message.hearts.length})`,
+                        rows: message.hearts.map((name) => ({ depth: 0, id: null, text: name, note: null, color: null, device: null, accent: name === usernameRef.current })),
                     });
                     break;
                 }
@@ -1824,6 +1910,51 @@ function App()
 
     const deleteMessage = (message_id: number) => send(`/delete ${message_id}`);
 
+    //HEARTS AND REPLIES LAND ON THE STORED LOBBY ONLY
+    const reactable = (message: ChatMessage | null) => message !== null && message.message_id !== null
+        && message.kind === "user" && openDm === null && currentChannel === LOBBY;
+
+    const heartMessage = (message_id: number) => send(`/heart ${message_id}`);
+
+    const replyMessage = (message: ChatMessage) =>
+    {
+        setReplyTo(message);
+
+        if (!narrow) chatInputRef.current?.focus();
+    };
+
+    //THE LINE A REPLY POINTS AT, SCROLLED TO
+    const jumpToMessage = (message_id: number) =>
+    {
+        const row = paneRef.current?.querySelector(`[data-message-id="${message_id}"]`);
+
+        if (!row) return setPopupMessage(`Message #${message_id} is not loaded.`);
+
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        row.classList.remove("flash");
+        void (row as HTMLElement).offsetWidth;
+        row.classList.add("flash");
+    };
+
+    //TWO TAPS ON A LINE HEART IT
+    const tapLine = (event: React.MouseEvent, message: ChatMessage) =>
+    {
+        if (!touchPointer || lineHold.held() || message.message_id === null) return;
+        if ((event.target as HTMLElement).closest("button, a, img")) return;
+
+        const now = performance.now();
+        const last = lineTapRef.current;
+
+        lineTapRef.current = { at: now, x: event.clientX, y: event.clientY, id: message.message_id };
+
+        if (!last || last.id !== message.message_id || now - last.at > TAP_AGAIN) return;
+        if (Math.hypot(event.clientX - last.x, event.clientY - last.y) > TAP_SLOP) return;
+
+        lineTapRef.current = null;
+
+        heartMessage(message.message_id);
+    };
+
     //WHERE A NOTIFICATION LEADS. THE KEY IS THE ONE notify_message FILED IT UNDER, WHICH IS THE PANE THE
     //LINE LANDED IN - SO TAPPING IT PUTS THAT PANE IN FRONT, WHICH IS THE WHOLE OF WHAT A CHAT
     //NOTIFICATION IS FOR. A CONVERSATION THAT DID NOT SURVIVE (THE SESSION ENDED WITH THE PROCESS, AND
@@ -2376,6 +2507,13 @@ function App()
         hold: lineHold.bind,
 
         held: lineHold.held,
+
+        reacts: reactable,
+        heart: heartMessage,
+        reply: replyMessage,
+        target: (message_id: number) => findMessage(pane, message_id) ?? (dm ? null : findMessage(paneByChannel[LOBBY] ?? [], message_id)),
+        jump: jumpToMessage,
+        tap: tapLine,
     };
 
     //WHETHER THE COMPOSER IS SHOWING THE LINE AS THE PANE WILL DRAW IT. THE PARSER NEVER CONSUMES WHAT IT
@@ -2837,6 +2975,7 @@ function App()
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
             else if (drawer !== null) setDrawer(null);
+            else if (replyTo) setReplyTo(null);
             else return false;
 
             return true;
@@ -3274,7 +3413,9 @@ function App()
     {
         if (event.key === "Escape")
         {
-            setDismissed(true);
+            if (replyTo && palette.mode === "hidden") setReplyTo(null);
+            else setDismissed(true);
+
             return;
         }
 
@@ -3355,8 +3496,14 @@ function App()
         //IN A CONVERSATION A PLAIN LINE IS A PRIVATE MESSAGE, AND IT GOES DOWN THE SAME COMMAND PATH
         //TYPING IT OUT WOULD - A LINE THAT ALREADY STARTS WITH / IS A COMMAND WHEREVER IT WAS TYPED,
         //AND THE HISTORY KEEPS WHAT WAS TYPED RATHER THAN WHAT IT TURNED INTO
-        send(dm && !chatInput.startsWith("/") ? `/pm ${dm.id} ${chatInput}` : chatInput);
+        const command = chatInput.startsWith("/");
+
+        send(dm && !command ? `/pm ${dm.id} ${chatInput}`
+            : replyTo?.message_id != null && !command ? `/reply ${replyTo.message_id} ${chatInput}`
+                : chatInput);
         pushHistory(historyRef.current, chatInput);
+
+        if (!command) setReplyTo(null);
 
         setChatInput("");
         signalTyping("");
@@ -3535,7 +3682,7 @@ function App()
             }
 
             const author = `${message.kind} ${message.username} ${message.id ?? ""}`;
-            const grouped = author === previous;
+            const grouped = author === previous && message.reply === null;
 
             previous = author;
 
@@ -3653,6 +3800,9 @@ function App()
             at={pictureHold.menu}
             copy={actions.copy ? copyPicture : null}
             save={savePicture}
+            heart={reactable(pictureHold.menu.value.message) ? heartMessage : null}
+            reply={reactable(pictureHold.menu.value.message) ? replyMessage : null}
+            hearted={pictureHold.menu.value.message?.hearts.includes(username) ?? false}
             remove={deletable(pictureHold.menu.value.message) ? deleteMessage : null}
             close={pictureHold.close}
         />
@@ -3660,7 +3810,15 @@ function App()
 
     //AND THE ONE A LINE OPENS, WHICH IS THE ONLY WAY TO COPY ONE ON A PHONE
     const messageMenu = lineHold.menu && (
-        <MessageMenu at={lineHold.menu} copy={copyMessage} remove={deletable(lineHold.menu.value) ? deleteMessage : null} close={lineHold.close} />
+        <MessageMenu
+            at={lineHold.menu}
+            copy={copyMessage}
+            heart={reactable(lineHold.menu.value) ? heartMessage : null}
+            reply={reactable(lineHold.menu.value) ? replyMessage : null}
+            hearted={lineHold.menu.value.hearts.includes(username)}
+            remove={deletable(lineHold.menu.value) ? deleteMessage : null}
+            close={lineHold.close}
+        />
     );
 
     //THE CARD A NAME OPENED
@@ -4127,6 +4285,25 @@ function App()
                                         {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
                                         {palette.mode === "values" && palette.matches.map(valueRow)}
                                     </div>
+                                </div>
+                            )}
+
+                            {/* WHAT THE NEXT LINE ANSWERS */}
+                            {replyTo && (
+                                <div className={`mb-1 flex items-center gap-2 px-2 text-xs text-muted ${narrow ? "" : "px-3"}`}>
+                                    <Icon name="reply" className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="min-w-0 flex-1 truncate">
+                                        Replying to <span className="font-semibold" style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        title="Cancel reply"
+                                        aria-label="Cancel reply"
+                                        onClick={() => setReplyTo(null)}
+                                        className="touch-target flex h-6 w-6 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-text"
+                                    >
+                                        <Icon name="close" className="h-3.5 w-3.5" />
+                                    </button>
                                 </div>
                             )}
 

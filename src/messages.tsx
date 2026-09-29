@@ -69,6 +69,45 @@ export interface Lines
     copy: (text: string) => void;
     hold: (message: ChatMessage) => Record<string, unknown>;
     held: () => boolean;
+
+    //HEARTS AND REPLIES, WHERE THE SERVER KEEPS THE LINE
+    reacts: (message: ChatMessage) => boolean;
+    heart: (message_id: number) => void;
+    reply: (message: ChatMessage) => void;
+    target: (message_id: number) => ChatMessage | null;
+    jump: (message_id: number) => void;
+    tap: (event: React.MouseEvent, message: ChatMessage) => void;
+}
+
+//THE TWO ITEMS BOTH MENUS SHARE
+function ReactItems({ message, heart, reply, hearted, close, item }: {
+    message: ChatMessage | null;
+    heart: ((message_id: number) => void) | null;
+    reply: ((message: ChatMessage) => void) | null;
+    hearted: boolean;
+    close: () => void;
+    item: string;
+})
+{
+    if (message?.message_id == null) return null;
+
+    return (
+        <>
+            {heart && (
+                <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={item}>
+                    <Icon name="heart" className={`h-4 w-4 ${hearted ? "fill-current text-heart" : ""}`} />
+                    {hearted ? "Remove heart" : "Heart"}
+                </button>
+            )}
+
+            {reply && (
+                <button type="button" onClick={() => { close(); reply(message); }} className={item}>
+                    <Icon name="reply" className="h-4 w-4" />
+                    Reply
+                </button>
+            )}
+        </>
+    );
 }
 
 //THE MENU A LINE OPENS, WHICH IS THE ONE THING THERE IS TO DO WITH SOMEBODY ELSE'S SENTENCE. IT IS THE
@@ -76,10 +115,13 @@ export interface Lines
 //ITSELF, CUT TO ONE ROW, SO A MENU OPENED IN A CROWDED PANE SAYS WHICH LINE IT IS ABOUT
 export function MessageMenu(
 {
-    at, copy, remove, close,
+    at, copy, heart, reply, hearted, remove, close,
 }: {
     at: HeldMenu<ChatMessage>;
     copy: (text: string) => void;
+    heart: ((message_id: number) => void) | null;
+    reply: ((message: ChatMessage) => void) | null;
+    hearted: boolean;
     remove: ((message_id: number) => void) | null;
     close: () => void;
 })
@@ -95,6 +137,8 @@ export function MessageMenu(
             className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
         >
             <div className="truncate px-2 py-1.5 text-sm font-semibold">{message.text}</div>
+
+            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} item={item} />
 
             <button type="button" onClick={() => { close(); copy(message.text); }} className={item}>
                 <Icon name="copy" className="h-4 w-4" />
@@ -120,11 +164,14 @@ export function MessageMenu(
 //CLIPS WHATEVER LEAVES IT
 export function PictureMenu(
 {
-    at, copy, save, remove, close,
+    at, copy, save, heart, reply, hearted, remove, close,
 }: {
     at: HeldMenu<HeldPicture>;
     copy: ((image: MessageImage) => void) | null;
     save: (image: MessageImage) => void;
+    heart: ((message_id: number) => void) | null;
+    reply: ((message: ChatMessage) => void) | null;
+    hearted: boolean;
     remove: ((message_id: number) => void) | null;
     close: () => void;
 })
@@ -140,6 +187,8 @@ export function PictureMenu(
             className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
         >
             <div className="truncate px-2 py-1.5 text-sm font-semibold">{image.filename}</div>
+
+            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} item={item} />
 
             {copy && (
                 <button type="button" onClick={() => { close(); copy(image); }} className={item}>
@@ -649,8 +698,14 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         //WHEN IT WAS SENT, WHERE THE SERVER SAID
         const time = config.show_timestamps && message.timestamp !== null ? message.timestamp : null;
 
-        //SOMEBODY ELSE NAMING US
-        const mentioned = !own && !message.image && !message.direct?.outgoing && mentions(message.text, username);
+        //HEARTS AND REPLIES, WHERE THE SERVER KEEPS THE LINE
+        const reacts = lines.reacts(message);
+        const hearted = message.hearts.includes(username);
+        const target = message.reply !== null ? lines.target(message.reply) : null;
+
+        //SOMEBODY ELSE NAMING US, OR ANSWERING US
+        const mentioned = !own && !message.direct?.outgoing
+            && ((!message.image && mentions(message.text, username)) || target?.username === username);
 
         //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
         //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
@@ -669,6 +724,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                 {...(copyable ? lines.hold(message) : {})}
                 data-message-id={message.message_id ?? undefined}
                 onClickCapture={copyable ? swallowHeld : undefined}
+                onClick={reacts ? (event) => lines.tap(event, message) : undefined}
                 className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${mentioned ? "border-l-2 border-warning bg-warning/[0.08]" : whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
             >
                 {/* AND THE BUTTON THAT DOES IT, WHICH IS THE POINTER'S HALF OF THE GESTURE: IT FLOATS OVER
@@ -676,16 +732,13 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     NOTHING TO HOVER WITH IT IS NOT DRAWN AT ALL (.row-action UNDER @media (hover: none)) -
                     A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A
                     CONVERSATION - AND A HOLD ON THE ROW OPENS THE SAME THING AS A MENU */}
-                {copyable && (
-                    <button
-                        type="button"
-                        title="Copy message"
-                        aria-label="Copy message"
-                        onClick={() => lines.copy(message.text)}
-                        className="row-action absolute right-3 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-app border border-border bg-overlay text-muted shadow-lg transition-colors hover:text-accent"
-                    >
-                        <Icon name="copy" className="h-4 w-4" />
-                    </button>
+                {(copyable || reacts) && (
+                    <div className="row-action absolute right-3 top-1 z-10 flex rounded-app border border-border bg-overlay p-px text-muted shadow-lg">
+                        {reacts && rowButton(hearted ? "Remove heart" : "Heart", "heart", () => lines.heart(message.message_id!),
+                            hearted ? "fill-current text-heart" : "")}
+                        {reacts && rowButton("Reply", "reply", () => lines.reply(message))}
+                        {copyable && rowButton("Copy message", "copy", () => lines.copy(message.text))}
+                    </div>
                 )}
                 <div className="w-9 shrink-0">
                     {grouped && time !== null && (
@@ -706,6 +759,8 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                 </div>
 
                 <div className="min-w-0 flex-1">
+                    {message.reply !== null && replyQuote(message.reply, target, config, lines)}
+
                     {!grouped && (
                         <div className="flex items-baseline gap-2">
                             <button
@@ -742,9 +797,61 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                             </span>
                         )}
                     </div>
+
+                    {/* WHO HEARTED IT */}
+                    {message.hearts.length > 0 && (
+                        <button
+                            type="button"
+                            title={message.hearts.join(", ")}
+                            disabled={!reacts}
+                            onClick={() => lines.heart(message.message_id!)}
+                            className={`mt-1 flex items-center gap-1 rounded-full border px-2 py-px text-xs transition-colors disabled:cursor-default ${hearted
+                                ? "border-heart/50 bg-heart/10 text-heart"
+                                : "border-border text-muted enabled:hover:border-border-strong"}`}
+                        >
+                            <Icon name="heart" className={`h-3.5 w-3.5 ${hearted ? "fill-current" : ""}`} />
+                            {message.hearts.length}
+                        </button>
+                    )}
                 </div>
             </div>
         );
+}
+
+//ONE BUTTON OF THE HOVER BAR
+function rowButton(label: string, icon: string, onClick: () => void, tone = "")
+{
+    return (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={onClick}
+            className="flex h-7 w-7 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-accent"
+        >
+            <Icon name={icon} className={`h-4 w-4 ${tone}`} />
+        </button>
+    );
+}
+
+//THE LINE A REPLY ANSWERS, CUT TO ONE ROW
+function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
+{
+    const text = target?.image ? `sent an image (${target.image.filename})` : target?.text.split("\n")[0] ?? `#${reply}`;
+
+    return (
+        <button
+            type="button"
+            onClick={() => lines.jump(reply)}
+            className="mb-0.5 flex w-full min-w-0 items-center gap-1.5 text-left text-xs text-muted hover:text-text"
+        >
+            <Icon name="reply" className="h-3.5 w-3.5 shrink-0 -scale-x-100 text-faint" />
+            {target && (
+                <span className="shrink-0 font-semibold" style={{ color: messageColor(config, target.username_color) }}>{target.username}</span>
+            )}
+            <span className="min-w-0 truncate">{target ? text : `Message ${text}`}</span>
+        </button>
+    );
 }
 
     //A LIST THE SERVER ANSWERED WITH. IT IS A CARD IN THE STREAM RATHER THAN A WINDOW OVER IT, AND THE

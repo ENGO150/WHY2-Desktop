@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.4", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.5", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.4", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.5", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -1794,6 +1794,32 @@ command check (`mention` in `palette.ts`, `palette::mention`), offers `@everyone
 and the offline list but ours, as a `values` menu whose `arg` is `null` — which is what titles it
 `Mentions`. `mentionable` in `App.tsx` is `refresh_palette`'s list. The server refuses `everyone` as a
 username, so the two cannot collide.
+
+### Hearts and replies
+
+2.2.5's two reactions to a stored line. **Both exist only where the server keeps the line** — the lobby
+history, since `HeartRequest` and a `MessageRequest { reply }` are both checked against it and refused as
+`InvalidUsage` otherwise — so `reactable` in `App.tsx` offers them for a `user` line with a `message_id` in
+the lobby, and nowhere in a conversation or another channel.
+
+**A heart is `/heart ID`**, a toggle, and the server answers everybody with the line's whole set
+(`ClientEvent::Hearts` → `UiEvent::Hearts`), which the listener writes onto whichever pane holds it. It is
+asked for three ways: the heart in the row's **hover bar** (beside reply and copy), the same item in the
+**hold menu** — `MessageMenu`, and `PictureMenu` for a picture, since a picture has hearts too — and on a
+phone **two taps on the line** (`tapLine`, the lightbox's `TAP_AGAIN`/`TAP_SLOP`, never on a button, a
+link or a picture, which have taps of their own). The set is drawn as a chip under the line, `♥ N`, in
+`--heart` where it includes us, the names in its tooltip; pressing it toggles ours. `/hearts ID` is ours to
+answer (`send_command_code` gives `None`): the bridge emits `ListHearts` and the window, which holds the
+lines, prints the block or the TUI's two sentences.
+
+**A reply is `/reply ID text`**, `MessageRequest` with `reply` set, and it is started from the hover bar or
+the hold menu — never a double tap. `replyTo` is the line being answered; the composer shows it over the
+line (`Replying to …`, × or esc to drop it, and the back gesture) and wraps the next plain line in
+`/reply`, a `/` line staying a command. It is dropped on a channel, conversation or session change. An
+arriving reply carries `reply` and is drawn with the line it answers above it, cut to one row
+(`replyQuote`), which scrolls to that line and flashes it; a target not in the pane is `Message #N`. A
+reply always opens a run of its own, and **a reply to one of ours counts as a mention** — tinted, and
+notified from a parked pane — which is the TUI's own rule.
 
 ### Account
 

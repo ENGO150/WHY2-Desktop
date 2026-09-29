@@ -426,7 +426,19 @@ ol.md-list { list-style: decimal; }
     line-height: 1.45;
 }
 
-/* A ROW'S OWN BUTTON - THE ONE THAT COPIES A MESSAGE. IT IS DRAWN ONLY WHILE THE ROW IS UNDER THE POINTER,
+/* A LINE A REPLY JUMPED TO */
+.flash
+{
+    animation: flash 1400ms ease-out;
+}
+
+@keyframes flash
+{
+    from { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+    to { background-color: transparent; }
+}
+
+/* A ROW'S OWN BUTTONS - HEART, REPLY AND COPY. IT IS DRAWN ONLY WHILE THE ROW IS UNDER THE POINTER,
    BECAUSE A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A CONVERSATION */
 .row-action
 {
@@ -442,7 +454,7 @@ ol.md-list { list-style: decimal; }
     }
 
     .group:hover .row-action,
-    .row-action:focus-visible
+    .row-action:focus-within
     {
         opacity: 1;
     }

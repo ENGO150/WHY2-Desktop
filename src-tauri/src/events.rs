@@ -131,10 +131,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         },
 
         //None = EVERY PANE, Some(None) = THE LOBBY
-        ClientEvent::Message(text, username, id, message_id, colors, channel, timestamp) =>
+        ClientEvent::Message(text, username, id, message_id, colors, channel, timestamp, reply) =>
         {
             let message = ChatMessage::new(MessageKind::User, username, text).with_id(id).with_message_id(message_id)
-                .at(timestamp).colored(colors);
+                .at(timestamp).colored(colors).replying(reply);
 
             say_in(app, message, channel.map(Option::unwrap_or_default));
         },
@@ -241,10 +241,11 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp }| match image
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts }| match image
             {
-                Some(hash) => caption(username, text, message_id, timestamp, hash, state, colors.username_color),
-                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors),
+                Some(hash) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts),
+                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors)
+                    .replying(reply).hearted(hearts),
             }).collect::<Vec<ChatMessage>>();
 
             if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
@@ -551,6 +552,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         ClientEvent::Muted => say(app, ChatMessage::notice("You have been muted by a moderator.")),
 
         ClientEvent::Deleted(message_id) => emit(app, UiEvent::Deleted { message_id }),
+
+        ClientEvent::Hearts(message_id, hearts) => emit(app, UiEvent::Hearts { message_id, hearts }),
 
         //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
         //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING

@@ -46,6 +46,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --error: #ae5c68;
     --online: #71917e;           /* PRESENCE, AND A CALL THAT IS UP */
     --warning: #a69166;
+    --heart: #b86a7c;            /* A HEART WE GAVE */
 
     --arg-required: #a0937f;     /* SOFT SAND */
     --arg-optional: #a58c88;     /* FADED CORAL */
@@ -116,6 +117,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --color-error: var(--error);
     --color-online: var(--online);
     --color-warning: var(--warning);
+    --color-heart: var(--heart);
 
     --color-arg-required: var(--arg-required);
     --color-arg-optional: var(--arg-optional);
