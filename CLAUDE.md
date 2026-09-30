@@ -361,7 +361,8 @@ whatever was actually clicked. The menu goes through a **portal**: both lists li
 boxes that would swallow it, since a list that scrolls clips whatever leaves it (`.scroller` is
 `overflow-y: auto`, which makes the other axis clip too) and a drawer is translated, which is enough to make
 `position: fixed` mean "inside the drawer". It is placed against the element that was held and kept inside
-the window, and the click that ends a hold is swallowed (`held()`) so the press that opened the menu does not
+the window — **measured once it is drawn** (a layout effect in `useHoldMenu`), since a message's menu is
+five items or two depending on the line, and a menu at a pointer with no room below it opens above it — and the click that ends a hold is swallowed (`held()`) so the press that opened the menu does not
 also pick the server under it.
 
 The selection screen has no form to carry the status line, so it carries **its own, as a box**: a bare

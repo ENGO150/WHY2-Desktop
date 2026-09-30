@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { StoredServer } from "./types";
@@ -187,6 +187,31 @@ export function useHoldMenu<T>(anchor: "element" | "pointer" = "element", height
     const [menu, setMenu] = useState<HeldMenu<T> | null>(null);
     const pressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const firedRef = useRef(false);
+    const pointRef = useRef({ x: 0, y: 0 });
+
+    //FIT THE DRAWN MENU INSIDE THE WINDOW
+    useLayoutEffect(() =>
+    {
+        if (menu === null) return;
+
+        const drawn = document.querySelectorAll<HTMLElement>("[data-hold-menu]");
+        const box = drawn[drawn.length - 1]?.getBoundingClientRect();
+
+        if (!box) return;
+
+        const fit = (at: number, size: number, limit: number, point: number) =>
+        {
+            if (at + size <= limit - 8) return at;
+            if (anchor === "pointer" && point - size - 2 >= 8) return point - size - 2;
+
+            return Math.max(8, limit - size - 8);
+        };
+
+        const x = fit(menu.x, box.width, window.innerWidth, pointRef.current.x);
+        const y = fit(menu.y, box.height, window.innerHeight, pointRef.current.y);
+
+        if (x !== menu.x || y !== menu.y) setMenu({ ...menu, x, y });
+    }, [menu]);
 
     //IT CLOSES THE WAY EVERY OTHER MENU HERE DOES - A PRESS THAT LANDED OUTSIDE IT, OR ESC - AND ALSO WHEN
     //WHATEVER IT IS POINTING AT MOVES, SINCE IT IS PLACED ONCE AND DOES NOT FOLLOW
@@ -226,6 +251,8 @@ export function useHoldMenu<T>(anchor: "element" | "pointer" = "element", height
     const openAt = (value: T, element: HTMLElement, x: number, y: number) =>
     {
         const box = element.getBoundingClientRect();
+
+        pointRef.current = { x, y };
 
         const left = anchor === "pointer" ? x + 2 : box.right + 8;
         const top = anchor === "pointer" ? y + 2 : box.top;
