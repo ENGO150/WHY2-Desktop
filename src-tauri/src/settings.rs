@@ -77,7 +77,7 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     ("Interface", "Math rendering", "render_math", ClientKind::Toggle { invert: false }),
 
     ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
-    ("Interface", "Show message IDs", "show_message_ids", ClientKind::Toggle { invert: false }),
+    ("Interface", "Show message IDs", "show_message_ids", ClientKind::Own),
     ("Interface", "Show timestamps", "show_timestamps", ClientKind::Toggle { invert: false }),
 ];
 
@@ -116,7 +116,7 @@ pub(crate) fn get_client_config() -> ClientConfig
     ClientConfig
     {
         show_id: config::read_config("show_id"),
-        show_message_ids: config::read_config("show_message_ids"),
+        show_message_ids: servers::read_own("show_message_ids"),
         show_timestamps: config::read_config("show_timestamps"),
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),
@@ -146,6 +146,8 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
 
                 ClientValue::Toggle(if *invert { !stored } else { stored })
             },
+
+            ClientKind::Own => ClientValue::Toggle(servers::read_own(key)),
 
             //THE ONLY ROW WHOSE ANSWER IS NOT IN THE CONFIG AT ALL: THE SERVER LIST IS OURS, AND SO IS
             //THE KEY POINTING INTO IT (SEE servers.rs)
@@ -219,7 +221,19 @@ pub(crate) async fn get_audio_devices() -> AudioDevices
 #[tauri::command]
 pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, String>
 {
-    let Some(ClientKind::Toggle { invert }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+    let invert = match client_kind(&key)
+    {
+        Some(ClientKind::Toggle { invert }) => invert,
+
+        //OURS, NOT client.toml'S
+        Some(ClientKind::Own) =>
+        {
+            servers::write_own(&key, on)?;
+            return Ok(get_client_config());
+        },
+
+        _ => return Err(String::from("Unknown setting!")),
+    };
 
     config::client_write_bool(&key, if invert { !on } else { on });
 

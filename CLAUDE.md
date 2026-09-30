@@ -558,10 +558,10 @@ interface face like every other name.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
-`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the five `client.toml` keys that
-still change how the pane looks (`show_id`, `show_message_ids`, `show_timestamps`, `disable_colors`,
-`render_math`), which the
-TUI re-reads on every redraw.
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the five keys that still change
+how the pane looks (`show_id`, `show_message_ids`, `show_timestamps`, `disable_colors`, `render_math`),
+which the TUI re-reads on every redraw — four out of `client.toml`, and `show_message_ids` out of our own
+file (see **Message IDs**).
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
@@ -1758,9 +1758,11 @@ the server sends when it lands is what the editor and every face redraw from.
 the lobby and every channel, carried on `Message`, on the picture events and on every `StoredMessage` a
 history page replays. `ChatMessage::message_id` is where it travels, and it is what `/delete ID` takes.
 
-**It is drawn as a dim `#N` trailing the line** where `show_message_ids` (`client.toml`, default on, a
-settings row) says so: right-aligned against the **last row** of every line's text, the TUI's own place for
-it since 2.2.4 (`Theme::message_id`), so the name and the time line up down the pane. It is a column of its
+**It is drawn as a dim `#N` trailing the line** where `show_message_ids` says so — and that key is
+**this app's and not `client.toml`'s**: the TUI's is on by default and the window's is **off**, so the row
+reads and writes it in `desktop_servers.toml` beside `auto_connect` (`ClientKind::Own`,
+`servers::read_own`/`write_own`) and the TUI's own setting is left alone. It is drawn
+right-aligned against the **last row** of every line's text, the TUI's own place for it since 2.2.4 (`Theme::message_id`), so the name and the time line up down the pane. It is a column of its
 own beside `.message-body` (`items-end`, the same `text-[15px] leading-relaxed` line box around a smaller
 span), which is what keeps it on the text's baseline. The client id beside the name is `(id)` rather than
 `#id` — it is the TUI's own spelling.

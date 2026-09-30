@@ -221,7 +221,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: true, show_timestamps: true, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, show_timestamps: true, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);

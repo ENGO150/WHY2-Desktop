@@ -335,6 +335,7 @@ pub(crate) enum ClientKind
 {
     Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
     Choice,                  //ONE OF A LIST THE BRIDGE BUILDS - THE SERVER TO OPEN ON, AND NOTHING ELSE YET
+    Own,                     //A TOGGLE KEPT IN OUR OWN FILE
     #[cfg(voice)] Volume,
     #[cfg(voice)] Device { input: bool },
 }

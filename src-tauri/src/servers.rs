@@ -63,6 +63,9 @@ struct ServerFile
     auto_connect: Option<String>,
 
     #[serde(default)]
+    show_message_ids: bool, //DESKTOP ONLY
+
+    #[serde(default)]
     server: Vec<StoredServer>,
 }
 
@@ -174,6 +177,29 @@ pub(crate) fn auto_connect() -> Option<String>
 pub(crate) fn get_auto_connect() -> Option<String>
 {
     auto_connect()
+}
+
+//A TOGGLE THE TERMINAL CLIENT DOES NOT SHARE
+pub(crate) fn read_own(key: &str) -> bool
+{
+    match key
+    {
+        "show_message_ids" => read_file().show_message_ids,
+        _ => false,
+    }
+}
+
+pub(crate) fn write_own(key: &str, on: bool) -> Result<(), String>
+{
+    let mut file = read_file();
+
+    match key
+    {
+        "show_message_ids" => file.show_message_ids = on,
+        _ => return Err(String::from("Unknown setting!")),
+    }
+
+    store(&file)
 }
 
 //AN EMPTY id IS None, WHICH IS THE ROW'S FIRST ENTRY AND WHAT THE PROGRAM SHIPS WITH: OPENING ON THE LIST
