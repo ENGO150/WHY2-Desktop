@@ -1811,7 +1811,12 @@ asked for three ways: the heart in the row's **hover bar** (beside reply and cop
 **hold menu** — `MessageMenu`, and `PictureMenu` for a picture, since a picture has hearts too — and on a
 phone **two taps on the line** (`tapLine`, the lightbox's `TAP_AGAIN`/`TAP_SLOP`, never on a button, a
 link or a picture, which have taps of their own). The set is drawn as a chip under the line, `♥ N`, in
-`--heart` where it includes us, the names in its tooltip; pressing it toggles ours. `/hearts ID` is ours to
+`--heart` where it includes us, the names in its tooltip; pressing it toggles ours. A **right-click on the
+chip, or a hold on a phone**, opens `HeartsMenu` (`messages.tsx`, its own `useHoldMenu` at the pointer): who
+hearted it, face and name, each opening their profile card, with the toggle under them. The menu reads the
+line back out of the pane by id, so a heart landing while it is open is in it; the chip stops its gesture from
+reaching the row, whose own menu would otherwise open under it. A hold menu no longer closes on a scroll
+**inside** itself, since this one scrolls. `/hearts ID` is ours to
 answer (`send_command_code` gives `None`): the bridge emits `ListHearts` and the window, which holds the
 lines, prints the block or the TUI's two sentences.
 

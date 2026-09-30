@@ -225,7 +225,10 @@ export function useHoldMenu<T>(anchor: "element" | "pointer" = "element", height
         };
 
         const key = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
-        const moved = () => setMenu(null);
+        const moved = (event: Event) =>
+        {
+            if (!(event.target as HTMLElement | null)?.closest?.("[data-hold-menu]")) setMenu(null);
+        };
 
         document.addEventListener("mousedown", outside);
         document.addEventListener("touchstart", outside);

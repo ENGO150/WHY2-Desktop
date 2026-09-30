@@ -79,6 +79,8 @@ export interface Lines
     target: (message_id: number) => ChatMessage | null;
     jump: (message_id: number) => void;
     tap: (event: React.MouseEvent, message: ChatMessage) => void;
+    hearts: (message: ChatMessage) => Record<string, unknown>;
+    heartsHeld: () => boolean;
 }
 
 //THE TWO ITEMS BOTH MENUS SHARE
@@ -159,6 +161,56 @@ export function MessageMenu(
                 <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
                     <Icon name="trash" className="h-4 w-4" />
                     Delete message
+                </button>
+            )}
+        </div>,
+        document.body,
+    );
+}
+
+//WHO HEARTED A LINE
+export function HeartsMenu(
+{
+    at, username, people, color, heart, close,
+}: {
+    at: HeldMenu<ChatMessage>;
+    username: string;
+    people: People;
+    color: (name: string) => string | undefined;
+    heart: ((message_id: number) => void) | null;
+    close: () => void;
+})
+{
+    const message = at.value;
+    const hearted = message.hearts.includes(username);
+
+    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
+
+    return createPortal(
+        <div
+            data-hold-menu
+            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
+            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+        >
+            <div className="flex items-center gap-2 px-2 py-1.5 text-sm font-semibold">
+                <Icon name="heart" className="h-4 w-4 fill-current text-heart" />
+                {message.hearts.length === 1 ? "1 heart" : `${message.hearts.length} hearts`}
+            </div>
+
+            <div className="scroller max-h-64">
+                {message.hearts.map((name) => (
+                    <button key={name} type="button" onClick={() => { close(); people.open(name, null); }} className={item}>
+                        <Avatar name={name} color={color(name)} size={20} src={people.avatar(name)} />
+                        <span className="min-w-0 flex-1 truncate" style={{ color: color(name) }}>{name}</span>
+                        {name === username && <span className="text-[11px] text-faint">you</span>}
+                    </button>
+                ))}
+            </div>
+
+            {heart && message.message_id !== null && (
+                <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={`${item} border-t border-border`}>
+                    <Icon name="heart" className={`h-4 w-4 ${hearted ? "fill-current text-heart" : ""}`} />
+                    {hearted ? "Remove heart" : "Heart"}
                 </button>
             )}
         </div>,
@@ -816,11 +868,12 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         <button
                             type="button"
                             title={message.hearts.join(", ")}
-                            disabled={!reacts}
-                            onClick={() => lines.heart(message.message_id!)}
-                            className={`mt-1 flex items-center gap-1 rounded-full border px-2 py-px text-xs transition-colors disabled:cursor-default ${hearted
+                            aria-disabled={!reacts}
+                            {...heartsHold(lines.hearts(message))}
+                            onClick={() => { if (!lines.heartsHeld() && reacts) lines.heart(message.message_id!); }}
+                            className={`mt-1 flex items-center gap-1 rounded-full border px-2 py-px text-xs transition-colors ${reacts ? "" : "cursor-default"} ${hearted
                                 ? "border-heart/50 bg-heart/10 text-heart"
-                                : "border-border text-muted enabled:hover:border-border-strong"}`}
+                                : `border-border text-muted ${reacts ? "hover:border-border-strong" : ""}`}`}
                         >
                             <Icon name="heart" className={`h-3.5 w-3.5 ${hearted ? "fill-current" : ""}`} />
                             {message.hearts.length}
@@ -829,6 +882,23 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                 </div>
             </div>
         );
+}
+
+//THE CHIP'S OWN HOLD, KEPT OFF THE ROW'S
+function heartsHold(bind: Record<string, unknown>)
+{
+    const own = (handler: unknown) => (event: React.SyntheticEvent) =>
+    {
+        event.stopPropagation();
+        (handler as (event: React.SyntheticEvent) => void)(event);
+    };
+
+    return {
+        onContextMenu: own(bind.onContextMenu),
+        onTouchStart: own(bind.onTouchStart),
+        onTouchEnd: own(bind.onTouchEnd),
+        onTouchMove: own(bind.onTouchMove),
+    };
 }
 
 //ONE BUTTON OF THE HOVER BAR

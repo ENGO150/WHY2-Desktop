@@ -83,7 +83,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines, HeldPicture } from "./messages";
-import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
 import type { People, ProfileFields } from "./profile";
 import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
@@ -310,6 +310,9 @@ function App()
     //HOVER WITH. IT IS AT THE POINTER FOR THE REASON THE PICTURE'S IS: A MESSAGE ROW IS THE WIDTH OF THE
     //PANE, AND A MENU BESIDE ONE WOULD OPEN OFF THE EDGE OF THE WINDOW
     const lineHold = useHoldMenu<ChatMessage>("pointer");
+
+    //WHO HEARTED A LINE, OFF ITS HEART CHIP
+    const heartsHold = useHoldMenu<ChatMessage>("pointer");
 
     //EVERYBODY'S PROFILE BY NAME, AND THE PICTURES THEY NAME BY HASH
     const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
@@ -2568,6 +2571,8 @@ function App()
         target: (message_id: number) => findMessage(pane, message_id) ?? (dm ? null : findMessage(paneByChannel[LOBBY] ?? [], message_id)),
         jump: jumpToMessage,
         tap: tapLine,
+        hearts: heartsHold.bind,
+        heartsHeld: heartsHold.held,
     };
 
     //WHETHER THE COMPOSER IS SHOWING THE LINE AS THE PANE WILL DRAW IT. THE PARSER NEVER CONSUMES WHAT IT
@@ -3887,6 +3892,22 @@ function App()
         />
     );
 
+    //AND THE ONE ITS HEART CHIP OPENS
+    const heartsLine = heartsHold.menu && heartsHold.menu.value.message_id !== null
+        ? lines.target(heartsHold.menu.value.message_id) ?? heartsHold.menu.value
+        : heartsHold.menu?.value;
+
+    const heartsMenu = heartsHold.menu && heartsLine && heartsLine.hearts.length > 0 && (
+        <HeartsMenu
+            at={{ ...heartsHold.menu, value: heartsLine }}
+            username={username}
+            people={people}
+            color={colorOf}
+            heart={reactable(heartsLine) ? heartMessage : null}
+            close={heartsHold.close}
+        />
+    );
+
     //THE CARD A NAME OPENED
     const cardUser = card ? users.find((user) => user.username === card.username) ?? null : null;
     const cardOwn = card !== null && card.username === username;
@@ -4480,6 +4501,7 @@ function App()
             {profileEditor}
             {pictureMenu}
             {messageMenu}
+            {heartsMenu}
             {settingsBox}
             {filesBox}
             {screensBox}
