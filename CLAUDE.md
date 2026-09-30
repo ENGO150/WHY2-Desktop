@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.5", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.6", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.5", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.6", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -1820,6 +1820,25 @@ arriving reply carries `reply` and is drawn with the line it answers above it, c
 (`replyQuote`), which scrolls to that line and flashes it; a target not in the pane is `Message #N`. A
 reply always opens a run of its own, and **a reply to one of ours counts as a mention** — tinted, and
 notified from a parked pane — which is the TUI's own rule.
+
+### Edits
+
+2.2.6's `/edit ID MESSAGE` (`PacketCode::EditRequest`). The server lets **the author and nobody else**
+reword a stored **text** line — rank gives no right to it, a picture's text is its filename, and an empty
+edit is refused (that is `/delete`). So `editable` in `App.tsx` is `reactable` narrowed to our own lines
+with no `image`, and it is offered in the row's hover bar (the pencil) and in `MessageMenu`.
+
+Starting one puts the line **into the composer**: `editTarget` is the line, `draftRef` keeps whatever was
+being written, and a bar over the line says `Editing message #N`. The next plain line is sent as
+`/edit ID line` — or nothing at all when it did not change — and the draft comes back; ×, esc, the back
+gesture, a pane or session change, a reply being started and the line being deleted all put it back the
+same way (`stopEditing`). While editing, the channel is not told we are typing.
+
+A success is broadcast to everybody as `Edited(message_id, text)` → `UiEvent::Edited`, and the listener
+rewords the line in whichever pane holds it (`patchMessage`, which the hearts share) and sets `edited`.
+`StoredMessage::edited` carries the same flag through the history. It is drawn as a dim `(edited)` in the
+trailer, in front of the `#N` — the TUI's own place for it — and shown whether or not the ids are. A reply
+quoting the line picks up the new text for free, since the quote is looked up in the pane.
 
 ### Account
 

@@ -74,6 +74,8 @@ export interface Lines
     reacts: (message: ChatMessage) => boolean;
     heart: (message_id: number) => void;
     reply: (message: ChatMessage) => void;
+    edits: (message: ChatMessage) => boolean;
+    edit: (message: ChatMessage) => void;
     target: (message_id: number) => ChatMessage | null;
     jump: (message_id: number) => void;
     tap: (event: React.MouseEvent, message: ChatMessage) => void;
@@ -115,13 +117,14 @@ function ReactItems({ message, heart, reply, hearted, close, item }: {
 //ITSELF, CUT TO ONE ROW, SO A MENU OPENED IN A CROWDED PANE SAYS WHICH LINE IT IS ABOUT
 export function MessageMenu(
 {
-    at, copy, heart, reply, hearted, remove, close,
+    at, copy, heart, reply, hearted, edit, remove, close,
 }: {
     at: HeldMenu<ChatMessage>;
     copy: (text: string) => void;
     heart: ((message_id: number) => void) | null;
     reply: ((message: ChatMessage) => void) | null;
     hearted: boolean;
+    edit: ((message: ChatMessage) => void) | null;
     remove: ((message_id: number) => void) | null;
     close: () => void;
 })
@@ -144,6 +147,13 @@ export function MessageMenu(
                 <Icon name="copy" className="h-4 w-4" />
                 Copy message
             </button>
+
+            {edit && (
+                <button type="button" onClick={() => { close(); edit(message); }} className={item}>
+                    <Icon name="pencil" className="h-4 w-4" />
+                    Edit message
+                </button>
+            )}
 
             {remove && message.message_id !== null && (
                 <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
@@ -737,6 +747,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         {reacts && rowButton(hearted ? "Remove heart" : "Heart", "heart", () => lines.heart(message.message_id!),
                             hearted ? "fill-current text-heart" : "")}
                         {reacts && rowButton("Reply", "reply", () => lines.reply(message))}
+                        {lines.edits(message) && rowButton("Edit message", "pencil", () => lines.edit(message))}
                         {copyable && rowButton("Copy message", "copy", () => lines.copy(message.text))}
                     </div>
                 )}
@@ -790,10 +801,12 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                             {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
                         </div>
 
-                        {/* THE ID TRAILS THE LAST ROW */}
-                        {messageId && (
+                        {/* THE MARK AND THE ID TRAIL THE LAST ROW */}
+                        {(messageId || message.edited) && (
                             <span className="shrink-0 whitespace-nowrap text-[15px] leading-relaxed">
-                                <span className="font-mono text-[10px] text-faint">{messageId}</span>
+                                {message.edited && <span className="text-[10px] text-faint">(edited)</span>}
+                                {message.edited && messageId && " "}
+                                {messageId && <span className="font-mono text-[10px] text-faint">{messageId}</span>}
                             </span>
                         )}
                     </div>

@@ -241,11 +241,11 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts }| match image
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts, edited }| match image
             {
                 Some(hash) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts),
                 None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors)
-                    .replying(reply).hearted(hearts),
+                    .replying(reply).hearted(hearts).reworded(edited),
             }).collect::<Vec<ChatMessage>>();
 
             if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
@@ -554,6 +554,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         ClientEvent::Deleted(message_id) => emit(app, UiEvent::Deleted { message_id }),
 
         ClientEvent::Hearts(message_id, hearts) => emit(app, UiEvent::Hearts { message_id, hearts }),
+
+        ClientEvent::Edited(message_id, text) => emit(app, UiEvent::Edited { message_id, text }),
 
         //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
         //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING

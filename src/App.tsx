@@ -167,12 +167,32 @@ function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
     return null;
 }
 
+//ONE MESSAGE CHANGED, IN WHICHEVER PANE HOLDS IT
+function patchMessage(panes: Record<string, PaneEntry[]>, message_id: number, change: (message: ChatMessage) => ChatMessage)
+{
+    for (const channel of Object.keys(panes))
+    {
+        const pane = panes[channel];
+        const at = pane.findIndex((entry) => entry.entry === "message" && entry.message.message_id === message_id);
+
+        if (at < 0) continue;
+
+        const entry = pane[at] as Extract<PaneEntry, { entry: "message" }>;
+        const next = [...pane];
+        next[at] = { ...entry, message: change(entry.message) };
+
+        return { ...panes, [channel]: next };
+    }
+
+    return panes;
+}
+
 //A LINE THIS CLIENT WRITES ITSELF
 function localLine(kind: MessageKind, text: string): ChatMessage
 {
     return {
         kind, prefix: null, username: "", text, id: null, message_id: null, timestamp: null,
-        username_color: null, message_color: null, direct: null, image: null, reply: null, hearts: [],
+        username_color: null, message_color: null, direct: null, image: null, reply: null, hearts: [], edited: false,
     };
 }
 
@@ -527,8 +547,19 @@ function App()
     //THE MESSAGE BEING ANSWERED
     const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
 
+    //THE MESSAGE BEING REWORDED, AND THE DRAFT IT PUT ASIDE
+    const [editTarget, setEditTarget] = useState<ChatMessage | null>(null);
+    const editRef = useRef<ChatMessage | null>(null);
+    const draftRef = useRef("");
+
+    editRef.current = editTarget;
+
     //ONLY IN THE PANE IT WAS PICKED IN
-    useEffect(() => setReplyTo(null), [currentChannel, openDm, connected]);
+    useEffect(() =>
+    {
+        setReplyTo(null);
+        stopEditing();
+    }, [currentChannel, openDm, connected]);
 
     //THE ROW IN THE MIDDLE OF THE VIEW
     const noteAnchor = () =>
@@ -1238,6 +1269,8 @@ function App()
                 {
                     const { message_id } = payload.data;
 
+                    if (editRef.current?.message_id === message_id) stopEditing();
+
                     //A ROW ABOVE THE VIEW TAKES ITS HEIGHT WITH IT
                     const node = paneRef.current;
                     const row = node?.querySelector(`[data-message-id="${message_id}"]`);
@@ -1267,24 +1300,16 @@ function App()
                 {
                     const { message_id, hearts } = payload.data;
 
-                    setPaneByChannel((previous) =>
-                    {
-                        for (const channel of Object.keys(previous))
-                        {
-                            const pane = previous[channel];
-                            const at = pane.findIndex((entry) => entry.entry === "message" && entry.message.message_id === message_id);
+                    setPaneByChannel((previous) => patchMessage(previous, message_id, (message) => ({ ...message, hearts })));
+                    break;
+                }
 
-                            if (at < 0) continue;
+                //A MESSAGE REWORDED, WHEREVER IT IS
+                case "edited":
+                {
+                    const { message_id, text } = payload.data;
 
-                            const entry = pane[at] as Extract<PaneEntry, { entry: "message" }>;
-                            const next = [...pane];
-                            next[at] = { ...entry, message: { ...entry.message, hearts } };
-
-                            return { ...previous, [channel]: next };
-                        }
-
-                        return previous;
-                    });
+                    setPaneByChannel((previous) => patchMessage(previous, message_id, (message) => ({ ...message, text, edited: true })));
                     break;
                 }
 
@@ -1918,9 +1943,36 @@ function App()
 
     const replyMessage = (message: ChatMessage) =>
     {
+        stopEditing();
         setReplyTo(message);
 
         if (!narrow) chatInputRef.current?.focus();
+    };
+
+    //ONLY OUR OWN TEXT CAN BE REWORDED
+    const editable = (message: ChatMessage | null) => reactable(message) && !message!.image && message!.username === username;
+
+    //THE LINE GOES INTO THE COMPOSER
+    const editMessage = (message: ChatMessage) =>
+    {
+        if (!editTarget) draftRef.current = chatInput;
+
+        setReplyTo(null);
+        setEditTarget(message);
+        setChatInput(message.text);
+        setDismissed(true);
+
+        if (!narrow) chatInputRef.current?.focus();
+    };
+
+    //AND THE DRAFT COMES BACK
+    const stopEditing = () =>
+    {
+        if (!editRef.current) return;
+
+        setEditTarget(null);
+        setChatInput(draftRef.current);
+        draftRef.current = "";
     };
 
     //THE LINE A REPLY POINTS AT, SCROLLED TO
@@ -2511,6 +2563,8 @@ function App()
         reacts: reactable,
         heart: heartMessage,
         reply: replyMessage,
+        edits: editable,
+        edit: editMessage,
         target: (message_id: number) => findMessage(pane, message_id) ?? (dm ? null : findMessage(paneByChannel[LOBBY] ?? [], message_id)),
         jump: jumpToMessage,
         tap: tapLine,
@@ -2975,6 +3029,7 @@ function App()
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
             else if (drawer !== null) setDrawer(null);
+            else if (editTarget) stopEditing();
             else if (replyTo) setReplyTo(null);
             else return false;
 
@@ -3342,7 +3397,7 @@ function App()
     const signalTyping = (value: string) =>
     {
         const text = value.trimStart();
-        const active = openDmRef.current === null && text !== "" && !text.startsWith("/");
+        const active = openDmRef.current === null && editRef.current === null && text !== "" && !text.startsWith("/");
         const now = Date.now();
         const last = typingRef.current;
 
@@ -3413,7 +3468,8 @@ function App()
     {
         if (event.key === "Escape")
         {
-            if (replyTo && palette.mode === "hidden") setReplyTo(null);
+            if (editTarget && palette.mode === "hidden") stopEditing();
+            else if (replyTo && palette.mode === "hidden") setReplyTo(null);
             else setDismissed(true);
 
             return;
@@ -3497,6 +3553,15 @@ function App()
         //TYPING IT OUT WOULD - A LINE THAT ALREADY STARTS WITH / IS A COMMAND WHEREVER IT WAS TYPED,
         //AND THE HISTORY KEEPS WHAT WAS TYPED RATHER THAN WHAT IT TURNED INTO
         const command = chatInput.startsWith("/");
+
+        //A REWORDED LINE REPLACES THE ONE IT CAME FROM
+        if (editTarget && !command)
+        {
+            if (chatInput !== editTarget.text) send(`/edit ${editTarget.message_id} ${chatInput}`);
+
+            stopEditing();
+            return;
+        }
 
         send(dm && !command ? `/pm ${dm.id} ${chatInput}`
             : replyTo?.message_id != null && !command ? `/reply ${replyTo.message_id} ${chatInput}`
@@ -3816,6 +3881,7 @@ function App()
             heart={reactable(lineHold.menu.value) ? heartMessage : null}
             reply={reactable(lineHold.menu.value) ? replyMessage : null}
             hearted={lineHold.menu.value.hearts.includes(username)}
+            edit={editable(lineHold.menu.value) ? editMessage : null}
             remove={deletable(lineHold.menu.value) ? deleteMessage : null}
             close={lineHold.close}
         />
@@ -4285,6 +4351,23 @@ function App()
                                         {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
                                         {palette.mode === "values" && palette.matches.map(valueRow)}
                                     </div>
+                                </div>
+                            )}
+
+                            {/* WHAT THE NEXT LINE REWORDS */}
+                            {editTarget && (
+                                <div className={`mb-1 flex items-center gap-2 px-2 text-xs text-muted ${narrow ? "" : "px-3"}`}>
+                                    <Icon name="pencil" className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="min-w-0 flex-1 truncate">Editing message #{editTarget.message_id}</span>
+                                    <button
+                                        type="button"
+                                        title="Cancel edit"
+                                        aria-label="Cancel edit"
+                                        onClick={stopEditing}
+                                        className="touch-target flex h-6 w-6 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-text"
+                                    >
+                                        <Icon name="close" className="h-3.5 w-3.5" />
+                                    </button>
                                 </div>
                             )}
 

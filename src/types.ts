@@ -52,6 +52,7 @@ export interface ChatMessage
     image: MessageImage | null; //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
     reply: number | null;       //THE MESSAGE IT ANSWERS
     hearts: string[];           //WHO HEARTED IT
+    edited: boolean;            //REWORDED SINCE SENT
 }
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
@@ -407,6 +408,7 @@ export type BridgeEvent =
     | { event: "deleted"; data: { message_id: number } }
     | { event: "hearts"; data: { message_id: number; hearts: string[] } }
     | { event: "list_hearts"; data: { message_id: number } }
+    | { event: "edited"; data: { message_id: number; text: string } }
     | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
     | { event: "typing"; data: { username: string; ttl: number } }
     | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }

@@ -44,6 +44,7 @@ pub(crate) struct ChatMessage
     pub(crate) image: Option<MessageImage>, //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
     pub(crate) reply: Option<u64>,          //THE MESSAGE IT ANSWERS
     pub(crate) hearts: Vec<String>,         //WHO HEARTED IT
+    pub(crate) edited: bool,                //REWORDED SINCE SENT
 }
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
@@ -395,6 +396,7 @@ pub(crate) enum UiEvent
     Deleted { message_id: u64 },                                  //A STORED MESSAGE WENT
     Hearts { message_id: u64, hearts: Vec<String> },              //A MESSAGE'S HEARTS CHANGED
     ListHearts { message_id: u64 },                               //  /hearts - WHO HEARTED ONE
+    Edited { message_id: u64, text: String },                     //A STORED MESSAGE WAS REWORDED
     History { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool }, //ONE PAGE OF THE LOBBY'S HISTORY
     Typing { username: String, ttl: u64 },                        //SOMEBODY HERE IS WRITING
     Profile { profile: ProfileInfo, own: bool, open: bool, saved: bool }, //A PROFILE CAME BACK
@@ -453,6 +455,7 @@ impl ChatMessage
             image: None,
             reply: None,
             hearts: Vec::new(),
+            edited: false,
         }
     }
 
@@ -535,6 +538,12 @@ impl ChatMessage
     pub(crate) fn hearted(mut self, hearts: Vec<String>) -> Self
     {
         self.hearts = hearts;
+        self
+    }
+
+    pub(crate) fn reworded(mut self, edited: bool) -> Self
+    {
+        self.edited = edited;
         self
     }
 }
