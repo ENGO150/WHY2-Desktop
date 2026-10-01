@@ -292,6 +292,9 @@ function App()
     //THE LAST TAP ON A LINE, FOR THE DOUBLE TAP THAT HEARTS IT
     const lineTapRef = useRef<{ at: number; x: number; y: number; id: number } | null>(null);
 
+    //AND ON A PICTURE, WITH ITS PENDING OPEN
+    const pictureTapRef = useRef<{ at: number; x: number; y: number; id: number; timer: number } | null>(null);
+
     //AND THE ONE FINGER MOVING A PICTURE THAT IS ALREADY ZOOMED, WITH THE ANCHOR IT STARTED FROM AND THE
     //ONE IT HAS GOT TO. A ZOOM IS ONLY HALF THE GESTURE - THE OTHER HALF IS LOOKING AROUND WHAT IT WENT
     //INTO, WHICH ON A PHONE IS A DRAG AND NOT A SECOND ZOOM SOMEWHERE ELSE
@@ -2010,6 +2013,34 @@ function App()
         heartMessage(message.message_id);
     };
 
+    //ONE TAP ON A PICTURE OPENS IT, TWO HEART IT
+    const tapPicture = (event: React.MouseEvent, image: MessageImage, message: ChatMessage) =>
+    {
+        if (!touchPointer || !reactable(message)) return openLightbox(image);
+
+        const id = message.message_id!;
+        const now = performance.now();
+        const last = pictureTapRef.current;
+
+        if (last && last.id === id && now - last.at <= TAP_AGAIN
+            && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= TAP_SLOP)
+        {
+            window.clearTimeout(last.timer);
+            pictureTapRef.current = null;
+
+            return heartMessage(id);
+        }
+
+        const timer = window.setTimeout(() =>
+        {
+            if (pictureTapRef.current?.timer === timer) pictureTapRef.current = null;
+
+            openLightbox(image);
+        }, TAP_AGAIN);
+
+        pictureTapRef.current = { at: now, x: event.clientX, y: event.clientY, id, timer };
+    };
+
     //WHERE A NOTIFICATION LEADS. THE KEY IS THE ONE notify_message FILED IT UNDER, WHICH IS THE PANE THE
     //LINE LANDED IN - SO TAPPING IT PUTS THAT PANE IN FRONT, WHICH IS THE WHOLE OF WHAT A CHAT
     //NOTIFICATION IS FOR. A CONVERSATION THAT DID NOT SURVIVE (THE SESSION ENDED WITH THE PROCESS, AND
@@ -2545,7 +2576,7 @@ function App()
             invoke("request_image", { hash }).catch((error: unknown) => setPopupMessage(String(error)));
         },
 
-        open: openLightbox,
+        open: tapPicture,
         hold: (picture: HeldPicture) => pictureHold.bind(picture),
         held: pictureHold.held,
     };

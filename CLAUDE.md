@@ -1809,8 +1809,10 @@ the lobby, and nowhere in a conversation or another channel.
 (`ClientEvent::Hearts` → `UiEvent::Hearts`), which the listener writes onto whichever pane holds it. It is
 asked for three ways: the heart in the row's **hover bar** (beside reply and copy), the same item in the
 **hold menu** — `MessageMenu`, and `PictureMenu` for a picture, since a picture has hearts too — and on a
-phone **two taps on the line** (`tapLine`, the lightbox's `TAP_AGAIN`/`TAP_SLOP`, never on a button, a
-link or a picture, which have taps of their own). The set is drawn as a chip under the line, `♥ N`, in
+phone **two taps on the line** (`tapLine`, the lightbox's `TAP_AGAIN`/`TAP_SLOP`, never on a button or a
+link, which have taps of their own). **A picture takes the same two taps** (`tapPicture`): its single tap
+is the lightbox, so on a finger that open waits `TAP_AGAIN` and a second tap inside it is a heart
+instead — a picture that opened on the first tap hid the second one behind the lightbox. The set is drawn as a chip under the line, `♥ N`, in
 `--heart` where it includes us, the names in its tooltip; pressing it toggles ours. A **right-click on the
 chip, or a hold on a phone**, opens `HeartsMenu` (`messages.tsx`, its own `useHoldMenu` at the pointer): who
 hearted it, face and name, each opening their profile card, with the toggle under them. The menu reads the

@@ -58,7 +58,7 @@ export interface Pictures
     //A PICTURE THE CACHE ALREADY HOLDS, ASKED FOR BECAUSE ITS CAPTION IS ON SCREEN - NOBODY PRESSED
     //ANYTHING FOR THIS ONE
     load: (hash: string) => void;
-    open: (image: MessageImage) => void;
+    open: (event: React.MouseEvent, image: MessageImage, message: ChatMessage) => void;
     hold: (picture: HeldPicture) => Record<string, unknown>;
     held: () => boolean;
 }
@@ -650,7 +650,7 @@ export function renderPicture(message: ChatMessage, image: MessageImage, status:
                 type="button"
                 title={image.filename}
                 {...pictures.hold({ image, message })}
-                onClick={() => { if (!pictures.held()) pictures.open(image); }}
+                onClick={(event) => { if (!pictures.held()) pictures.open(event, image, message); }}
                 className="picture-hold mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
             >
                 <img
