@@ -1,0 +1,277 @@
+/*
+This is part of WHY2
+Copyright (C) 2026 Václav Šmejkal
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* THE OTHER PALETTES (themes.ts). why2 IS theme.css' :root ITSELF */
+
+/* BASE THEMES */
+:root[data-theme="ash"]
+{
+    --deep: #1e1f22;
+    --sidebar: #2b2d31;
+    --chat: #313338;
+    --raised: #383a40;
+    --overlay: #2f3136;
+
+    --border: #3b3d44;
+    --border-strong: #4e5058;
+
+    --text: #dbdee1;
+    --muted: #a0a6b0;
+    --faint: #737781;
+
+    --accent: #8891f2;
+    --on-accent: #ffffff;
+    --brand: #c48fb0;
+}
+
+:root[data-theme="dark"]
+{
+    --deep: #111214;
+    --sidebar: #17181b;
+    --chat: #1c1d21;
+    --raised: #232428;
+    --overlay: #212226;
+
+    --border: #2a2b30;
+    --border-strong: #3a3b42;
+
+    --text: #dfe0e3;
+    --muted: #999ba3;
+    --faint: #686a72;
+
+    --accent: #8891f2;
+    --on-accent: #ffffff;
+    --brand: #c48fb0;
+}
+
+:root[data-theme="light"]
+{
+    --deep: #e3e5e8;
+    --sidebar: #f2f3f5;
+    --chat: #ffffff;
+    --raised: #ebedef;
+    --overlay: #ffffff;
+
+    --border: #e1e2e5;
+    --border-strong: #c4c7cc;
+
+    --text: #2e3338;
+    --muted: #5c6068;
+    --faint: #8a8e96;
+
+    --accent: #5865f2;
+    --on-accent: #ffffff;
+    --brand: #a8457a;
+}
+
+/* ANYTHING LIGHT: DARKER MEANINGS, CODE AND PROTOCOL COLORS */
+:root[data-tone="light"]
+{
+    --hover: #0000000a;
+    --selected: #00000010;
+    --active: #00000018;
+
+    --notice: #6b5f63;
+    --ok: #8a5f62;
+    --error: #c0394f;
+    --online: #23a55a;
+    --warning: #a8741a;
+    --heart: #d23d63;
+
+    --arg-required: #8a6d3b;
+    --arg-optional: #9a5a52;
+
+    --code-bg: #f1eef0;
+    --code-inline: #b0305a;
+    --code-text: #2e3338;
+    --code-bar: #4c8fd6;
+    --code-lang: #6a6f78;
+
+    --md-heading: #1f2328;
+    --md-quote: #4c8fd6;
+    --md-rule: #c4c7cc;
+
+    --syntax-keyword: #c1305c;
+    --syntax-string: #2f7d32;
+    --syntax-number: #b5651d;
+    --syntax-comment: #8a8f98;
+    --syntax-title: #2b6cb0;
+    --syntax-type: #7b4fbf;
+    --syntax-builtin: #1d7f75;
+    --syntax-attr: #a14d3a;
+
+    --ansi-0: #3c3c3c;  --ansi-1: #c0392b;  --ansi-2: #2e8b57;  --ansi-3: #94770a;
+    --ansi-4: #2f5fd0;  --ansi-5: #8e44ad;  --ansi-6: #138d90;  --ansi-7: #5f6368;
+    --ansi-8: #6b6b6b;  --ansi-9: #e03e3e;  --ansi-10: #1e9e4a; --ansi-11: #b07d00;
+    --ansi-12: #3b6fe0; --ansi-13: #c2338f; --ansi-14: #0e95a2; --ansi-15: #1f2328;
+}
+
+/* COLOR THEMES. ONE GRADIENT BEHIND EVERYTHING, SEEN THROUGH THE TINTED SURFACES */
+:root[data-backdrop="dark"]
+{
+    --deep: rgb(0 0 0 / 0.55);
+    --sidebar: rgb(0 0 0 / 0.42);
+    --chat: rgb(0 0 0 / 0.3);
+    --raised: rgb(255 255 255 / 0.07);
+    --overlay: rgb(0 0 0 / 0.62);
+
+    --hover: rgb(255 255 255 / 0.06);
+    --selected: rgb(255 255 255 / 0.1);
+    --active: rgb(255 255 255 / 0.14);
+
+    --border: rgb(255 255 255 / 0.09);
+    --border-strong: rgb(255 255 255 / 0.18);
+
+    --text: #f3eef2;
+    --muted: rgb(255 255 255 / 0.66);
+    --faint: rgb(255 255 255 / 0.42);
+
+    --brand: #ffb3d9;
+    --notice: #ece2e8;
+    --ok: #ecd0d2;
+    --error: #ff8a9a;
+    --online: #86e3a8;
+    --warning: #ffd27a;
+    --heart: #ff8fb1;
+
+    --arg-required: #f0d9b0;
+    --arg-optional: #f2c4bd;
+
+    --code-bg: rgb(0 0 0 / 0.35);
+}
+
+:root[data-backdrop="light"]
+{
+    --deep: rgb(255 255 255 / 0.22);
+    --sidebar: rgb(255 255 255 / 0.4);
+    --chat: rgb(255 255 255 / 0.58);
+    --raised: rgb(255 255 255 / 0.5);
+    --overlay: rgb(255 255 255 / 0.84);
+
+    --border: rgb(0 0 0 / 0.08);
+    --border-strong: rgb(0 0 0 / 0.18);
+
+    --text: #2a2430;
+    --muted: rgb(0 0 0 / 0.6);
+    --faint: rgb(0 0 0 / 0.42);
+
+    --brand: #a8457a;
+
+    --code-bg: rgb(255 255 255 / 0.6);
+}
+
+/* EVERY OPAQUE SURFACE PAINTS THE SAME FIXED GRADIENT UNDER ITS TINT */
+:root[data-backdrop] body
+{
+    background-image: linear-gradient(var(--deep), var(--deep)), var(--backdrop);
+    background-attachment: fixed;
+}
+
+:root[data-backdrop] .bg-deep
+{
+    background-image: linear-gradient(var(--deep), var(--deep)), var(--backdrop);
+    background-attachment: fixed;
+}
+
+:root[data-backdrop] .bg-sidebar
+{
+    background-image: linear-gradient(var(--sidebar), var(--sidebar)), var(--backdrop);
+    background-attachment: fixed;
+}
+
+:root[data-backdrop] .bg-chat
+{
+    background-image: linear-gradient(var(--chat), var(--chat)), var(--backdrop);
+    background-attachment: fixed;
+}
+
+:root[data-backdrop] .bg-overlay
+{
+    background-image: linear-gradient(var(--overlay), var(--overlay)), var(--backdrop);
+    background-attachment: fixed;
+}
+
+:root[data-theme="sunset"]
+{
+    --backdrop: linear-gradient(150deg, #3b1f6e 0%, #86356b 50%, #c6683a 100%);
+    --accent: #ffc39b;
+    --on-accent: #3a1a10;
+}
+
+:root[data-theme="aurora"]
+{
+    --backdrop: linear-gradient(150deg, #0b3b38 0%, #1b6656 35%, #263f86 75%, #45286f 100%);
+    --accent: #9ff0d0;
+    --on-accent: #0b2e26;
+}
+
+:root[data-theme="twilight"]
+{
+    --backdrop: linear-gradient(150deg, #11163f 0%, #2a2c84 55%, #5a46b8 100%);
+    --accent: #b3b8ff;
+    --on-accent: #161848;
+}
+
+:root[data-theme="crimson"]
+{
+    --backdrop: linear-gradient(150deg, #160205 0%, #5a0c17 55%, #24030a 100%);
+    --accent: #ff9fa8;
+    --on-accent: #3a0810;
+}
+
+:root[data-theme="forest"]
+{
+    --backdrop: linear-gradient(150deg, #10231a 0%, #2a4a2e 50%, #55592a 100%);
+    --accent: #c4e3a2;
+    --on-accent: #1a2c12;
+}
+
+:root[data-theme="lagoon"]
+{
+    --backdrop: linear-gradient(150deg, #0a2645 0%, #13557a 50%, #23807e 100%);
+    --accent: #95e2f0;
+    --on-accent: #0a2a3a;
+}
+
+:root[data-theme="neon"]
+{
+    --backdrop: linear-gradient(150deg, #170a3a 0%, #6e1c86 50%, #0d7395 100%);
+    --accent: #ff9ef0;
+    --on-accent: #33093a;
+}
+
+:root[data-theme="mint"]
+{
+    --backdrop: linear-gradient(150deg, #c3eed8 0%, #a5d9c0 50%, #dcf1c2 100%);
+    --accent: #1f7a56;
+    --on-accent: #ffffff;
+}
+
+:root[data-theme="citrus"]
+{
+    --backdrop: linear-gradient(150deg, #fde2a4 0%, #f8c6a0 50%, #f3a59f 100%);
+    --accent: #b8501f;
+    --on-accent: #ffffff;
+}
+
+:root[data-theme="cotton"]
+{
+    --backdrop: linear-gradient(150deg, #f7d2e5 0%, #e2d4f6 50%, #cde3fa 100%);
+    --accent: #8a46b8;
+    --on-accent: #ffffff;
+}

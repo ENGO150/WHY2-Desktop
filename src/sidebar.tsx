@@ -222,7 +222,7 @@ export function Sidebar(
                                                     </button>
 
                                                     {chat.unread > 0 && (
-                                                        <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10px] font-bold text-black/85">
+                                                        <span className="shrink-0 rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-accent">
                                                             {chat.unread}
                                                         </span>
                                                     )}

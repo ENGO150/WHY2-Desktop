@@ -19,6 +19,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { applyTheme, cachedTheme } from "./themes";
+
+//LAST PALETTE, BEFORE THE FIRST FRAME
+applyTheme(cachedTheme());
 
 //THE MARK index.html STOOD UP WHILE THIS WAS STILL ON ITS WAY, AND HOW LONG IT IS LOOKED AT IS NOT THE
 //SAME QUESTION ON THE TWO PLATFORMS: A PHONE SPENDS SECONDS ON THE BUNDLE, AND A DESKTOP A FEW

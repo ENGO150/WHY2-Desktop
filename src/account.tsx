@@ -149,7 +149,7 @@ export function AccountDialog(
                     <button
                         type="submit"
                         disabled={box.busy}
-                        className={`mt-3 w-full rounded-app py-2.5 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${deleting ? "bg-error text-black/85" : "bg-accent text-black/85"}`}
+                        className={`mt-3 w-full rounded-app py-2.5 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${deleting ? "bg-error text-on-accent" : "bg-accent text-on-accent"}`}
                     >
                         {deleting ? (armed ? "Delete for good" : "Delete account") : "Change password"}
                     </button>

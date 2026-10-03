@@ -20,6 +20,7 @@ import type { SettingsBox, SettingsItem, AccountAction } from "./types";
 import { Icon, IconButton } from "./icons";
 import { Switch } from "./components";
 import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./settings";
+import { THEMES, findTheme, type Theme } from "./themes";
 
 //tui/settings.rs WITH REAL CONTROLS IN IT. THE TWO HALVES ARE NOT SYMMETRICAL AND THAT IS THE WHOLE
 //SHAPE OF IT: client.toml IS OURS AND A ROW IS WRITTEN THROUGH THE MOMENT IT IS FLIPPED, WHILE
@@ -28,7 +29,7 @@ import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./setting
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard, narrow,
-    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -45,6 +46,8 @@ export function SettingsDialog(
     commitEdit: () => void;
     editSettings: (change: (box: SettingsBox) => SettingsBox | null) => void;
     account: ((action: AccountAction) => void) | null; //OURS ONLY, WHERE THE SERVER HAS /account
+    theme: string | null; //OURS ONLY
+    pickTheme: (id: string) => void;
     close: () => void;
 })
 {
@@ -181,6 +184,31 @@ export function SettingsDialog(
             );
         };
 
+        //ONE PALETTE'S BUTTON
+        const swatch = (entry: Theme) =>
+        {
+            const chosen = entry.id === theme;
+
+            return (
+                <button
+                    key={entry.id}
+                    type="button"
+                    title={entry.name}
+                    aria-label={entry.name}
+                    aria-pressed={chosen}
+                    onClick={() => pickTheme(entry.id)}
+                    style={{ background: entry.swatch }}
+                    className={`relative shrink-0 rounded-lg border transition ${narrow ? "h-12 w-12" : "h-10 w-10"} ${chosen ? "border-transparent ring-2 ring-accent ring-offset-2 ring-offset-overlay" : "border-border-strong hover:scale-105"}`}
+                >
+                    {chosen && (
+                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-on-accent">
+                            <Icon name="check" className="h-3 w-3" />
+                        </span>
+                    )}
+                </button>
+            );
+        };
+
         return (
             <div
                 //ANYWHERE OUTSIDE THE BOX IS "I AM DONE HERE" - ON THE PRESS AND NOT THE RELEASE, SO A
@@ -238,6 +266,33 @@ export function SettingsDialog(
                                     >
                                         Delete
                                     </button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* THE WINDOW'S PALETTE */}
+                        {theme !== null && (
+                            <>
+                                <div className="flex items-center gap-3 px-2 pb-1 pt-5 first:pt-2">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Appearance</span>
+                                    <span className="h-px flex-1 bg-border" />
+                                </div>
+
+                                <div className="rounded-app border-l-2 border-transparent px-3 py-2.5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="min-w-0 flex-1 text-sm">Theme</span>
+                                        <span className="text-xs text-muted">{findTheme(theme).name}</span>
+                                    </div>
+
+                                    <div className="mt-3 flex flex-wrap gap-2.5 p-1">
+                                        {THEMES.filter((entry) => !entry.gradient).map(swatch)}
+                                    </div>
+
+                                    <div className="mt-3 text-xs text-faint">Color themes</div>
+
+                                    <div className="mt-2 flex flex-wrap gap-2.5 p-1">
+                                        {THEMES.filter((entry) => entry.gradient).map(swatch)}
+                                    </div>
                                 </div>
                             </>
                         )}
@@ -312,7 +367,7 @@ export function SettingsDialog(
 
                                 const skin = restart
                                     ? `border ${armed ? "border-error bg-error/15 text-error" : "border-border text-muted hover:border-error hover:text-error"}`
-                                    : "bg-accent text-black/85 hover:brightness-110";
+                                    : "bg-accent text-on-accent hover:brightness-110";
 
                                 return (
                                     <button

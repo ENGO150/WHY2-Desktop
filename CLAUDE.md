@@ -545,14 +545,14 @@ Two things the layout depends on:
   fenced code block, display math and a long inline formula — still scroll, each **inside its own box**, which
   is what keeps the column behind them still.
 
-The window is nearly monochrome on purpose. The surfaces are a near-black stack (`deep` → `sidebar` →
+The default palette (`why2`) is nearly monochrome on purpose. The surfaces are a near-black stack (`deep` → `sidebar` →
 `chat` → `raised` → `overlay`) with a trace of rose in every one of them, and the accents are still
 `tui/theme.rs`'s meanings — the active thing, a notice, what went right, an error, presence — pulled most of
 the way towards grey, so **the only saturated thing in the window is what somebody said**: the sixteen
 protocol colors in `ANSI`. `theme.css` holds the whole palette as CSS custom properties, mapped to Tailwind
 tokens in one `@theme inline` block beside them. **2.2.7's `theme` key (`client.toml`, thirteen palettes,
-light ones among them) is the TUI's alone**: it is neither a settings row nor read here, and the window stays
-the one dark palette it was designed in.
+light ones among them) is the TUI's alone**: it is neither a settings row nor read here, since the window
+has palettes of its own (see **Themes**).
 
 The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
 characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
@@ -568,6 +568,38 @@ file (see **Message IDs**).
 `auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
+
+### Themes
+
+The window has **its own** themes, Discord's shape rather than the TUI's list: four flat ones (`why2`, the
+default and `:root` itself, then `dark`, `ash` and `light`) and ten **color themes**, each a gradient behind the
+whole window (seven dark, three light). `themes.ts` is the list — id, name, whether it is light, whether it
+is a gradient, and what its swatch is painted in — and `themes.css` is the palettes, each a block of the same
+custom properties `theme.css` declares, so **nothing in a component knows a theme exists**: it is all tokens.
+`applyTheme` puts three attributes on `<html>`: `data-theme` (the id, absent for `why2`), `data-tone="light"`
+(the darker meanings, code colors, syntax and protocol colors every light theme shares) and
+`data-backdrop` (`dark` or `light`, for a gradient).
+
+**A gradient is one picture seen through every surface**, the way Discord's are. In a color theme `--deep`,
+`--sidebar`, `--chat` and `--overlay` are translucent tints, and every element painted in one of them
+(`.bg-deep`, `.bg-sidebar`, `.bg-chat`, `.bg-overlay`, and `body`) paints the tint over `--backdrop` with
+`background-attachment: fixed`. So each surface is **opaque** — a drawer over the conversation, a menu
+over a message and a dialog over the pane hide what is under them — and yet all of them show the same
+gradient, anchored to the window, at different depths. `--raised` and the opacity variants (`bg-deep/40`)
+stay plain translucent tints over whatever they sit on. Those rules only add a background **image**, so an
+element that also changes its background **color** on hover would have the change hidden under it — there
+is none, and one should not be written.
+
+It is stored **beside the server list** (`theme` in `desktop_servers.toml`, `get_theme`/`set_theme`), for the
+same reason `auto_connect` is: `client.toml` is the terminal client's too, and its own `theme` key means
+something else. The empty id is the default. The swatches are the `Appearance` section at the top of our own
+settings dialog — buttons and not rows, like the `Account` ones — and a press applies the palette at once.
+Because the bridge answers a frame or two after the page is up, the last palette is also **cached in
+`localStorage`** and put on the page in `main.tsx` before the first render; the file wins when it answers.
+`index.html`'s boot screen stays `#050405` whatever the theme, since the mark is what it is there to show.
+
+Text on an accent button is `text-on-accent` (`--on-accent`): dark on the default's pewter, white on the
+blurple and the light themes' accents.
 
 ### Message markup
 
@@ -1932,7 +1964,8 @@ was said in.
 
 The **names** are the crate's `colors::COLORS` — that table is the wire, so it is not copied here — and
 `to_color` is what this side adds to it: the spelling somebody typed (`gray`, `dark red`, a bare number)
-turned into a code. The `ANSI` table in `theme.ts` maps code → hex, and must stay in step with it;
+turned into a code. The `ANSI` table in `theme.ts` maps code → `var(--ansi-N)`, whose values are in
+`theme.css` (and darker under `data-tone="light"`), and must stay in step with it;
 `disable_colors` turns the message colors off without touching the theme.
 
 There are **two** tables: `ANSI` is the lifted set the names and the message text are painted in — these sit
@@ -2017,7 +2050,8 @@ Release is ~10 MB and debug is ~377 MB, which is the whole argument for building
   (`bg-deep`, `bg-sidebar`, `bg-chat`, `bg-raised`, `bg-overlay`, `bg-hover`, `bg-selected`, `bg-active`),
   text (`text-text`, `text-muted`, `text-faint`), meaning (`text-accent`, `text-brand`, `text-notice`,
   `text-ok`, `text-error`, `text-online`, `text-warning`), and `border-border` / `border-border-strong` —
-  never raw colors. The app is dark only; there is no light theme to switch to.
+  never raw colors — every one of them is redefined per theme (see **Themes**), and `text-on-accent` is what
+  goes on `bg-accent`.
 - Icons are `Icon`/`IconButton` in `icons.tsx`: one component over a table of 24×24 stroked paths. An icon set
   is not worth a dependency. Every `IconButton` carries a `label`, which is its tooltip and its accessible
   name both.

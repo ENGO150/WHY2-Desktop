@@ -78,6 +78,7 @@ import type { ServerForm } from "./servers";
 import { ServerRail, AddServerDialog, useHoldMenu } from "./servers";
 import { AccountDialog, type AccountBox } from "./account";
 import { SettingsDialog } from "./settings-dialog";
+import { applyTheme, cachedTheme, DEFAULT_THEME } from "./themes";
 import { Sidebar } from "./sidebar";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
@@ -218,6 +219,7 @@ function App()
     const [serverName, setServerName] = useState("");
     const [username, setUsername] = useState("");
     const [role, setRole] = useState("user");
+    const [theme, setTheme] = useState(() => cachedTheme() ?? DEFAULT_THEME);
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
@@ -1066,6 +1068,13 @@ function App()
         //...AND, WHERE THE SETTINGS ROW NAMES ONE, THE SERVER TO OPEN ON. THE TWO ARE ASKED FOR TOGETHER
         //BECAUSE THE ANSWER IS AN id INTO THE LIST AND IS WORTH NOTHING WITHOUT IT; THE BRIDGE ALREADY
         //ANSWERS None FOR A ROW THAT HAS SINCE BEEN FORGOTTEN, SO A MISS HERE IS SIMPLY THE LIST
+        //THE PALETTE ON DISK WINS OVER THE BOOT CACHE
+        invoke<string | null>("get_theme").then((stored) =>
+        {
+            setTheme(stored ?? DEFAULT_THEME);
+            applyTheme(stored);
+        }).catch(console.error);
+
         Promise.all([
             invoke<StoredServer[]>("get_servers"),
             invoke<string | null>("get_auto_connect"),
@@ -3706,7 +3715,7 @@ function App()
                 {/* THE SWATCH IS THE ACTUAL ANSI COLOR - EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}
                 {value.color !== null && (
                     <span
-                        className="h-4 w-4 shrink-0 rounded border border-white/15"
+                        className="h-4 w-4 shrink-0 rounded border border-border-strong"
                         style={{ backgroundColor: ANSI_TRUE[value.color] }}
                     />
                 )}
@@ -3801,6 +3810,14 @@ function App()
         });
     })();
 
+    //A SWATCH PRESSED
+    const pickTheme = (id: string) =>
+    {
+        setTheme(id);
+        applyTheme(id);
+        invoke("set_theme", { id: id === DEFAULT_THEME ? "" : id }).catch((error) => setPopupMessage(String(error)));
+    };
+
     //THE SETTINGS DIALOG. IT OWNS THE KEYBOARD WHILE IT IS UP, THE WAY THE TUI'S OVERLAY DOES - THE FOCUS
     //MOVES INTO IT, SO NOTHING TYPED HERE REACHES THE COMPOSER BEHIND IT
     const settingsBox = settings && (
@@ -3820,6 +3837,8 @@ function App()
             commitEdit={commitEdit}
             editSettings={editSettings}
             account={!settings?.server && hasAccount ? (action) => { closeSettings(); send(`/account ${action}`); } : null}
+            theme={settings?.server ? null : theme}
+            pickTheme={pickTheme}
             close={closeSettings}
         />
     );
@@ -4381,7 +4400,7 @@ function App()
                                         pinnedRef.current = true;
                                         setUnread(0);
                                     }}
-                                    className="absolute inset-x-4 bottom-1 flex items-center gap-2 rounded-app bg-accent px-3 py-1.5 text-xs font-semibold text-black/85 shadow-lg"
+                                    className="absolute inset-x-4 bottom-1 flex items-center gap-2 rounded-app bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent shadow-lg"
                                 >
                                     <Icon name="arrow_down" className="h-3.5 w-3.5" />
                                     {unread} new {unread === 1 ? "message" : "messages"}

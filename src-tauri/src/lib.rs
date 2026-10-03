@@ -79,7 +79,7 @@ use state::AppState;
 
 use net::{ connect_to_server, refresh_screens, answer_tofu, request_history, typing };
 use profile::{ request_profiles, save_profile, set_avatar };
-use servers::{ get_servers, save_server, remove_server, get_auto_connect };
+use servers::{ get_servers, save_server, remove_server, get_auto_connect, get_theme, set_theme };
 use input::{ send_input, account_request, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
 use clipboard::copy_text;
@@ -274,6 +274,8 @@ pub fn run()
             save_server,
             remove_server,
             get_auto_connect,
+            get_theme,
+            set_theme,
             window_chrome,
             notify_message,
             notification_target,

@@ -65,6 +65,9 @@ struct ServerFile
     #[serde(default)]
     show_message_ids: bool, //DESKTOP ONLY
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme: Option<String>, //THE WINDOW'S PALETTE
+
     #[serde(default)]
     server: Vec<StoredServer>,
 }
@@ -198,6 +201,23 @@ pub(crate) fn write_own(key: &str, on: bool) -> Result<(), String>
         "show_message_ids" => file.show_message_ids = on,
         _ => return Err(String::from("Unknown setting!")),
     }
+
+    store(&file)
+}
+
+#[tauri::command]
+pub(crate) fn get_theme() -> Option<String>
+{
+    read_file().theme
+}
+
+//AN EMPTY id IS THE DEFAULT
+#[tauri::command]
+pub(crate) fn set_theme(id: String) -> Result<(), String>
+{
+    let mut file = read_file();
+
+    file.theme = Some(id).filter(|id| !id.is_empty());
 
     store(&file)
 }

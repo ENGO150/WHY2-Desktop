@@ -151,7 +151,7 @@ export function AddServerDialog(
                     <button
                         type="submit"
                         disabled={connecting || !form.address}
-                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         Add and connect
                     </button>

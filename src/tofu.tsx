@@ -103,7 +103,7 @@ export function TofuDialog(
                         type="button"
                         onClick={() => answer(true)}
                         disabled={tofu.mismatch && typed !== CHALLENGE}
-                        className={`rounded-app px-4 py-1.5 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${tofu.mismatch ? "bg-error" : "bg-accent"}`}
+                        className={`rounded-app px-4 py-1.5 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${tofu.mismatch ? "bg-error" : "bg-accent"}`}
                     >
                         {tofu.mismatch ? "Replace pinned key" : "Trust and save"}
                     </button>

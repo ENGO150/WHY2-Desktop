@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* THE PALETTE AND WHAT IT MAPS TO, THEN THE PIECES THE WINDOW IS BUILT OUT OF, THEN WHAT ONLY A PHONE
    NEEDS. THEY ARE THREE FILES AND NOT ONE BECAUSE THEY ARE THREE DIFFERENT THINGS TO GO LOOKING FOR */
 @import "./theme.css";
+@import "./themes.css";
 @import "./widgets.css";
 @import "./mobile.css";
 

@@ -17,14 +17,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 //THE SIXTEEN COLORS THE PROTOCOL CARRIES. THE DARK HALF IS LIFTED OFF THE FLOOR: THESE ARE PAINTED ON A
-//NEAR-BLACK SURFACE RATHER THAN IN A TERMINAL, AND black ON black IS NOT A NAME ANYBODY COULD READ
-export const ANSI: Record<number, string> =
-{
-    0: "#6b6b6b", 1: "#e06c75", 2: "#7ec699", 3: "#d7b56b",
-    4: "#7aa2f7", 5: "#c792ea", 6: "#56b6c2", 7: "#c0c0c0",
-    8: "#909090", 9: "#ff6b7a", 10: "#8bea9b", 11: "#ffe07a",
-    12: "#8ab4ff", 13: "#ff8be0", 14: "#7fe6ec", 15: "#ffffff",
-};
+//NEAR-BLACK SURFACE RATHER THAN IN A TERMINAL, AND black ON black IS NOT A NAME ANYBODY COULD READ.
+//THE VALUES ARE theme.css' --ansi-N, SO A LIGHT THEME CAN DARKEN THEM
+export const ANSI: Record<number, string> = Object.fromEntries(
+    Array.from({ length: 16 }, (_, code) => [code, `var(--ansi-${code})`]));
 
 //THE SWATCH IN THE COLOR PALETTE IS THE ACTUAL ANSI COLOR, NOT THE LIFTED ONE - IT IS THERE TO SAY WHICH
 //COLOR IS BEING PICKED, AND A SQUARE OF IT IS BIG ENOUGH TO SEE EVEN AT black

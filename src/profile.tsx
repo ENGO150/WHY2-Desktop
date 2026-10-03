@@ -191,7 +191,7 @@ export function ProfileCard(
                             <button
                                 type="button"
                                 onClick={message}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-app bg-accent px-3 py-2 text-sm font-semibold text-black/85 transition hover:brightness-110"
+                                className="flex flex-1 items-center justify-center gap-2 rounded-app bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition hover:brightness-110"
                             >
                                 <Icon name="at" className="h-4 w-4" />
                                 Message
@@ -366,7 +366,7 @@ export function ProfileEditor(
                         <button
                             type="submit"
                             disabled={!changed || badWebsite || saving}
-                            className="rounded-app bg-accent px-4 py-2 text-sm font-semibold text-black/85 transition hover:brightness-110 disabled:opacity-40"
+                            className="rounded-app bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:opacity-40"
                         >
                             Save
                         </button>

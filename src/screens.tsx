@@ -89,7 +89,7 @@ export function ScreensBox(
 
                                 <span className={`shrink-0 rounded-app px-3 py-1.5 text-xs font-semibold transition ${here
                                     ? "border border-border text-muted"
-                                    : "bg-accent text-black/85"}`}
+                                    : "bg-accent text-on-accent"}`}
                                 >
                                     {here ? "Stop watching" : "Watch"}
                                 </span>

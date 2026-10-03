@@ -40,6 +40,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --faint: #5a5154;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
 
     --accent: #93a0ac;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
+    --on-accent: #000000d9;      /* TEXT ON AN ACCENT BUTTON */
     --brand: #ae7f9b;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
     --notice: #ada0a3;           /* PALE ASH */
     --ok: #9e8a8b;               /* SALMON, WORN DOWN */
@@ -77,6 +78,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --syntax-builtin: #86c9c0;
     --syntax-attr: #f0c9c4;
 
+    /* THE SIXTEEN PROTOCOL COLORS, LIFTED OFF THE FLOOR (theme.ts::ANSI) */
+    --ansi-0: #6b6b6b;  --ansi-1: #e06c75;  --ansi-2: #7ec699;  --ansi-3: #d7b56b;
+    --ansi-4: #7aa2f7;  --ansi-5: #c792ea;  --ansi-6: #56b6c2;  --ansi-7: #c0c0c0;
+    --ansi-8: #909090;  --ansi-9: #ff6b7a;  --ansi-10: #8bea9b; --ansi-11: #ffe07a;
+    --ansi-12: #8ab4ff; --ansi-13: #ff8be0; --ansi-14: #7fe6ec; --ansi-15: #ffffff;
+
     --radius: 8px;
 
     /* THE BAR WE DRAW OURSELVES (titlebar.tsx'S h-8 AND ITS BOTTOM BORDER - ONE ANSWER SPELLED TWICE),
@@ -111,6 +118,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --color-faint: var(--faint);
 
     --color-accent: var(--accent);
+    --color-on-accent: var(--on-accent);
     --color-brand: var(--brand);
     --color-notice: var(--notice);
     --color-ok: var(--ok);
