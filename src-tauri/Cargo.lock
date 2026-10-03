@@ -7209,9 +7209,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.53.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
 dependencies = [
  "bytes",
  "libc",
@@ -8374,9 +8374,9 @@ dependencies = [
 
 [[package]]
 name = "why2-chat"
-version = "2.2.6"
+version = "2.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31ba21ada1219c8874659003cdc7ce6441053c7d0b18e7f887e6289530924ad0"
+checksum = "01e3f1037db43f6988fd93a4d52f9e8e1205aa780d3eb9ee08db09857da6c890"
 dependencies = [
  "audiopus",
  "base64 0.23.1",
