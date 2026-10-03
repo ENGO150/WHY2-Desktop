@@ -121,13 +121,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             *state.last_sent.lock().unwrap() = Instant::now() - ROSTER_GAP;
         },
 
-        //A ROLE WAS SET. THE SERVER NAMES THE USER WHEN IT IS SOMEBODY ELSE, SO THE ONE WITHOUT A NAME
-        //IS OURS - AND THAT ONE DECIDES WHICH COMMANDS THE PALETTE IS ALLOWED TO OFFER
+        //A ROLE WAS SET, ON ANYBODY
         ClientEvent::Role(role, username) =>
         {
-            if username.is_none() { *state.role.lock().unwrap() = role; }
+            if username == *state.username.lock().unwrap() { *state.role.lock().unwrap() = role; }
 
-            emit(app, UiEvent::Role { role: role.to_string(), username });
+            emit(app, UiEvent::Role { role: role.to_string(), rank: rank(role), username });
         },
 
         //None = EVERY PANE, Some(None) = THE LOBBY
@@ -323,7 +322,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //THE PACKET NAMES THE USER WHOLE - THEIR ID, THEIR COLOR AND WHAT THEY ARE ON - SO THE ROSTER
         //ADDS THE ROW ITSELF. NOTHING IS ASKED FOR: A List BEHIND EVERY JOIN IS A PACKET PER ARRIVAL,
         //AND EVERYBODY STARTS IN THE LOBBY
-        ClientEvent::Join(username, username_color, id, device) =>
+        ClientEvent::Join(username, username_color, id, device, role) =>
         {
             say(app, ChatMessage::ok(format!("{username} connected.")).from_server());
 
@@ -334,6 +333,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 id,
                 channel: None,
                 device: device.as_ref().map(|device| device_label(device).to_string()),
+                role: role.to_string(),
+                rank: rank(role),
             } });
         },
 
@@ -370,19 +371,21 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             }
 
             let users = users.into_iter()
-                .map(|OnlineUser { username, username_color, id, channel, device }| OnlineUserInfo
+                .map(|OnlineUser { username, username_color, id, channel, device, role }| OnlineUserInfo
                 {
                     username,
                     username_color,
                     id,
                     channel,
                     device: device.as_ref().map(|device| device_label(device).to_string()),
+                    role: role.to_string(),
+                    rank: rank(role),
                 }).collect();
 
             //A SERVER THAT KEEPS ITS REGISTERED USERS TO ITSELF SENDS NONE AT ALL, WHICH IS NOT THE SAME
             //THING AS SENDING AN EMPTY LIST - THE FIRST HAS NO SUCH PANEL AND THE SECOND HAS AN EMPTY ONE
             let offline = offline.map(|offline| offline.into_iter()
-                .map(|OfflineUser { username, username_color }| OfflineUserInfo { username, username_color })
+                .map(|OfflineUser { username, username_color, role }| OfflineUserInfo { username, username_color, role: role.to_string(), rank: rank(role) })
                 .collect());
 
             emit(app, UiEvent::Users { users, offline });

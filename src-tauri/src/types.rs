@@ -21,6 +21,7 @@ use serde::{ Serialize, Deserialize };
 use why2_chat::
 {
     options,
+    role::Role,
     network::codes::{ MessageColors, Device, UserProfile },
 };
 
@@ -144,6 +145,9 @@ pub(crate) struct ProfileInfo
     pub(crate) website: String,
     pub(crate) status: String,
     pub(crate) avatar: Option<String>, //HASH AS HEX
+
+    #[serde(default)]
+    pub(crate) role: String,
 }
 
 //ONE FILE ON ITS WAY
@@ -166,6 +170,8 @@ pub(crate) struct OnlineUserInfo
     pub(crate) id: usize,
     pub(crate) channel: Option<String>,
     pub(crate) device: Option<String>, //WHAT THEY ARE ON, WHERE THEY SHARE IT
+    pub(crate) role: String,
+    pub(crate) rank: u8, //THE ROLE'S PLACE, LOWEST FIRST
 }
 
 //A REGISTERED USER NOBODY IS CONNECTED AS. THE SERVER SENDS THEM ONLY WHERE show_offline_users SAYS SO,
@@ -176,6 +182,8 @@ pub(crate) struct OfflineUserInfo
 {
     pub(crate) username: String,
     pub(crate) username_color: Option<u8>,
+    pub(crate) role: String,
+    pub(crate) rank: u8,
 }
 
 #[derive(Serialize, Clone)]
@@ -392,7 +400,7 @@ pub(crate) enum UiEvent
     UsernameRejected,                                             //TRY ANOTHER ONE
     PasswordRejected { min: u64 },                                //TRY A LONGER ONE
     Authenticated { role: String },                               //WE ARE IN
-    Role { role: String, username: Option<String> },              //A ROLE WAS SET (None IS OURS)
+    Role { role: String, rank: u8, username: String },            //A ROLE WAS SET, ON ANYBODY
     Message { message: ChatMessage, channel: Option<String> },    //ONE LINE FOR A PANE (None = THE CURRENT ONE)
     Deleted { message_id: u64 },                                  //A STORED MESSAGE WENT
     Hearts { message_id: u64, hearts: Vec<String> },              //A MESSAGE'S HEARTS CHANGED
@@ -553,13 +561,18 @@ impl ProfileInfo
 {
     pub(crate) fn new(username: String, profile: UserProfile) -> Self
     {
-        let UserProfile { bio, pronouns, website, status, avatar } = profile;
+        let UserProfile { bio, pronouns, website, status, avatar, role } = profile;
 
-        Self { username, bio, pronouns, website, status, avatar: avatar.as_ref().map(crate::picture::hex) }
+        Self { username, bio, pronouns, website, status, avatar: avatar.as_ref().map(crate::picture::hex), role: role.to_string() }
     }
 }
 
 //FUNCTIONS
+pub(crate) fn rank(role: Role) -> u8 //LOWEST FIRST
+{
+    role as u8
+}
+
 //HOW A SHARED DEVICE IS NAMED, WORD FOR WORD WITH tui/mod.rs::device_label
 pub(crate) fn device_label(device: &Device) -> &'static str
 {

@@ -1183,19 +1183,28 @@ function App()
                     break;
                 }
 
-                //THE SERVER NAMES THE USER WHEN IT IS SOMEBODY ELSE, SO THE ONE WITHOUT A NAME IS OURS -
-                //AND THAT ONE DECIDES WHICH COMMANDS THE PALETTE IS ALLOWED TO OFFER
+                //A ROLE WAS SET, ON ANYBODY
                 case "role":
                 {
-                    const { role, username } = payload.data;
+                    const { role, rank, username } = payload.data;
 
-                    if (username === null)
+                    setUsers((previous) => sortRoster(previous.map((user) =>
+                        user.username === username ? { ...user, role, rank } : user), usernameRef.current));
+
+                    setOffline((previous) => previous?.map((user) =>
+                        user.username === username ? { ...user, role, rank } : user) ?? null);
+
+                    setProfiles((previous) => previous[username]
+                        ? { ...previous, [username]: { ...previous[username], role } }
+                        : previous);
+
+                    if (username === usernameRef.current)
                     {
                         setRole(role);
                         refreshCommands();
+                        setPopupMessage(`You are now ${role}.`);
                     }
 
-                    setPopupMessage(username === null ? `You are now ${role}.` : `${username} is now ${role}.`);
                     break;
                 }
 
@@ -1660,8 +1669,8 @@ function App()
                         {
                             if (!listed || listed.some((user) => user.username === gone.username)) return listed;
 
-                            return sortOffline([...listed,
-                                { username: gone.username, username_color: gone.username_color }]);
+                            return sortOffline([...listed, { username: gone.username,
+                                username_color: gone.username_color, role: gone.role, rank: gone.rank }]);
                         });
                     }
 
@@ -3943,6 +3952,10 @@ function App()
     const cardUser = card ? users.find((user) => user.username === card.username) ?? null : null;
     const cardOwn = card !== null && card.username === username;
 
+    //THEIR ROLE, ROSTER FIRST
+    const cardRole = card && (cardOwn ? role
+        : cardUser?.role ?? offline?.find((user) => user.username === card.username)?.role ?? profiles[card.username]?.role ?? null);
+
     const profileCard = card && (
         <ProfileCard
             username={card.username}
@@ -3952,7 +3965,7 @@ function App()
             color={colorOf(card.username)}
             online={cardUser}
             own={cardOwn}
-            role={cardOwn ? role : null}
+            role={cardRole}
             config={config}
             anchor={card.anchor}
             narrow={narrow}

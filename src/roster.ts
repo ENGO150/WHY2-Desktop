@@ -18,12 +18,33 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import type { OnlineUser, OfflineUser } from "./types";
 
-//US FIRST, THE REST BY ID (tui/state.rs::sort_online). THE ROSTER IS NOT ASKED FOR AGAIN ONCE THE SESSION
-//IS UP - IT ARRIVES WHOLE AT LOGIN AND IS MOVED BY THE JOINS AND THE LEAVES, SO THE ORDER IS OURS TO KEEP
+//HIGHEST ROLE FIRST, US FIRST IN OURS, THE REST BY ID (tui/state.rs::sort_online)
 export function sortRoster(users: OnlineUser[], username: string): OnlineUser[]
 {
-    return users.slice().sort((one, other) =>
-        Number(one.username !== username) - Number(other.username !== username) || one.id - other.id);
+    return users.slice().sort((one, other) => other.rank - one.rank
+        || Number(one.username !== username) - Number(other.username !== username) || one.id - other.id);
+}
+
+//THE ROSTER SPLIT BY ROLE (tui/state.rs::online_sections)
+export function rosterSections(users: OnlineUser[]): OnlineUser[][]
+{
+    const sections: OnlineUser[][] = [];
+
+    for (const user of users)
+    {
+        const last = sections[sections.length - 1];
+
+        if (last && last[0].role === user.role) last.push(user);
+        else sections.push([user]);
+    }
+
+    return sections;
+}
+
+//owner -> Owners (tui/draw.rs::section_label)
+export function sectionLabel(role: string): string
+{
+    return `${role.charAt(0).toUpperCase()}${role.slice(1)}s`;
 }
 
 //AND THE OTHERS BY NAME, WHICH IS THE ONLY ORDER A LIST OF PEOPLE WITH NO IDS HAS (THE TUI KEEPS THEM

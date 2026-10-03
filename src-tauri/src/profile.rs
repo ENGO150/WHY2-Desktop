@@ -120,7 +120,7 @@ pub(crate) async fn save_profile(profile: ProfileInfo, state: State<'_, AppState
             pronouns: profile.pronouns,
             website: website.to_string(),
             status: profile.status,
-            avatar: None,
+            ..UserProfile::default()
         },
     }).await;
 

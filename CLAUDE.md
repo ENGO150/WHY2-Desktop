@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.6", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.2.7", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.6", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.2.7", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -550,7 +550,9 @@ The window is nearly monochrome on purpose. The surfaces are a near-black stack 
 `tui/theme.rs`'s meanings — the active thing, a notice, what went right, an error, presence — pulled most of
 the way towards grey, so **the only saturated thing in the window is what somebody said**: the sixteen
 protocol colors in `ANSI`. `theme.css` holds the whole palette as CSS custom properties, mapped to Tailwind
-tokens in one `@theme inline` block beside them.
+tokens in one `@theme inline` block beside them. **2.2.7's `theme` key (`client.toml`, thirteen palettes,
+light ones among them) is the TUI's alone**: it is neither a settings row nor read here, and the window stays
+the one dark palette it was designed in.
 
 The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
 characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
@@ -820,7 +822,7 @@ row, the one the command takes no ID for. Prefer extending the command path over
 
 `get_commands` reflects `command::COMMAND_LIST` filtered by the role the server granted us
 (`CommandInfo::available`), so the palette follows a promotion without a reconnect — the frontend re-invokes it
-whenever a `role` event names no user (that one is ours). Hiding a command is cosmetic; the server checks every
+whenever a `role` event names us. Hiding a command is cosmetic; the server checks every
 privileged packet itself.
 
 ### The palette
@@ -1668,11 +1670,22 @@ Everything else is the shape the window already has:
 ### The roster
 
 **Nobody asks for the roster any more.** The server sends a `List` the moment it lets somebody in, and every
-arrival after that is a `Join` that names the user whole — their id, their color and what they are on — so
+arrival after that is a `Join` that names the user whole — their id, their color, what they are on and their
+role — so
 the window adds the row itself (`UiEvent::UserJoined`) and the `Leave` that names the id drops it. That is
 `tui/event.rs`'s own arrangement, and it is what the silent `List` behind every join was costing: a packet
 per arrival for an answer we were already being told. `sortRoster` in `roster.ts` keeps the order
-`tui/state.rs::sort_online` keeps — us first, the rest by id.
+`tui/state.rs::sort_online` keeps — the highest role first, us first within ours, the rest by id.
+
+**The member column is one section per role** (2.2.7, `Owners — 1` over `Moderators — 2` over `Users — 5`),
+which is the TUI's sidebar: `rosterSections` is `online_sections`, cutting the sorted roster wherever the
+role changes, and `sectionLabel` is `section_label`. Every row on the wire carries the role's name and its
+`rank` (`types.rs::rank`, the enum's place, lowest first), so the window orders by a number rather than
+keeping a copy of the crate's table of ranks. **A role change is broadcast to everybody** as
+`ServerRole { username, role }` — the name is always there, ours included — and the `role` event moves that
+row (online or offline) and patches the stored profile; only one naming **us** is announced (`You are now
+…`, the TUI's own), sets our role and re-asks `get_commands`. The issuer is told nothing in the pane: the row
+moving into its new section is the answer. The offline section is not split, as it is not in the TUI.
 
 What the roster is therefore **not** kept honest about is which channel somebody is standing in: nothing is
 broadcast when they move, so a row's `#channel` is as old as the last `List`. The channel *list* is not
@@ -1699,8 +1712,8 @@ sends `/server ban <name>` and is offered on an **offline** row too; `Kick` (`/s
 `Ban IP` (`/server banip <ID>` — the release took the username back off it, since the server keeps no
 last-seen address) are online only.
 `Set role` unfolds the ranks (`get_vocabulary` `roles`, asked when it opens) and sends
-`/server role <name> <role>`, online or offline — the roster carries nobody's rank, so every rank is offered
-and the server refuses what it will not grant. Every one of those is armed by one press and fired by the
+`/server role <name> <role>`, online or offline — the rank they already hold is marked and dead, and the
+server refuses what it will not grant. Every one of those is armed by one press and fired by the
 next, as `restart_server` is, and the server answers a ban with the ban list, which lands in the pane as a
 `/server bans` would. The menu goes away if its
 person leaves while it is open, rather than holding an id the server may hand to somebody else.
@@ -1720,8 +1733,9 @@ settings box (`/profile [USER]`) and ours as an editable one. This window does w
 instead: **a name is a button**. A member row, an offline row, a face or a name in the pane, and our own row
 at the foot of the sidebar all open `ProfileCard` (`profile.tsx`) — beside what was clicked, a sheet on a
 phone, centred when there was nothing to stand beside — carrying the banner in the name's colour, the
-avatar, pronouns, status, the bio (linkified), the website (opened only when it is `http(s)`), where they are
-and what they are on, and a `Message` button that opens the conversation. Our own card carries `Edit
+avatar, pronouns, status, the bio (linkified), the website (opened only when it is `http(s)`), where they are,
+what they are on and their role (2.2.7's `UserProfile::role`, read off the roster first since that is what a
+role change moves), and a `Message` button that opens the conversation. Our own card carries `Edit
 profile` instead, which is `ProfileEditor`: the four fields held until `Save` (the server's answer is the
 profile as stored, so a refused field snaps back), and the avatar, which is **immediate** — `Change avatar`
 picks a file and `set_avatar` cuts and uploads it at once, `Remove avatar` drops it.

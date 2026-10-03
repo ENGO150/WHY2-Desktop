@@ -24,7 +24,7 @@ import type { OnlineUser, OfflineUser, ClientConfig, VocabularyValue } from "./t
 import { Avatar, SectionLabel } from "./components";
 import { Icon } from "./icons";
 import { messageColor } from "./messages";
-import { deviceIcon } from "./roster";
+import { deviceIcon, rosterSections, sectionLabel } from "./roster";
 import { useHoldMenu, MENU_WIDTH, type HeldMenu } from "./servers";
 import type { People } from "./profile";
 
@@ -36,6 +36,7 @@ interface HeldMember
 {
     username: string;
     user: OnlineUser | null;
+    role: string;
 }
 
 //WHAT OUR ROLE LETS US DO TO SOMEBODY
@@ -88,55 +89,60 @@ export function MemberColumn(
                             ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
                             : "flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar"}>
                             <div className="scroller scroller-quiet flex-1 px-2 pb-3">
-                                <SectionLabel>Online — {users.length}</SectionLabel>
+                                {/* ONE SECTION PER ROLE, THE HIGHEST FIRST */}
+                                {rosterSections(users).map((section) => (
+                                    <div key={section[0].role}>
+                                        <SectionLabel>{sectionLabel(section[0].role)} — {section.length}</SectionLabel>
 
-                                {users.map((user) =>
-                                {
-                                    const own = user.username === username;
+                                        {section.map((user) =>
+                                        {
+                                            const own = user.username === username;
 
-                                    //EVERYBODY IS NAMED IN THEIR OWN COLOR HERE TOO - THE ACCENT IS ONLY
-                                    //WHAT IS LEFT ON OUR OWN ROW WHERE THERE IS NO COLOR TO USE
-                                    const color = messageColor(config, user.username_color);
+                                            //EVERYBODY IS NAMED IN THEIR OWN COLOR HERE TOO - THE ACCENT IS ONLY
+                                            //WHAT IS LEFT ON OUR OWN ROW WHERE THERE IS NO COLOR TO USE
+                                            const color = messageColor(config, user.username_color);
 
-                                    //WHAT THEY ARE ON, WHERE THEY SHARE IT. THE TUI PRINTS THE WORD; A
-                                    //WINDOW HAS THE LINE ART, AND IT SITS ON THE RIGHT EDGE EITHER WAY
-                                    const device = user.device ? deviceIcon(user.device) : null;
+                                            //WHAT THEY ARE ON, WHERE THEY SHARE IT. THE TUI PRINTS THE WORD; A
+                                            //WINDOW HAS THE LINE ART, AND IT SITS ON THE RIGHT EDGE EITHER WAY
+                                            const device = user.device ? deviceIcon(user.device) : null;
 
-                                    const status = people.status(user.username);
+                                            const status = people.status(user.username);
 
-                                    return (
-                                        <button
-                                            key={user.id}
-                                            type="button"
-                                            title={user.channel ? `${user.username} in #${user.channel}` : undefined}
-                                            onClick={press(user.username)}
-                                            {...bind({ username: user.username, user })}
-                                            data-member={user.username}
-                                            className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
-                                        >
-                                            <div className="relative shrink-0">
-                                                <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
-                                                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
-                                            </div>
-
-                                            <div className="min-w-0 flex-1">
-                                                <div
-                                                    className={`truncate text-sm ${color ? "" : own ? "text-accent" : "text-muted"}`}
-                                                    style={color ? { color } : undefined}
+                                            return (
+                                                <button
+                                                    key={user.id}
+                                                    type="button"
+                                                    title={user.channel ? `${user.username} in #${user.channel}` : undefined}
+                                                    onClick={press(user.username)}
+                                                    {...bind({ username: user.username, user, role: user.role })}
+                                                    data-member={user.username}
+                                                    className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                                 >
-                                                    {user.username}
-                                                </div>
-                                                {status
-                                                    ? <div className="truncate text-[11px] text-muted">{status}</div>
-                                                    : user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
-                                            </div>
+                                                    <div className="relative shrink-0">
+                                                        <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
+                                                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
+                                                    </div>
 
-                                            {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
+                                                    <div className="min-w-0 flex-1">
+                                                        <div
+                                                            className={`truncate text-sm ${color ? "" : own ? "text-accent" : "text-muted"}`}
+                                                            style={color ? { color } : undefined}
+                                                        >
+                                                            {user.username}
+                                                        </div>
+                                                        {status
+                                                            ? <div className="truncate text-[11px] text-muted">{status}</div>
+                                                            : user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
+                                                    </div>
 
-                                            {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
-                                        </button>
-                                    );
-                                })}
+                                                    {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
+
+                                                    {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
 
                                 {/* THE SERVER'S OWN USERS WHO ARE NOT HERE. THEIR CARD HAS NO MESSAGE
                                     BUTTON - A PM NEEDS AN ID, AND SOMEBODY OFFLINE HAS NONE */}
@@ -154,7 +160,7 @@ export function MemberColumn(
                                                     key={user.username}
                                                     type="button"
                                                     onClick={press(user.username)}
-                                                    {...bind({ username: user.username, user: null })}
+                                                    {...bind({ username: user.username, user: null, role: user.role })}
                                                     data-member={user.username}
                                                     className={`flex w-full select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
                                                 >
@@ -215,7 +221,7 @@ function MemberMenu(
     close: () => void;
 })
 {
-    const { username, user } = at.value;
+    const { username, user, role: held } = at.value;
 
     //MODERATION TAKES A SECOND PRESS
     const [armed, setArmed] = useState<Action | null>(null);
@@ -308,8 +314,9 @@ function MemberMenu(
             )}
 
             {!own && moderation.role && picking && roles?.map((role) => (
-                <button key={role} type="button" onClick={() => grant(role)} className={`${item} pl-8`}>
-                    {armed === `role:${role}` ? `Press again to make ${role}` : role}
+                <button key={role} type="button" disabled={role === held} onClick={() => grant(role)} className={`${item} pl-8 disabled:text-faint disabled:hover:bg-transparent`}>
+                    <span className="flex-1">{armed === `role:${role}` ? `Press again to make ${role}` : role}</span>
+                    {role === held && <Icon name="check" className="h-4 w-4" />}
                 </button>
             ))}
         </div>,

@@ -161,6 +161,7 @@ export interface ProfileInfo
     website: string;
     status: string;
     avatar: string | null; //HASH AS HEX
+    role: string;
 }
 
 //ONE FILE ON ITS WAY, AND HOW FAR IT GOT
@@ -183,6 +184,8 @@ export interface OnlineUser
     id: number;
     channel: string | null;
     device: string | null; //WHAT THEY ARE ON, WHERE THEY SHARE IT - "tui", "desktop" OR "phone"
+    role: string;
+    rank: number; //THE ROLE'S PLACE, LOWEST FIRST
 }
 
 //A REGISTERED USER NOBODY IS CONNECTED AS. A SERVER THAT KEEPS ITS REGISTERED USERS TO ITSELF SENDS NONE
@@ -191,6 +194,8 @@ export interface OfflineUser
 {
     username: string;
     username_color: number | null;
+    role: string;
+    rank: number;
 }
 
 //THE NAME OF THE SET A PARAMETER ACCEPTS - "free" IS EVERYTHING ELSE, AND HAS NOTHING TO OFFER
@@ -403,7 +408,7 @@ export type BridgeEvent =
     | { event: "username_rejected"; data?: null }
     | { event: "password_rejected"; data: { min: number } }
     | { event: "authenticated"; data: { role: string } }
-    | { event: "role"; data: { role: string; username: string | null } }
+    | { event: "role"; data: { role: string; rank: number; username: string } }
     | { event: "message"; data: { message: ChatMessage; channel: string | null } } //null = THE CURRENT PANE
     | { event: "deleted"; data: { message_id: number } }
     | { event: "hearts"; data: { message_id: number; hearts: string[] } }
