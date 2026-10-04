@@ -581,8 +581,10 @@ drawn (see **Images**).
 
 ### Themes
 
-The window has **its own** themes: four flat palettes, two dark (`why2` — Black, the default and `:root`
-itself — and `dark`) and two light (`light`, `paper`). `themes.ts` is the list — id, name, whether it is
+The window has **its own** themes: twelve flat palettes, six dark (`why2` — Black, the default and `:root`
+itself — `dark`, and the tinted `midnight`, `forest`, `plum`, `mocha`) and six light (`light`, `paper`, and
+the tinted `sky`, `mint`, `rose`, `lavender`). A light palette's block sits **after** the `data-tone="light"`
+one in `themes.css`, since both are one attribute deep and the later one wins where they touch (`--code-bg`). `themes.ts` is the list — id, name, whether it is
 light, and the three colours its little window preview is drawn from — and `themes.css` is the palettes,
 each a block of the same custom properties `theme.css` declares, so **nothing in a component knows a theme
 exists**: it is all tokens. `applyTheme` puts two attributes on `<html>`: `data-theme` (the id, absent for
@@ -592,7 +594,7 @@ theme shares). A stored id that is not in the list any more falls back to the de
 It is stored **beside the server list** (`theme` in `desktop_servers.toml`, `get_theme`/`set_theme`), for the
 same reason `auto_connect` is: `client.toml` is the terminal client's too, and its own `theme` key means
 something else. The empty id is the default. The swatches are the `Appearance` section at the top of our own
-settings dialog — buttons and not rows, like the `Account` ones — and a press applies the palette at once.
+settings dialog, a row of the dark ones over a row of the light ones — buttons and not rows, like the `Account` ones — and a press applies the palette at once.
 Because the bridge answers a frame or two after the page is up, the last palette is also **cached in
 `localStorage`** and put on the page in `main.tsx` before the first render; the file wins when it answers.
 `index.html`'s boot screen stays `#050405` whatever the theme, since the mark is what it is there to show.

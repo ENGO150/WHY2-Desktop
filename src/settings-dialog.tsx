@@ -265,8 +265,13 @@ export function SettingsDialog(
             <div className="scroller h-[min(640px,70vh)] flex-1 px-6 pb-6 pt-0">
                 {/* THE WINDOW'S PALETTE */}
                 {theme !== null && section("Appearance", (
-                    <div className="flex flex-wrap gap-4 px-4 py-4">
-                        {THEMES.map(swatch)}
+                    <div className="flex flex-col gap-4 px-4 py-4">
+                        {/* DARK, THEN LIGHT */}
+                        {[false, true].map((light) => (
+                            <div key={String(light)} className="flex flex-wrap gap-4">
+                                {THEMES.filter((entry) => entry.light === light).map(swatch)}
+                            </div>
+                        ))}
                     </div>
                 ), "appearance")}
 

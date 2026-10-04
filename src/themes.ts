@@ -34,8 +34,16 @@ export const THEMES: Theme[] =
 [
     { id: "why2", name: "Black", light: false, swatch: ["#0a0a0a", "#000000", "#e5e3dc"] },
     { id: "dark", name: "Dark", light: false, swatch: ["#191919", "#1e1e1e", "#e5e3dc"] },
+    { id: "midnight", name: "Midnight", light: false, swatch: ["#0f131a", "#131821", "#6ea8fe"] },
+    { id: "forest", name: "Forest", light: false, swatch: ["#0f1511", "#131a15", "#6cc28a"] },
+    { id: "plum", name: "Plum", light: false, swatch: ["#161019", "#1a141e", "#b98cf0"] },
+    { id: "mocha", name: "Mocha", light: false, swatch: ["#1a1511", "#1e1914", "#e39a5c"] },
     { id: "light", name: "Light", light: true, swatch: ["#f5f5f3", "#ffffff", "#252525"] },
     { id: "paper", name: "Paper", light: true, swatch: ["#f4f1ea", "#fbfaf6", "#2a2620"] },
+    { id: "sky", name: "Sky", light: true, swatch: ["#eef2f7", "#f9fbfd", "#2f6fd6"] },
+    { id: "mint", name: "Mint", light: true, swatch: ["#edf3ef", "#f8fbf9", "#2a8a55"] },
+    { id: "rose", name: "Rose", light: true, swatch: ["#f7eef0", "#fdf9fa", "#c4456a"] },
+    { id: "lavender", name: "Lavender", light: true, swatch: ["#f1eef7", "#fbfafd", "#7652c9"] },
 ];
 
 export function findTheme(id: string | null | undefined): Theme

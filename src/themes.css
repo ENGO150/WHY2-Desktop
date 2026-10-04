@@ -66,6 +66,86 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --brand: #2a2620;
 }
 
+:root[data-theme="midnight"]
+{
+    --deep: #0a0d13;
+    --sidebar: #0f131a;
+    --chat: #131821;
+    --raised: #1a2029;
+    --overlay: #1c232d;
+
+    --text: #dfe4ec;
+    --muted: #8c95a5;
+    --faint: #5c6574;
+
+    --accent: #6ea8fe;
+    --brand: #dfe4ec;
+
+    --code-bg: #0e1218;
+    --md-quote: #4a5465;
+    --md-rule: #262d3a;
+}
+
+:root[data-theme="forest"]
+{
+    --deep: #0a0f0c;
+    --sidebar: #0f1511;
+    --chat: #131a15;
+    --raised: #19221c;
+    --overlay: #1b251e;
+
+    --text: #dde6df;
+    --muted: #8d9a90;
+    --faint: #5d6a60;
+
+    --accent: #6cc28a;
+    --brand: #dde6df;
+
+    --code-bg: #0d130f;
+    --md-quote: #4b5a4f;
+    --md-rule: #253029;
+}
+
+:root[data-theme="plum"]
+{
+    --deep: #100b13;
+    --sidebar: #161019;
+    --chat: #1a141e;
+    --raised: #211a26;
+    --overlay: #241c29;
+
+    --text: #e7dfea;
+    --muted: #9b8fa2;
+    --faint: #675d6e;
+
+    --accent: #b98cf0;
+    --brand: #e7dfea;
+
+    --code-bg: #140f17;
+    --md-quote: #5a4d62;
+    --md-rule: #2f2636;
+}
+
+:root[data-theme="mocha"]
+{
+    --deep: #14100d;
+    --sidebar: #1a1511;
+    --chat: #1e1914;
+    --raised: #251f19;
+    --overlay: #29221c;
+
+    --text: #ece2d6;
+    --muted: #a29483;
+    --faint: #6e6256;
+
+    --accent: #e39a5c;
+    --brand: #ece2d6;
+
+    --code-bg: #18130f;
+    --md-quote: #5e5246;
+    --md-rule: #332b24;
+}
+
 /* ANYTHING LIGHT */
 :root[data-tone="light"]
 {
@@ -112,4 +192,88 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 :root[data-theme="paper"]
 {
     --code-bg: #f3efe6;
+}
+
+:root[data-theme="sky"]
+{
+    --deep: #e3e9f0;
+    --sidebar: #eef2f7;
+    --chat: #f9fbfd;
+    --raised: #ffffff;
+    --overlay: #ffffff;
+
+    --border: #0b1a3010;
+    --border-strong: #0b1a3020;
+
+    --text: #1e2633;
+    --muted: #7a8597;
+    --faint: #aab3c1;
+
+    --accent: #2f6fd6;
+    --brand: #1e2633;
+
+    --code-bg: #f0f4f8;
+}
+
+:root[data-theme="mint"]
+{
+    --deep: #e2ebe5;
+    --sidebar: #edf3ef;
+    --chat: #f8fbf9;
+    --raised: #ffffff;
+    --overlay: #ffffff;
+
+    --border: #0a301a10;
+    --border-strong: #0a301a20;
+
+    --text: #1d2a22;
+    --muted: #76877c;
+    --faint: #a8b5ac;
+
+    --accent: #2a8a55;
+    --brand: #1d2a22;
+
+    --code-bg: #eff5f1;
+}
+
+:root[data-theme="rose"]
+{
+    --deep: #f0e4e6;
+    --sidebar: #f7eef0;
+    --chat: #fdf9fa;
+    --raised: #ffffff;
+    --overlay: #ffffff;
+
+    --border: #3a0a1610;
+    --border-strong: #3a0a1620;
+
+    --text: #2e2023;
+    --muted: #93797f;
+    --faint: #c2abb0;
+
+    --accent: #c4456a;
+    --brand: #2e2023;
+
+    --code-bg: #f8eff1;
+}
+
+:root[data-theme="lavender"]
+{
+    --deep: #e8e4f0;
+    --sidebar: #f1eef7;
+    --chat: #fbfafd;
+    --raised: #ffffff;
+    --overlay: #ffffff;
+
+    --border: #1e0a3a10;
+    --border-strong: #1e0a3a20;
+
+    --text: #26213a;
+    --muted: #857e98;
+    --faint: #b4aec4;
+
+    --accent: #7652c9;
+    --brand: #26213a;
+
+    --code-bg: #f3f0f8;
 }

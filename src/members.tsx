@@ -88,12 +88,7 @@ export function MemberColumn(
         <aside ref={panelRef} className={narrow
             ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
             : "flex w-[240px] shrink-0 flex-col border-l border-border bg-sidebar"}>
-            <header className="flex h-14 shrink-0 items-center gap-2 px-4">
-                <span className="text-[14px] font-semibold">Members</span>
-                <span className="text-[13px] text-faint">{users.length}</span>
-            </header>
-
-            <div className="scroller scroller-quiet flex-1 px-2 pb-3">
+            <div className="scroller scroller-quiet flex-1 px-2 pb-3 pt-3">
                 {/* HIGHEST ROLE FIRST */}
                 {rosterSections(users).map((section) => (
                     <div key={section[0].role}>
