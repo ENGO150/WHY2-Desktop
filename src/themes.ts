@@ -22,8 +22,7 @@ export interface Theme
     id: string;
     name: string;
     light: boolean;
-    gradient: boolean;
-    swatch: string; //WHAT ITS BUTTON IS PAINTED IN
+    swatch: [string, string, string]; //GROUND, SURFACE, ACCENT
 }
 
 export const DEFAULT_THEME = "why2";
@@ -33,21 +32,10 @@ const CACHE = "why2-theme";
 
 export const THEMES: Theme[] =
 [
-    { id: "why2", name: "WHY2", light: false, gradient: false, swatch: "#0d0b0c" },
-    { id: "dark", name: "Dark", light: false, gradient: false, swatch: "#1c1d21" },
-    { id: "ash", name: "Ash", light: false, gradient: false, swatch: "#313338" },
-    { id: "light", name: "Light", light: true, gradient: false, swatch: "#ffffff" },
-
-    { id: "sunset", name: "Sunset", light: false, gradient: true, swatch: "linear-gradient(150deg, #3b1f6e, #86356b, #c6683a)" },
-    { id: "aurora", name: "Aurora", light: false, gradient: true, swatch: "linear-gradient(150deg, #0b3b38, #1b6656, #263f86, #45286f)" },
-    { id: "twilight", name: "Twilight", light: false, gradient: true, swatch: "linear-gradient(150deg, #11163f, #2a2c84, #5a46b8)" },
-    { id: "crimson", name: "Crimson", light: false, gradient: true, swatch: "linear-gradient(150deg, #160205, #5a0c17, #24030a)" },
-    { id: "forest", name: "Forest", light: false, gradient: true, swatch: "linear-gradient(150deg, #10231a, #2a4a2e, #55592a)" },
-    { id: "lagoon", name: "Lagoon", light: false, gradient: true, swatch: "linear-gradient(150deg, #0a2645, #13557a, #23807e)" },
-    { id: "neon", name: "Neon", light: false, gradient: true, swatch: "linear-gradient(150deg, #170a3a, #6e1c86, #0d7395)" },
-    { id: "mint", name: "Mint", light: true, gradient: true, swatch: "linear-gradient(150deg, #c3eed8, #a5d9c0, #dcf1c2)" },
-    { id: "citrus", name: "Citrus", light: true, gradient: true, swatch: "linear-gradient(150deg, #fde2a4, #f8c6a0, #f3a59f)" },
-    { id: "cotton", name: "Cotton candy", light: true, gradient: true, swatch: "linear-gradient(150deg, #f7d2e5, #e2d4f6, #cde3fa)" },
+    { id: "why2", name: "Black", light: false, swatch: ["#0a0a0a", "#000000", "#e5e3dc"] },
+    { id: "dark", name: "Dark", light: false, swatch: ["#191919", "#1e1e1e", "#e5e3dc"] },
+    { id: "light", name: "Light", light: true, swatch: ["#f5f5f3", "#ffffff", "#252525"] },
+    { id: "paper", name: "Paper", light: true, swatch: ["#f4f1ea", "#fbfaf6", "#2a2620"] },
 ];
 
 export function findTheme(id: string | null | undefined): Theme
@@ -66,9 +54,6 @@ export function applyTheme(id: string | null | undefined)
 
     if (theme.light) root.dataset.tone = "light";
     else delete root.dataset.tone;
-
-    if (theme.gradient) root.dataset.backdrop = theme.light ? "light" : "dark";
-    else delete root.dataset.backdrop;
 
     try { localStorage.setItem(CACHE, theme.id); } catch { /* NO STORAGE */ }
 }

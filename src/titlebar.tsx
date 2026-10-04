@@ -52,11 +52,8 @@ const EDGES: [ResizeDirection, string][] =
     ["SouthEast", "bottom-0 right-0 h-2.5 w-2.5 cursor-nwse-resize"],
 ];
 
-//THE BAR THE SYSTEM WOULD HAVE DRAWN, DRAWN BY THE PROGRAM INSTEAD: THE MARK AND THE NAME ON THE LEFT,
-//THE THREE BUTTONS ON THE RIGHT, AND THE WHOLE WIDTH BETWEEN THEM A PLACE TO PICK THE WINDOW UP BY.
-//data-tauri-drag-region IS WHAT MAKES IT ONE - IT IS ANSWERED BY THE CRATE, WHICH ALSO TAKES THE
-//DOUBLE-CLICK - SO EVERYTHING INSIDE IT THAT IS NOT A BUTTON HAS TO LET THE PRESS THROUGH TO IT
-export function TitleBar({ chrome, title }: { chrome: WindowChrome; title: string })
+//OUR OWN TITLE BAR: THE MARK AND THE WINDOW BUTTONS
+export function TitleBar({ chrome }: { chrome: WindowChrome })
 {
     const [maximized, setMaximized] = useState(false);
 
@@ -64,8 +61,7 @@ export function TitleBar({ chrome, title }: { chrome: WindowChrome; title: strin
 
     useEffect(() =>
     {
-        //THE MIDDLE BUTTON FOLLOWS THE WINDOW RATHER THAN THE OTHER WAY ROUND: A DOUBLE-CLICK ON THE BAR,
-        //A SNAP TO AN EDGE AND THE WM'S OWN SHORTCUT ALL ARRIVE HERE AS NOTHING BUT A RESIZE
+        //THE MIDDLE BUTTON FOLLOWS THE WINDOW
         const read = () => { win.isMaximized().then(setMaximized).catch(() => {}); };
 
         read();
@@ -81,13 +77,12 @@ export function TitleBar({ chrome, title }: { chrome: WindowChrome; title: strin
                 data-tauri-drag-region
                 style={chrome === "native" ? { paddingLeft: LIGHTS } : undefined}
 
-                //relative z-50 AND NOT MERELY A ROW AT THE TOP: THE DRAWERS OF A NARROW WINDOW ARE fixed
-                //AGAINST THE VIEWPORT AND WOULD OTHERWISE SLIDE OVER THE ONLY WAY TO CLOSE THE PROGRAM
+                //ABOVE THE DRAWERS
                 className={`relative z-50 flex h-8 shrink-0 select-none items-center gap-2 border-b border-border bg-deep ${chrome === "native" ? "" : "pl-3"}`}
             >
-                {/* THE PRESS HAS TO REACH THE BAR ITSELF, SO NOTHING THAT IS NOT A BUTTON TAKES ONE */}
-                <img src="/why2.svg" alt="" className="pointer-events-none h-4 w-4 opacity-70" />
-                <span className="pointer-events-none text-xs font-semibold tracking-wide text-muted">{title}</span>
+                {/* NOTHING BUT THE BUTTONS TAKES A PRESS */}
+                <img src="/why2.svg" alt="" className="pointer-events-none h-4 w-4 rounded-[4px]" />
+                <span className="pointer-events-none text-[12px] font-semibold text-muted">WHY2</span>
 
                 {chrome === "buttons" && (
                     <div className="ml-auto flex h-full items-stretch">
@@ -99,15 +94,12 @@ export function TitleBar({ chrome, title }: { chrome: WindowChrome; title: strin
                             onClick={() => { win.toggleMaximize().catch(() => {}); }}
                         />
 
-                        {/* THE ONE BUTTON THAT IS RED EVERYWHERE, AND THE ONLY PLACE IN THIS WINDOW WHERE
-                            THE ERROR COLOUR MEANS "THIS ENDS SOMETHING" RATHER THAN "SOMETHING WENT WRONG" */}
                         <WindowButton icon="close" label="Close" close onClick={() => { win.close().catch(() => {}); }} />
                     </div>
                 )}
             </header>
 
-            {/* AND THE EDGES, WHICH ONLY EXIST WHERE WE TOOK THE FRAME AWAY - A MAXIMIZED WINDOW HAS NO
-                EDGES TO PULL, AND A STRIP OVER THE SCREEN'S OWN IS A STRIP OVER SOMEBODY'S SCROLLBAR */}
+            {/* RESIZE EDGES, ONLY WHILE THERE ARE EDGES */}
             {chrome === "buttons" && !maximized && EDGES.map(([direction, where]) => (
                 <div
                     key={direction}
@@ -124,8 +116,7 @@ export function TitleBar({ chrome, title }: { chrome: WindowChrome; title: strin
     );
 }
 
-//ONE OF THE THREE. THEY ARE NOT IconButton: THOSE ARE ROUNDED, SPACED AND FINGERTIP-SIZED, AND THESE ARE
-//A ROW OF SQUARES RUNNING INTO THE CORNER OF THE GLASS, WHICH IS WHERE EVERY WINDOW HAS PUT THEM
+//ONE WINDOW BUTTON, SQUARE INTO THE CORNER
 function WindowButton({ icon, label, onClick, close }: { icon: string; label: string; onClick: () => void; close?: boolean })
 {
     return (
@@ -134,7 +125,7 @@ function WindowButton({ icon, label, onClick, close }: { icon: string; label: st
             title={label}
             aria-label={label}
             onClick={onClick}
-            className={`flex w-[46px] items-center justify-center text-muted transition-colors ${close ? "hover:bg-error hover:text-deep" : "hover:bg-hover hover:text-text"}`}
+            className={`flex w-[44px] items-center justify-center text-muted transition-colors ${close ? "hover:bg-error hover:text-deep" : "hover:bg-hover hover:text-text"}`}
         >
             <Icon name={icon} className="h-3.5 w-3.5" />
         </button>

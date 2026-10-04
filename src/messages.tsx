@@ -22,7 +22,7 @@ import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus, 
 import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
-import { Avatar } from "./components";
+import { Avatar, MenuBox, MENU_ITEM } from "./components";
 import { branches, linkParts, sentAt } from "./format";
 import { mentions } from "./palette";
 import { deviceIcon } from "./roster";
@@ -30,8 +30,7 @@ import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, ty
 import hljs from "highlight.js/lib/common";
 import katex from "katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { createPortal } from "react-dom";
-import { MENU_WIDTH, type HeldMenu } from "./servers";
+import type { HeldMenu } from "./servers";
 
 //SCREENS ABOVE AND BELOW THE VIEW WHOSE PICTURES AND HISTORY ARE LOADED (tui/consts.rs)
 export const PRELOAD_SCREENS = 1;
@@ -83,14 +82,13 @@ export interface Lines
     heartsHeld: () => boolean;
 }
 
-//THE TWO ITEMS BOTH MENUS SHARE
-function ReactItems({ message, heart, reply, hearted, close, item }: {
+//HEART AND REPLY, IN BOTH MENUS
+function ReactItems({ message, heart, reply, hearted, close }: {
     message: ChatMessage | null;
     heart: ((message_id: number) => void) | null;
     reply: ((message: ChatMessage) => void) | null;
     hearted: boolean;
     close: () => void;
-    item: string;
 })
 {
     if (message?.message_id == null) return null;
@@ -98,15 +96,15 @@ function ReactItems({ message, heart, reply, hearted, close, item }: {
     return (
         <>
             {heart && (
-                <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={item}>
-                    <Icon name="heart" className={`h-4 w-4 ${hearted ? "fill-current text-heart" : ""}`} />
+                <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={MENU_ITEM}>
+                    <Icon name="heart" className={`h-[18px] w-[18px] ${hearted ? "fill-current text-heart" : "text-muted"}`} />
                     {hearted ? "Remove heart" : "Heart"}
                 </button>
             )}
 
             {reply && (
-                <button type="button" onClick={() => { close(); reply(message); }} className={item}>
-                    <Icon name="reply" className="h-4 w-4" />
+                <button type="button" onClick={() => { close(); reply(message); }} className={MENU_ITEM}>
+                    <Icon name="reply" className="h-4 w-4 text-muted" />
                     Reply
                 </button>
             )}
@@ -114,9 +112,7 @@ function ReactItems({ message, heart, reply, hearted, close, item }: {
     );
 }
 
-//THE MENU A LINE OPENS, WHICH IS THE ONE THING THERE IS TO DO WITH SOMEBODY ELSE'S SENTENCE. IT IS THE
-//PICTURE'S MENU IN EVERY OTHER RESPECT - THE SAME PORTAL, THE SAME BOX - AND THE HEADING IS THE LINE
-//ITSELF, CUT TO ONE ROW, SO A MENU OPENED IN A CROWDED PANE SAYS WHICH LINE IT IS ABOUT
+//THE MENU A LINE OPENS, HEADED BY THE LINE
 export function MessageMenu(
 {
     at, copy, heart, reply, hearted, edit, remove, close,
@@ -133,38 +129,33 @@ export function MessageMenu(
 {
     const message = at.value;
 
-    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
+    return (
+        <MenuBox at={at} title={message.text}>
+            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} />
 
-    return createPortal(
-        <div
-            data-hold-menu
-            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
-            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
-        >
-            <div className="truncate px-2 py-1.5 text-sm font-semibold">{message.text}</div>
-
-            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} item={item} />
-
-            <button type="button" onClick={() => { close(); copy(message.text); }} className={item}>
-                <Icon name="copy" className="h-4 w-4" />
-                Copy message
+            <button type="button" onClick={() => { close(); copy(message.text); }} className={MENU_ITEM}>
+                <Icon name="copy" className="h-4 w-4 text-muted" />
+                Copy text
             </button>
 
             {edit && (
-                <button type="button" onClick={() => { close(); edit(message); }} className={item}>
-                    <Icon name="pencil" className="h-4 w-4" />
-                    Edit message
+                <button type="button" onClick={() => { close(); edit(message); }} className={MENU_ITEM}>
+                    <Icon name="pencil" className="h-4 w-4 text-muted" />
+                    Edit
                 </button>
             )}
 
             {remove && message.message_id !== null && (
-                <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
-                    <Icon name="trash" className="h-4 w-4" />
-                    Delete message
-                </button>
+                <>
+                    <div className="mx-2 my-1 h-px bg-border" />
+
+                    <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${MENU_ITEM} text-error`}>
+                        <Icon name="trash" className="h-4 w-4" />
+                        Delete message
+                    </button>
+                </>
             )}
-        </div>,
-        document.body,
+        </MenuBox>
     );
 }
 
@@ -184,46 +175,41 @@ export function HeartsMenu(
     const message = at.value;
     const hearted = message.hearts.includes(username);
 
-    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
-
-    return createPortal(
-        <div
-            data-hold-menu
-            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
-            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
+    return (
+        <MenuBox
+            at={at}
+            title={(
+                <span className="flex items-center gap-2">
+                    <Icon name="heart" className="h-3.5 w-3.5 fill-current text-heart" />
+                    {message.hearts.length === 1 ? "1 heart" : `${message.hearts.length} hearts`}
+                </span>
+            )}
         >
-            <div className="flex items-center gap-2 px-2 py-1.5 text-sm font-semibold">
-                <Icon name="heart" className="h-4 w-4 fill-current text-heart" />
-                {message.hearts.length === 1 ? "1 heart" : `${message.hearts.length} hearts`}
-            </div>
-
             <div className="scroller max-h-64">
                 {message.hearts.map((name) => (
-                    <button key={name} type="button" onClick={() => { close(); people.open(name, null); }} className={item}>
+                    <button key={name} type="button" onClick={() => { close(); people.open(name, null); }} className={MENU_ITEM}>
                         <Avatar name={name} color={color(name)} size={20} src={people.avatar(name)} />
                         <span className="min-w-0 flex-1 truncate" style={{ color: color(name) }}>{name}</span>
-                        {name === username && <span className="text-[11px] text-faint">you</span>}
+                        {name === username && <span className="text-[12px] text-faint">You</span>}
                     </button>
                 ))}
             </div>
 
             {heart && message.message_id !== null && (
-                <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={`${item} border-t border-border`}>
-                    <Icon name="heart" className={`h-4 w-4 ${hearted ? "fill-current text-heart" : ""}`} />
-                    {hearted ? "Remove heart" : "Heart"}
-                </button>
+                <>
+                    <div className="mx-2 my-1 h-px bg-border" />
+
+                    <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={MENU_ITEM}>
+                        <Icon name="heart" className={`h-[18px] w-[18px] ${hearted ? "fill-current text-heart" : "text-muted"}`} />
+                        {hearted ? "Remove heart" : "Heart"}
+                    </button>
+                </>
             )}
-        </div>,
-        document.body,
+        </MenuBox>
     );
 }
 
-//AND THE MENU ITSELF. A PICTURE IS SOMEBODY ELSE'S FILE THAT LANDED IN A WINDOW, SO THE TWO THINGS
-//ANYBODY EVER WANTS OF ONE ARE TO PUT IT SOMEWHERE ELSE: ON THE CLIPBOARD, OR ON THE DISK.
-//COPYING IS DRAWN ONLY WHERE THERE IS A CLIPBOARD THAT TAKES PIXELS (can_copy_image), WHICH ON A PHONE
-//THERE IS NOT - SO A PHONE'S MENU IS THE ONE ITEM, WHICH IS ALSO THE ONE IT ALREADY HAS EVERYWHERE ELSE.
-//IT GOES THROUGH A PORTAL FOR THE REASON ForgetMenu DOES: THE PANE SCROLLS, AND A LIST THAT SCROLLS
-//CLIPS WHATEVER LEAVES IT
+//A PICTURE'S MENU: PUT IT ON THE CLIPBOARD OR THE DISK
 export function PictureMenu(
 {
     at, copy, save, heart, reply, hearted, remove, close,
@@ -240,38 +226,33 @@ export function PictureMenu(
 {
     const { image, message } = at.value;
 
-    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
-
-    return createPortal(
-        <div
-            data-hold-menu
-            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
-            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
-        >
-            <div className="truncate px-2 py-1.5 text-sm font-semibold">{image.filename}</div>
-
-            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} item={item} />
+    return (
+        <MenuBox at={at} title={image.filename}>
+            <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} />
 
             {copy && (
-                <button type="button" onClick={() => { close(); copy(image); }} className={item}>
-                    <Icon name="copy" className="h-4 w-4" />
+                <button type="button" onClick={() => { close(); copy(image); }} className={MENU_ITEM}>
+                    <Icon name="copy" className="h-4 w-4 text-muted" />
                     Copy image
                 </button>
             )}
 
-            <button type="button" onClick={() => { close(); save(image); }} className={item}>
-                <Icon name="download" className="h-4 w-4" />
+            <button type="button" onClick={() => { close(); save(image); }} className={MENU_ITEM}>
+                <Icon name="download" className="h-4 w-4 text-muted" />
                 Save image
             </button>
 
             {remove && message?.message_id != null && (
-                <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${item} text-error`}>
-                    <Icon name="trash" className="h-4 w-4" />
-                    Delete image
-                </button>
+                <>
+                    <div className="mx-2 my-1 h-px bg-border" />
+
+                    <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${MENU_ITEM} text-error`}>
+                        <Icon name="trash" className="h-4 w-4" />
+                        Delete image
+                    </button>
+                </>
             )}
-        </div>,
-        document.body,
+        </MenuBox>
     );
 }
 
@@ -291,7 +272,7 @@ export function linked(text: string): React.ReactNode
                 key={index}
                 href={part.href}
                 onClick={(event) => { event.preventDefault(); openUrl(part.href!).catch(() => {}); }}
-                className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                className="text-accent underline decoration-accent/35 underline-offset-[3px] hover:decoration-accent"
             >
                 {part.text}
             </a>
@@ -387,7 +368,7 @@ function renderInline(node: Inline, index: number): React.ReactNode
                 href={node.url}
                 title={node.url}
                 onClick={(event) => { event.preventDefault(); openUrl(node.url).catch(() => {}); }}
-                className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+                className="text-accent underline decoration-accent/35 underline-offset-[3px] hover:decoration-accent"
             >
                 {node.text}
             </a>
@@ -523,61 +504,64 @@ function renderRows(list: Row[]): React.ReactNode
     return out;
 }
 
-//THE LINE BEING TYPED, AS THE PANE WILL DRAW IT. A FORMULA IS THE ONE THING IN A MESSAGE NOBODY CAN READ
-//BACK IN THE SOURCE THEY WROTE IT IN - \frac{1}{2} IS NOT A FRACTION UNTIL SOMETHING SETS IT - SO THE
-//COMPOSER SHOWS IT BEFORE IT GOES, THE WAY EVERY OTHER EDITOR THAT TAKES TeX DOES. IT IS THE SAME markup
-//THE PANE CALLS AND NOT A SECOND RENDERER: A PREVIEW THAT COULD DISAGREE WITH THE MESSAGE IS WORSE THAN
-//NONE. IT STANDS WHERE THE PALETTE STANDS, WHICH IS FREE BY CONSTRUCTION - THE PALETTE ANSWERS A LINE
-//STARTING WITH '/', AND A COMMAND IS NOT SOMETHING THE MARKUP EVER TOUCHES
-export function MarkupPreview({ text, config, narrow }: { text: string; config: ClientConfig; narrow: boolean })
+//THE LINE BEING TYPED, AS THE PANE WILL DRAW IT
+export function MarkupPreview({ text, config }: { text: string; config: ClientConfig })
 {
     return (
-        <div className={`rise absolute bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl ${narrow ? "inset-x-2" : "inset-x-4"}`}>
-            <div className="border-b border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                Preview
-            </div>
-
-            <div className="scroller select-text whitespace-pre-wrap break-words px-3 py-2 text-[15px] leading-relaxed" style={{ maxHeight: "40vh" }}>
+        <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-overlay shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
+            <div className="scroller select-text whitespace-pre-wrap break-words px-4 py-3 text-[15px] leading-[1.6]" style={{ maxHeight: "40vh" }}>
                 {markup(text, config.render_math)}
             </div>
         </div>
     );
 }
 
-//WHAT A LINE IS PAINTED IN, WHERE ANYTHING IS: THE PROTOCOL'S SIXTEEN, AND NOTHING AT ALL WHERE THE
-//CONFIG TURNED THE MESSAGE COLORS OFF
+//A PROTOCOL COLOR, UNLESS THE CONFIG TURNED THEM OFF
 export function messageColor(config: ClientConfig, code: number | null): string | undefined
 {
     return code === null || config.disable_colors ? undefined : ANSI[code];
 }
 
-    //A LINE NOBODY SAID: A JOIN, AN UPLOAD, A SERVER NOTICE, THE ANSWER TO A COMMAND. IT GETS THE COLUMN
-    //THE AVATARS SIT IN, SO THE TEXT OF THE WHOLE PANE STAYS UNDER ONE EDGE
-export function renderNotice(message: ChatMessage, key: number)
-    {
-        const { tone, icon } =
-        {
-            plain: { tone: "text-text", icon: "info" },
-            system: { tone: "text-muted", icon: "info" },
-            notice: { tone: "text-notice", icon: "info" },
-            ok: { tone: "text-ok", icon: "check" },
-            error: { tone: "text-error", icon: "alert" },
-            title: { tone: "text-accent", icon: "info" },
-            user: { tone: "", icon: "info" },
-            private: { tone: "", icon: "info" },
-        }[message.kind];
+//A DIVIDER WHERE THE DAY CHANGES
+export function renderDay(timestamp: number, key: string)
+{
+    const date = new Date(timestamp * 1000);
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 86400000);
 
-        return (
-            <div key={key} className="flex gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
-                <div className="flex w-9 shrink-0 justify-end pt-[3px]">
-                    <Icon name={icon} className={`h-4 w-4 ${tone}`} />
-                </div>
-                <div className={`min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed ${tone}`}>
-                    {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                    {linked(message.text)}
-                </div>
-            </div>
-        );
+    const label = date.toDateString() === today.toDateString()
+        ? "Today"
+        : date.toDateString() === yesterday.toDateString()
+            ? "Yesterday"
+            : date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+
+    return <div key={key} className="day">{label}</div>;
+}
+
+//A LINE NOBODY SAID
+export function renderNotice(message: ChatMessage, key: number)
+{
+    const { tone, icon } =
+    {
+        plain: { tone: "text-text", icon: "info" },
+        system: { tone: "text-muted", icon: "info" },
+        notice: { tone: "text-notice", icon: "info" },
+        ok: { tone: "text-muted", icon: "check" },
+        error: { tone: "text-error", icon: "alert" },
+        title: { tone: "text-text font-medium", icon: "chevron_right" },
+        user: { tone: "", icon: "info" },
+        private: { tone: "", icon: "info" },
+    }[message.kind];
+
+    return (
+        <div key={key} className={`note ${message.kind === "title" ? "head" : ""}`}>
+            <span className="flex justify-center pt-[2px]">
+                <Icon name={icon} className={`h-4 w-4 ${message.kind === "error" ? "text-error" : "text-faint"}`} />
+            </span>
+
+            <span className={`select-text whitespace-pre-wrap break-words ${tone}`}>{linked(message.text)}</span>
+        </div>
+    );
 }
 
 //BYTES AS SOMETHING READABLE (tui/theme.rs::size)
@@ -594,53 +578,49 @@ function size(bytes: number): string
         unit += 1;
     }
 
-    return unit === 0 ? `${bytes}B` : `${value.toFixed(1)}${units[unit]}`;
+    return unit === 0 ? `${bytes} B` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
-//A TRANSFER'S ROW - WHAT IT IS, ITS BAR, AND WHAT IT HAS MOVED (tui/theme.rs::progress)
+//A FILE ON ITS WAY
 export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 {
     if (!transfer) return null;
 
     const { upload, image, avatar, filename, done, total, outcome } = transfer;
 
-    const kind = avatar ? "avatar" : image ? "image" : "file";
-    const name = avatar ? "" : ` "${filename}"`;
     const percent = total === 0 ? 100 : Math.floor((Math.min(done, total) * 100) / total);
 
-    const label = outcome === null
-        ? `${upload ? "Uploading" : "Downloading"} ${kind}${name}`
-        : outcome
-            ? `${upload ? "Uploaded" : "Downloaded"} ${kind}${name}`
-            : `Transferring ${kind}${name} failed`;
-
-    const tone = outcome === null ? "text-muted" : outcome ? "text-ok" : "text-error";
-    const fill = outcome === null ? "bg-accent" : outcome ? "bg-ok" : "bg-error";
+    const state = outcome === null
+        ? `${upload ? "Uploading" : "Downloading"} · ${percent}% of ${size(total)}`
+        : outcome ? `${upload ? "Uploaded" : "Downloaded"} · ${size(total)}` : "Failed";
 
     return (
-        <div key={key} className="flex items-center gap-4 border-l-2 border-transparent px-4 py-[3px] hover:bg-hover">
-            <div className="flex w-9 shrink-0 justify-end">
-                <Icon name={upload ? "upload" : "download"} className={`h-4 w-4 ${tone}`} />
-            </div>
+        <div key={key} className="note">
+            <span className="flex justify-center pt-[12px]">
+                <Icon name={upload ? "upload" : "download"} className="h-4 w-4 text-faint" />
+            </span>
 
-            <div className="min-w-0 flex-1">
-                <div className={`break-words text-[15px] leading-relaxed ${tone}`}>{label}</div>
+            <div className="my-1 w-full max-w-[380px] rounded-lg border border-border px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                    <Icon name={image || avatar ? "image" : "file"} className="h-5 w-5 shrink-0 text-muted" />
 
-                <div className="mt-1 flex max-w-[420px] items-center gap-3">
-                    <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-border">
-                        <div className={`h-full rounded-full transition-[width] duration-200 ${fill}`} style={{ width: `${percent}%` }} />
-                    </div>
-
-                    <span className="shrink-0 font-mono text-[11px] text-faint">{percent}% · {size(done)}/{size(total)}</span>
+                    <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[14px] text-text">{avatar ? "Profile picture" : filename}</span>
+                        <span className={`block text-[12px] ${outcome === false ? "text-error" : "text-faint"}`}>{state}</span>
+                    </span>
                 </div>
+
+                {outcome === null && (
+                    <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-active">
+                        <div className="h-full rounded-full bg-text transition-[width] duration-200" style={{ width: `${percent}%` }} />
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-//THE PICTURE UNDER A LINE THAT IS ONE. WHAT ARRIVED WITH ITS OWN BYTES IS SIMPLY DRAWN; WHAT THE HISTORY
-//ONLY NAMED IS A CAPTION OFFERING TO FETCH IT, WHICH IS THE TUI'S [ show ] AND THE ONLY THING THAT EVER
-//PUTS A STORED PICTURE ON THE WIRE - REPLAYING THEM WOULD MAKE EVERY LOGIN CARRY EVERY IMAGE EVER POSTED
+//A PICTURE, OR THE CAPTION STANDING IN FOR ONE
 export function renderPicture(message: ChatMessage, image: MessageImage, status: PictureStatus, pictures: Pictures)
 {
     if (image.source)
@@ -651,7 +631,7 @@ export function renderPicture(message: ChatMessage, image: MessageImage, status:
                 title={image.filename}
                 {...pictures.hold({ image, message })}
                 onClick={(event) => { if (!pictures.held()) pictures.open(event, image, message); }}
-                className="picture-hold mt-1 block max-w-full overflow-hidden rounded-app border border-border transition hover:border-border-strong"
+                className="picture-hold mt-1 block max-w-full overflow-hidden rounded-lg border border-border transition hover:opacity-95"
             >
                 <img
                     src={image.source}
@@ -676,9 +656,7 @@ function pictureBox(image: MessageImage): React.CSSProperties | undefined
     return { width: Math.min(image.width, PICTURE_HEIGHT * image.width / image.height), aspectRatio: `${image.width} / ${image.height}` };
 }
 
-//A LINE THAT NAMES A PICTURE WITHOUT CARRYING IT. ONE THE CACHE HOLDS IS LOADED WHEN IT IS ACTUALLY
-//LOOKED AT AND NOT WHEN THE HISTORY ARRIVES (tui/state.rs::load_visible) - A LOGIN THAT UNPACKED EVERY
-//PICTURE IT HAD EVER BEEN SENT IS A SECOND OF DISK AND DECODING FOR LINES NOBODY SCROLLED BACK TO
+//A NAMED PICTURE, LOADED ONCE IT IS NEAR THE VIEW
 function Caption({ image, status, pictures }: { image: MessageImage; status: PictureStatus; pictures: Pictures })
 {
     const row = React.useRef<HTMLDivElement>(null);
@@ -704,184 +682,158 @@ function Caption({ image, status, pictures }: { image: MessageImage; status: Pic
         return () => observer.disconnect();
     }, [status]);
 
+    const loading = status === "waiting" || status === "deferred";
+
     return (
-        <div ref={row} className="flex flex-wrap items-center gap-2 text-[15px] leading-relaxed text-muted">
-            <Icon name="image" className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 break-all">{image.filename}</span>
+        <div ref={row} className="mt-1 inline-flex max-w-full items-center gap-3 rounded-lg border border-border px-3 py-2 text-[14px]">
+            {loading
+                ? <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-faint border-t-text" />
+                : <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />}
 
-            {(status === "waiting" || status === "deferred") && <span className="text-faint">loading...</span>}
-            {status === "gone" && <span className="text-error">unavailable</span>}
+            <span className="min-w-0 truncate">{image.filename}</span>
+            {status === "gone" && <span className="shrink-0 text-[12.5px] text-error">unavailable</span>}
 
-            {status !== "waiting" && status !== "deferred" && image.hash && (
-                <button
-                    type="button"
-                    onClick={() => pictures.show(image.hash!)}
-                    className="rounded-app border border-border px-2 py-px text-xs font-semibold text-accent transition hover:border-accent"
-                >
-                    {status === "gone" ? "Try again" : "Show"}
+            {!loading && image.hash && (
+                <button type="button" onClick={() => pictures.show(image.hash!)} className="shrink-0 text-[13px] font-medium text-accent hover:underline">
+                    {status === "gone" ? "Retry" : "Show"}
                 </button>
             )}
         </div>
     );
 }
 
-//SOMETHING SOMEBODY SAID. THE RUN OF LINES BY ONE PERSON IS ONE BLOCK WITH ONE FACE ON IT - grouped
-    //IS EVERY LINE PAST THE FIRST, AND CARRIES NEITHER THE AVATAR NOR THE NAME AGAIN
+//SOMETHING SOMEBODY SAID. grouped CONTINUES A RUN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
-    picture: PictureStatus, pictures: Pictures, lines: Lines, people: People)
+    picture: PictureStatus, pictures: Pictures, lines: Lines, people: People, compact: boolean)
+{
+    //OUR OWN PM ECHO IS OURS
+    const author = message.direct?.outgoing ? username : message.username;
+
+    const own = author === username;
+
+    //PRIVATE IS ONLY NEWS OUTSIDE A CONVERSATION
+    const whisper = message.kind === "private" && !dm;
+
+    const color = messageColor(config, message.username_color);
+
+    //A PICTURE IS NOT TEXT TO COPY
+    const copyable = !message.image;
+
+    //THE BODY'S COLOR, ALSO FOR HEADINGS
+    const body = messageColor(config, message.message_color);
+
+    const messageId = config.show_message_ids && message.message_id !== null ? `#${message.message_id}` : null;
+    const time = config.show_timestamps && message.timestamp !== null ? message.timestamp : null;
+
+    const reacts = lines.reacts(message);
+    const hearted = message.hearts.includes(username);
+    const target = message.reply !== null ? lines.target(message.reply) : null;
+
+    //SOMEBODY ELSE NAMING OR ANSWERING US
+    const mentioned = !own && ((!message.image && mentions(message.text, username)) || target?.username === username);
+
+    //THE CLICK THAT ENDS A HOLD IS SWALLOWED ON THE WAY DOWN
+    const swallowHeld = (event: React.MouseEvent) =>
     {
-        //THE ECHO OF A PM WE SENT NAMES THE PERSON IT WENT TO AND NOBODY ELSE, AND THE AUTHOR OF IT IS US
-        const author = message.direct?.outgoing ? username : message.username;
+        if (!lines.held()) return;
 
-        const own = author === username;
+        event.preventDefault();
+        event.stopPropagation();
+    };
 
-        //THE RULE DOWN THE SIDE IS WHAT SAYS A LINE IS PRIVATE. IN A CONVERSATION EVERY LINE IS, AND A
-        //BADGE ON EVERY ONE OF THEM SAYS NOTHING THE COLUMN'S OWN HEADING HAS NOT SAID ALREADY
-        const whisper = message.kind === "private" && !dm;
+    const full = time !== null ? new Date(time * 1000).toLocaleString() : undefined;
 
-        //OUR OWN NAME IS PAINTED IN THE COLOUR WE PICKED, THE SAME AS EVERYBODY ELSE'S - THE TUI MAKES NO
-        //EXCEPTION FOR THE PERSON READING AND NEITHER DOES THIS. THE ACCENT IS WHAT IS LEFT WHERE THERE IS
-        //NO COLOUR TO USE (NOBODY PICKED ONE, OR disable_colors IS ON), SO "THIS ONE IS YOU" SURVIVES
-        const color = messageColor(config, message.username_color);
-
-        //A PICTURE LINE HAS NEITHER THE BUTTON NOR THE MENU: IT IS NOT TEXT, AND THE PICTURE'S OWN MENU
-        //ALREADY CARRIES THE TWO THINGS THERE ARE TO DO WITH ONE (PictureMenu). WHAT IS COPIED IS THE
-        //LINE AS IT WAS TYPED, MARKUP AND ALL, WHICH IS WHAT PASTES USEFULLY ANYWHERE ELSE - THE RENDERED
-        //FORM ONLY MEANS SOMETHING IN A WINDOW LIKE THIS ONE
-        const copyable = !message.image;
-
-        //THE MESSAGE'S OWN COLOUR, SAID TWICE: ONCE AS THE COLOUR AND ONCE AS THE PROPERTY A HEADING READS
-        //BACK, SINCE A HEADING KEEPS IT WHERE THERE IS ONE AND TAKES ITS OWN WHERE THERE IS NOT
-        const body = messageColor(config, message.message_color);
-
-        //THE ID /delete TAKES, ON EVERY LINE THAT HAS ONE
-        const messageId = config.show_message_ids && message.message_id !== null ? `#${message.message_id}` : null;
-
-        //WHEN IT WAS SENT, WHERE THE SERVER SAID
-        const time = config.show_timestamps && message.timestamp !== null ? message.timestamp : null;
-
-        //HEARTS AND REPLIES, WHERE THE SERVER KEEPS THE LINE
-        const reacts = lines.reacts(message);
-        const hearted = message.hearts.includes(username);
-        const target = message.reply !== null ? lines.target(message.reply) : null;
-
-        //SOMEBODY ELSE NAMING US, OR ANSWERING US
-        const mentioned = !own && !message.direct?.outgoing
-            && ((!message.image && mentions(message.text, username)) || target?.username === username);
-
-        //A HOLD ENDS IN A CLICK LIKE ANY OTHER PRESS, AND A LINE WITH A LINK IN IT WOULD OPEN IT ON THE
-        //WAY UP - SO THE PRESS THAT OPENED THE MENU IS SWALLOWED ON THE WAY DOWN, BEFORE THE ANCHOR
-        //UNDER IT EVER SEES ONE. EVERY OTHER CLICK ONLY COSTS THE FLAG BEING READ AND PUT BACK
-        const swallowHeld = (event: React.MouseEvent) =>
-        {
-            if (!lines.held()) return;
-
-            event.preventDefault();
-            event.stopPropagation();
-        };
-
-        return (
-            <div
-                key={key}
-                {...(copyable ? lines.hold(message) : {})}
-                data-message-id={message.message_id ?? undefined}
-                onClickCapture={copyable ? swallowHeld : undefined}
-                onClick={reacts ? (event) => lines.tap(event, message) : undefined}
-                className={`group relative flex gap-4 px-4 hover:bg-hover ${grouped ? "py-[1px]" : "mt-4 pb-[1px] pt-1"} ${mentioned ? "border-l-2 border-warning bg-warning/[0.08]" : whisper ? "border-l-2 border-accent bg-accent/[0.06]" : "border-l-2 border-transparent"}`}
-            >
-                {/* AND THE BUTTON THAT DOES IT, WHICH IS THE POINTER'S HALF OF THE GESTURE: IT FLOATS OVER
-                    THE ROW ON HOVER AND COSTS THE LINE NOTHING WHILE IT IS NOT THERE. WHERE THERE IS
-                    NOTHING TO HOVER WITH IT IS NOT DRAWN AT ALL (.row-action UNDER @media (hover: none)) -
-                    A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A
-                    CONVERSATION - AND A HOLD ON THE ROW OPENS THE SAME THING AS A MENU */}
-                {(copyable || reacts) && (
-                    <div className="row-action absolute right-3 top-1 z-10 flex rounded-app border border-border bg-overlay p-px text-muted shadow-lg">
-                        {reacts && rowButton(hearted ? "Remove heart" : "Heart", "heart", () => lines.heart(message.message_id!),
-                            hearted ? "fill-current text-heart" : "")}
-                        {reacts && rowButton("Reply", "reply", () => lines.reply(message))}
-                        {lines.edits(message) && rowButton("Edit message", "pencil", () => lines.edit(message))}
-                        {copyable && rowButton("Copy message", "copy", () => lines.copy(message.text))}
-                    </div>
-                )}
-                <div className="w-9 shrink-0">
-                    {grouped && time !== null && (
-                        <span className="block whitespace-nowrap text-right text-[15px] leading-relaxed opacity-0 group-hover:opacity-100">
-                            <span className="text-[10px] text-faint" title={new Date(time * 1000).toLocaleString()}>{sentAt(time, true)}</span>
-                        </span>
-                    )}
-                    {!grouped && (
+    return (
+        <div
+            key={key}
+            {...(copyable ? lines.hold(message) : {})}
+            data-message-id={message.message_id ?? undefined}
+            onClickCapture={copyable ? swallowHeld : undefined}
+            onClick={reacts ? (event) => lines.tap(event, message) : undefined}
+            className={`group msg ${grouped ? "" : "first"} ${mentioned ? "mention" : whisper ? "whisper" : ""}`}
+        >
+            <div>
+                {grouped
+                    ? time !== null && <div className="msg-time" title={full}>{sentAt(time, true)}</div>
+                    : (
                         <button
                             type="button"
                             aria-label={`${author}'s profile`}
                             onClick={(event) => people.open(author, event.currentTarget)}
-                            className="block rounded-full transition hover:brightness-110"
+                            className="mt-0.5 block rounded-full transition hover:opacity-85"
                         >
-                            <Avatar name={author} color={messageColor(config, message.username_color)} src={people.avatar(author)} />
+                            <Avatar name={author} color={color} size={compact ? 30 : 32} src={people.avatar(author)} />
                         </button>
                     )}
-                </div>
+            </div>
 
-                <div className="min-w-0 flex-1">
-                    {message.reply !== null && replyQuote(message.reply, target, config, lines)}
-
-                    {!grouped && (
-                        <div className="flex items-baseline gap-2">
-                            <button
-                                type="button"
-                                onClick={(event) => people.open(author, event.currentTarget)}
-                                className={`text-[15px] font-semibold hover:underline ${own && !color ? "text-accent" : ""}`}
-                                style={{ color }}
-                            >
-                                {author}
-                            </button>
-                            {config.show_id && message.id !== null && <span className="text-[11px] text-faint">({message.id})</span>}
-                            {time !== null && <span className="text-[11px] text-faint" title={new Date(time * 1000).toLocaleString()}>{sentAt(time)}</span>}
-                            {whisper && (
-                                <span className="rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-accent">
-                                    private
-                                </span>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="flex items-end gap-3">
-                        <div
-                            className="message-body min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-relaxed"
-                            style={{ color: body, "--msg-color": body } as React.CSSProperties}
-                        >
-                            {message.prefix && <span className="text-faint">{message.prefix} </span>}
-                            {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
-                        </div>
-
-                        {/* THE MARK AND THE ID TRAIL THE LAST ROW */}
-                        {(messageId || message.edited) && (
-                            <span className="shrink-0 whitespace-nowrap text-[15px] leading-relaxed">
-                                {message.edited && <span className="text-[10px] text-faint">(edited)</span>}
-                                {message.edited && messageId && " "}
-                                {messageId && <span className="font-mono text-[10px] text-faint">{messageId}</span>}
-                            </span>
-                        )}
-                    </div>
-
-                    {/* WHO HEARTED IT */}
-                    {message.hearts.length > 0 && (
+            <div className="min-w-0">
+                {!grouped && (
+                    <div className="flex items-baseline gap-2">
                         <button
                             type="button"
-                            title={message.hearts.join(", ")}
-                            aria-disabled={!reacts}
-                            {...heartsHold(lines.hearts(message))}
-                            onClick={() => { if (!lines.heartsHeld() && reacts) lines.heart(message.message_id!); }}
-                            className={`mt-1 flex items-center gap-1 rounded-full border px-2 py-px text-xs transition-colors ${reacts ? "" : "cursor-default"} ${hearted
-                                ? "border-heart/50 bg-heart/10 text-heart"
-                                : `border-border text-muted ${reacts ? "hover:border-border-strong" : ""}`}`}
+                            onClick={(event) => people.open(author, event.currentTarget)}
+                            className="min-w-0 truncate text-[14px] font-semibold hover:underline"
+                            style={{ color }}
                         >
-                            <Icon name="heart" className={`h-3.5 w-3.5 ${hearted ? "fill-current" : ""}`} />
-                            {message.hearts.length}
+                            {author}
                         </button>
+
+                        {config.show_id && message.id !== null && <span className="text-[12px] text-faint">{message.id}</span>}
+                        {whisper && <span className="text-[12px] text-accent">private</span>}
+                        {time !== null && <span className="shrink-0 text-[12px] text-faint" title={full}>{sentAt(time, true)}</span>}
+                    </div>
+                )}
+
+                {message.reply !== null && replyQuote(message.reply, target, config, lines)}
+
+                <div className="flex items-end gap-2">
+                    <div
+                        className="message-body min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-[1.6]"
+                        style={{ color: body, "--msg-color": body } as React.CSSProperties}
+                    >
+                        {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
+                    </div>
+
+                    {(messageId || message.edited) && (
+                        <span className="shrink-0 whitespace-nowrap text-[11.5px] leading-6 text-faint">
+                            {message.edited && "edited"}
+                            {message.edited && messageId && " · "}
+                            {messageId}
+                        </span>
                     )}
                 </div>
+
+                {/* WHO HEARTED IT */}
+                {message.hearts.length > 0 && (
+                    <button
+                        type="button"
+                        title={message.hearts.join(", ")}
+                        aria-disabled={!reacts}
+                        {...heartsHold(lines.hearts(message))}
+                        onClick={() => { if (!lines.heartsHeld() && reacts) lines.heart(message.message_id!); }}
+                        className={`mb-0.5 mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12.5px] transition-colors ${reacts ? "" : "cursor-default"} ${hearted
+                            ? "border-heart/40 bg-heart/10 text-heart"
+                            : `border-border-strong text-muted ${reacts ? "hover:bg-hover" : ""}`}`}
+                    >
+                        <Icon name="heart" className={`h-3.5 w-3.5 ${hearted ? "fill-current" : ""}`} />
+                        {message.hearts.length}
+                    </button>
+                )}
             </div>
-        );
+
+            {/* ON HOVER; A HOLD ON A PHONE */}
+            {(copyable || reacts) && (
+                <div className="row-action absolute -top-3.5 right-3 z-10 flex rounded-lg border border-border-strong bg-overlay p-0.5 text-muted shadow-[0_6px_18px_-6px_rgba(0,0,0,0.4)]">
+                    {reacts && rowButton(hearted ? "Remove heart" : "Heart", "heart", () => lines.heart(message.message_id!),
+                        hearted ? "fill-current text-heart" : "")}
+                    {reacts && rowButton("Reply", "reply", () => lines.reply(message))}
+                    {lines.edits(message) && rowButton("Edit", "pencil", () => lines.edit(message))}
+                    {copyable && rowButton("Copy", "copy", () => lines.copy(message.text))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 //THE CHIP'S OWN HOLD, KEPT OFF THE ROW'S
@@ -910,72 +862,70 @@ function rowButton(label: string, icon: string, onClick: () => void, tone = "")
             title={label}
             aria-label={label}
             onClick={onClick}
-            className="flex h-7 w-7 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-accent"
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-hover hover:text-text"
         >
-            <Icon name={icon} className={`h-4 w-4 ${tone}`} />
+            <Icon name={icon} className={`h-[15px] w-[15px] ${tone}`} />
         </button>
     );
 }
 
-//THE LINE A REPLY ANSWERS, CUT TO ONE ROW
+//THE LINE A REPLY ANSWERS, ONE ROW
 function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
 {
-    const text = target?.image ? `sent an image (${target.image.filename})` : target?.text.split("\n")[0] ?? `#${reply}`;
+    const text = target?.image ? "Picture" : target?.text.split("\n")[0] ?? `Message #${reply}`;
 
     return (
         <button
             type="button"
             onClick={() => lines.jump(reply)}
-            className="mb-0.5 flex w-full min-w-0 items-center gap-1.5 text-left text-xs text-muted hover:text-text"
+            className="mb-0.5 mt-0.5 flex w-full min-w-0 items-center gap-2 text-left text-[13px] text-muted transition-colors hover:text-text"
         >
             <Icon name="reply" className="h-3.5 w-3.5 shrink-0 -scale-x-100 text-faint" />
-            {target && (
-                <span className="shrink-0 font-semibold" style={{ color: messageColor(config, target.username_color) }}>{target.username}</span>
-            )}
-            <span className="min-w-0 truncate">{target ? text : `Message ${text}`}</span>
+            {target && <span className="shrink-0 font-medium" style={{ color: messageColor(config, target.username_color) }}>{target.username}</span>}
+            <span className="min-w-0 truncate">{text}</span>
         </button>
     );
 }
 
-    //A LIST THE SERVER ANSWERED WITH. IT IS A CARD IN THE STREAM RATHER THAN A WINDOW OVER IT, AND THE
-    //ROWS KEEP THE TERMINAL'S BRANCH GLYPHS - THEY ARE A TREE, AND A TREE IS WHAT THEY SHOULD LOOK LIKE
+//A LIST THE SERVER ANSWERED WITH, AS A TREE
 export function renderBlock(title: string, rows: BlockRow[], key: number, config: ClientConfig)
+{
+    const glyphs = branches(rows);
+
+    //EACH LEVEL'S IDS LINE UP
+    const widths = rows.reduce<Record<number, number>>((widths, row) =>
     {
-        const glyphs = branches(rows);
+        const width = row.id === null ? 1 : String(row.id).length;
+        widths[row.depth] = Math.max(widths[row.depth] ?? 1, width);
 
-        //THE ID COLUMN IS AS WIDE AS THE WIDEST ID ON ITS OWN LEVEL, SO THE NAMES LINE UP UNDER EACH OTHER
-        const widths = rows.reduce<Record<number, number>>((widths, row) =>
-        {
-            const width = row.id === null ? 1 : String(row.id).length;
-            widths[row.depth] = Math.max(widths[row.depth] ?? 1, width);
+        return widths;
+    }, {});
 
-            return widths;
-        }, {});
+    return (
+        <div key={key} className="note head">
+            <span className="flex justify-center pt-[12px]">
+                <Icon name="menu" className="h-4 w-4 text-faint" />
+            </span>
 
-        return (
-            <div key={key} className="mx-4 mt-4 overflow-hidden rounded-app border border-border bg-raised">
-                <div className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                    {title}
-                </div>
+            <div className="w-fit max-w-full rounded-lg border border-border px-4 py-3 text-text">
+                <div className="mb-2 text-[13.5px] font-medium">{title}</div>
 
-                <div className="py-1">
-                    {rows.map((row, index) =>
-                    {
-                        //A NAME IS PAINTED IN WHATEVER ITS OWNER PICKED, THE SAME AS IT IS IN THE PANE
-                        const color = messageColor(config, row.color);
-                        const device = row.device ? deviceIcon(row.device) : null;
+                {rows.map((row, index) =>
+                {
+                    const color = messageColor(config, row.color);
+                    const device = row.device ? deviceIcon(row.device) : null;
 
-                        return (
-                            <div key={index} className="flex items-start whitespace-pre-wrap px-3 py-[3px] font-mono text-[13px]">
-                                <span className="shrink-0 whitespace-pre text-border-strong">{glyphs[index]}</span>
-                                {row.id !== null && <span className="shrink-0 whitespace-pre text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
-                                <span className={`min-w-0 break-words ${color ? "" : row.accent ? "text-accent" : ""}`} style={color ? { color } : undefined}>{row.text}</span>
-                                {device && <Icon name={device} className="mx-1.5 h-3.5 w-3.5 shrink-0 text-faint" />}
-                                {row.note && <span className="text-faint">{"  "}{row.note}</span>}
-                            </div>
-                        );
-                    })}
-                </div>
+                    return (
+                        <div key={index} className="flex items-start whitespace-pre-wrap py-[1px] font-mono text-[12.5px] leading-5">
+                            <span className="shrink-0 whitespace-pre text-faint/60">{glyphs[index]}</span>
+                            {row.id !== null && <span className="shrink-0 whitespace-pre text-faint">{String(row.id).padStart(widths[row.depth])}{"  "}</span>}
+                            <span className={`min-w-0 break-words ${color ? "" : row.accent ? "text-accent" : ""}`} style={color ? { color } : undefined}>{row.text}</span>
+                            {device && <Icon name={device} className="mx-1.5 mt-[3px] h-3.5 w-3.5 shrink-0 text-faint" />}
+                            {row.note && <span className="text-faint">{"  "}{row.note}</span>}
+                        </div>
+                    );
+                })}
             </div>
-        );
+        </div>
+    );
 }

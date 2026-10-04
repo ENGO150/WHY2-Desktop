@@ -17,31 +17,26 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import type { SettingsBox, SettingsItem, AccountAction } from "./types";
-import { Icon, IconButton } from "./icons";
-import { Switch } from "./components";
+import { Icon } from "./icons";
+import { Switch, Overlay, PanelHeader, PanelFooter } from "./components";
 import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./settings";
-import { THEMES, findTheme, type Theme } from "./themes";
+import { THEMES, type Theme } from "./themes";
 
-//tui/settings.rs WITH REAL CONTROLS IN IT. THE TWO HALVES ARE NOT SYMMETRICAL AND THAT IS THE WHOLE
-//SHAPE OF IT: client.toml IS OURS AND A ROW IS WRITTEN THROUGH THE MOMENT IT IS FLIPPED, WHILE
-//server.toml IS NOT - ITS ROWS ARE EDITED LOCALLY, MARKED, AND SENT IN ONE GO. THE Save AND
-//Restart server ROWS ARE STILL ROWS AS FAR AS THE KEYBOARD IS CONCERNED, DRAWN AS BUTTONS IN THE FOOTER
+//tui/settings.rs WITH CONTROLS: OURS WRITES THROUGH, THE SERVER'S IS SAVED IN ONE GO
 export function SettingsDialog(
 {
-    settings, settingsRef, settingsRowRef, pickerRowRef, dialogWrap, dialogCard, narrow,
+    settings, settingsRef, settingsRowRef, pickerRowRef, narrow,
     onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
     settingsRowRef: React.RefObject<HTMLDivElement | null>;
     pickerRowRef: React.RefObject<HTMLDivElement | null>;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
     narrow: boolean;
     onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
     setToggle: (index: number, on: boolean) => void;
     setVolume: (index: number, percent: number, max: number) => void;
-    setPicked: (index: number, id: string) => void; //A DEVICE OR A CHOICE - THE ROW SAYS WHICH
+    setPicked: (index: number, id: string) => void; //A DEVICE OR A CHOICE
     activateRow: (index: number) => void;
     commitEdit: () => void;
     editSettings: (change: (box: SettingsBox) => SettingsBox | null) => void;
@@ -51,390 +46,352 @@ export function SettingsDialog(
     close: () => void;
 })
 {
-        const box = settings;
-        const editing = box.edit !== null;
-        const unsaved = unsavedRows(box.rows);
+    const box = settings;
+    const editing = box.edit !== null;
+    const unsaved = unsavedRows(box.rows);
 
-        //THE ACTIONS ARE ROWS LIKE ANY OTHER AS FAR AS THE KEYBOARD IS CONCERNED, BUT THEY BELONG IN THE
-        //FOOT OF THE DIALOG AND NOT IN THE MIDDLE OF THE LIST - SO THEY ARE DRAWN THERE, INDEX AND ALL
-        const listed = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row !== "action");
-        const actions = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row === "action");
+    //THE ACTIONS ARE ROWS TO THE KEYBOARD, BUTTONS IN THE FOOTER
+    const listed = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row !== "action");
+    const actions = box.rows.map((row, index) => ({ row, index })).filter((entry) => entry.row.row === "action");
 
-        //A ROW IS A NAME AND A CONTROL BESIDE IT UNTIL THERE IS NOT THE ROOM, AND ON A PHONE THERE NEVER
-        //IS: A 220px CONTROL AND A 24px GAP LEAVE A SETTING'S NAME ABOUT THREE LETTERS AND AN ELLIPSIS.
-        //SO THE CONTROL GOES UNDER THE NAME AND TAKES THE WIDTH - EXCEPT A SWITCH, WHICH IS SMALL ENOUGH
-        //TO STAY WHERE EVERY OTHER SETTINGS SCREEN PUTS IT, ON THE RIGHT OF THE THING IT TURNS OFF
-        const stacks = (item: SettingsItem) => narrow && item.value.kind !== "toggle";
+    //ON A PHONE THE CONTROL GOES UNDER THE NAME, EXCEPT A SWITCH
+    const stacks = (item: SettingsItem) => narrow && item.value.kind !== "toggle";
 
-        const control = (item: SettingsItem, index: number) =>
+    const picker = "flex items-center gap-2 rounded-lg bg-active px-3 py-1.5 text-left text-[13.5px] transition hover:brightness-125";
+
+    const control = (item: SettingsItem, index: number) =>
+    {
+        const wide = stacks(item) ? "w-full" : "w-[220px]";
+
+        if (item.value.kind === "toggle")
         {
-            const wide = stacks(item) ? "w-full" : "w-[220px]";
+            const on = item.value.value;
 
-            if (item.value.kind === "toggle")
-            {
-                const on = item.value.value;
+            return <Switch on={on} onClick={() => setToggle(index, !on)} />;
+        }
 
-                return <Switch on={on} onClick={() => setToggle(index, !on)} />;
-            }
+        if (item.value.kind === "volume")
+        {
+            const { percent, max, step } = item.value.value;
 
-            if (item.value.kind === "volume")
-            {
-                const { percent, max, step } = item.value.value;
-
-                return (
-                    <div className={`flex items-center gap-3 ${stacks(item) ? "w-full" : ""}`}>
-                        <Icon name={percent === 0 ? "speaker_off" : "speaker"} className={`h-4 w-4 ${percent === 0 ? "text-faint" : "text-muted"}`} />
-                        <input
-                            type="range"
-                            min={0}
-                            max={max}
-                            step={step}
-                            value={percent}
-                            onChange={(event) => setVolume(index, Number(event.currentTarget.value), max)}
-                            onKeyDown={(event) => event.stopPropagation()}
-                            className={`slider ${stacks(item) ? "min-w-0 flex-1" : "w-[150px]"}`}
-                            style={{ accentColor: "var(--accent)" }}
-                        />
-                        <span className="w-[4ch] text-right font-mono text-xs text-muted">{percent}%</span>
-                    </div>
-                );
-            }
-
-            //client.toml HOLDS THE cpal ID, WHICH IS NOT SOMETHING TO READ - THE LABEL IS LOOKED UP FOR IT
-            if (item.value.kind === "device")
-            {
-                const { id, input } = item.value.value;
-                const found = (input ? box.devices.input : box.devices.output).find((device) => device.id === id);
-
-                return (
-                    <button
-                        type="button"
-                        onClick={(event) => { event.stopPropagation(); activateRow(index); }}
-                        className={`flex ${wide} items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
-                    >
-                        <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
-                        <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
-                    </button>
-                );
-            }
-
-            //THE SERVER LIST CAME WITH THE ROW, SO THE LABEL IS LOOKED UP IN IT THE SAME WAY A DEVICE'S IS
-            if (item.value.kind === "choice")
-            {
-                const { id, options } = item.value.value;
-                const found = options.find((option) => option.id === id);
-
-                return (
-                    <button
-                        type="button"
-                        onClick={(event) => { event.stopPropagation(); activateRow(index); }}
-                        className={`flex ${wide} items-center gap-2 rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
-                    >
-                        <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : NO_CHOICE}</span>
-                        <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
-                    </button>
-                );
-            }
-
-            //A NUMBER OR A STRING IS TYPED INTO THE ROW ITSELF
-            if (editing && index === box.selected)
-            {
-                return (
+            return (
+                <div className={`flex items-center gap-3 ${stacks(item) ? "w-full" : ""}`}>
                     <input
-                        autoFocus
-                        value={box.edit ?? ""}
-                        onChange={(event) =>
-                        {
-                            const typed = event.currentTarget.value;
-
-                            //A NUMBER ROW ONLY TAKES A NUMBER - THE MINUS SIGN ONLY AS THE FIRST CHARACTER
-                            if (item.value.kind === "number" && !/^-?\d*$/.test(typed)) return;
-
-                            editSettings((current) => ({ ...current, edit: typed }));
-                        }}
-                        onKeyDown={(event) =>
-                        {
-                            event.stopPropagation();
-
-                            //ESC PUTS THE OLD VALUE BACK, ENTER KEEPS WHAT WAS TYPED - AND EITHER WAY THE
-                            //KEYBOARD GOES BACK TO THE DIALOG
-                            if (event.key === "Enter") { event.preventDefault(); commitEdit(); }
-                            else if (event.key === "Escape") { event.preventDefault(); editSettings((current) => ({ ...current, edit: null })); }
-                            else return;
-
-                            settingsRef.current?.focus();
-                        }}
-                        onBlur={commitEdit}
-                        className={`${wide} rounded-app border border-accent bg-deep px-3 py-1.5 text-sm text-accent caret-accent outline-none`}
-                        spellCheck={false}
+                        type="range"
+                        min={0}
+                        max={max}
+                        step={step}
+                        value={percent}
+                        onChange={(event) => setVolume(index, Number(event.currentTarget.value), max)}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        className={`slider ${stacks(item) ? "min-w-0 flex-1" : "w-[150px]"}`}
+                        style={{ accentColor: "var(--accent)" }}
                     />
-                );
-            }
-
-            const text = String(item.value.value);
-
-            return (
-                <button
-                    type="button"
-                    onClick={(event) => { event.stopPropagation(); activateRow(index); }}
-                    className={`${wide} truncate rounded-app border border-border bg-deep px-3 py-1.5 text-left text-sm hover:border-border-strong`}
-                >
-                    {text || <span className="text-faint">empty</span>}
-                </button>
+                    <span className={`w-[5ch] text-right text-[13px] tabular-nums ${percent === 0 ? "text-error" : "text-muted"}`}>{percent}%</span>
+                </div>
             );
-        };
+        }
 
-        //ONE PALETTE'S BUTTON
-        const swatch = (entry: Theme) =>
+        //THE LABEL IS LOOKED UP FOR THE cpal ID
+        if (item.value.kind === "device")
         {
-            const chosen = entry.id === theme;
+            const { id, input } = item.value.value;
+            const found = (input ? box.devices.input : box.devices.output).find((device) => device.id === id);
 
             return (
-                <button
-                    key={entry.id}
-                    type="button"
-                    title={entry.name}
-                    aria-label={entry.name}
-                    aria-pressed={chosen}
-                    onClick={() => pickTheme(entry.id)}
-                    style={{ background: entry.swatch }}
-                    className={`relative shrink-0 rounded-lg border transition ${narrow ? "h-12 w-12" : "h-10 w-10"} ${chosen ? "border-transparent ring-2 ring-accent ring-offset-2 ring-offset-overlay" : "border-border-strong hover:scale-105"}`}
-                >
-                    {chosen && (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-on-accent">
-                            <Icon name="check" className="h-3 w-3" />
-                        </span>
-                    )}
+                <button type="button" onClick={(event) => { event.stopPropagation(); activateRow(index); }} className={`${picker} ${wide}`}>
+                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
+                    <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
                 </button>
             );
-        };
+        }
+
+        if (item.value.kind === "choice")
+        {
+            const { id, options } = item.value.value;
+            const found = options.find((option) => option.id === id);
+
+            return (
+                <button type="button" onClick={(event) => { event.stopPropagation(); activateRow(index); }} className={`${picker} ${wide}`}>
+                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : NO_CHOICE}</span>
+                    <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
+                </button>
+            );
+        }
+
+        //A NUMBER OR A STRING IS TYPED INTO THE ROW
+        if (editing && index === box.selected)
+        {
+            return (
+                <input
+                    autoFocus
+                    value={box.edit ?? ""}
+                    onChange={(event) =>
+                    {
+                        const typed = event.currentTarget.value;
+
+                        //DIGITS, AND A LEADING MINUS
+                        if (item.value.kind === "number" && !/^-?\d*$/.test(typed)) return;
+
+                        editSettings((current) => ({ ...current, edit: typed }));
+                    }}
+                    onKeyDown={(event) =>
+                    {
+                        event.stopPropagation();
+
+                        //ENTER KEEPS, ESC PUTS IT BACK
+                        if (event.key === "Enter") { event.preventDefault(); commitEdit(); }
+                        else if (event.key === "Escape") { event.preventDefault(); editSettings((current) => ({ ...current, edit: null })); }
+                        else return;
+
+                        settingsRef.current?.focus();
+                    }}
+                    onBlur={commitEdit}
+                    className={`${wide} rounded-lg border border-accent bg-transparent px-3 py-1.5 text-[13.5px] text-text caret-accent outline-none`}
+                    spellCheck={false}
+                />
+            );
+        }
+
+        const text = String(item.value.value);
 
         return (
-            <div
-                //ANYWHERE OUTSIDE THE BOX IS "I AM DONE HERE" - ON THE PRESS AND NOT THE RELEASE, SO A
-                //SELECTION DRAGGED OUT OF THE DIALOG DOES NOT CLOSE IT ON LETTING GO
-                onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-                className={dialogWrap}
+            <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); activateRow(index); }}
+                className={`${wide} truncate rounded-lg bg-active px-3 py-1.5 text-left text-[13.5px] transition hover:brightness-125`}
             >
-                <div
-                    ref={settingsRef}
-                    tabIndex={-1}
-                    onKeyDown={onKeyDown}
-                    className={`rise relative ${dialogCard("flex max-h-[84vh] w-full max-w-[660px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
+                {text || <span className="text-faint">empty</span>}
+            </button>
+        );
+    };
+
+    //ONE PALETTE, AS A LITTLE WINDOW
+    const swatch = (entry: Theme) =>
+    {
+        const chosen = entry.id === theme;
+        const [side, page, ink] = entry.swatch;
+
+        return (
+            <button
+                key={entry.id}
+                type="button"
+                aria-pressed={chosen}
+                onClick={() => pickTheme(entry.id)}
+                className="flex flex-col items-start gap-1.5"
+            >
+                <span
+                    className={`flex h-[62px] w-[96px] overflow-hidden rounded-lg border-2 transition-colors ${chosen ? "border-text" : "border-border hover:border-border-strong"}`}
+                    style={{ background: page }}
                 >
-                    <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                        <Icon name="gear" className="h-4 w-4 text-muted" />
-                        <h2 className="flex-1 text-[15px] font-semibold">{box.server ? "Server settings" : "Settings"}</h2>
+                    <span className="h-full w-[30%]" style={{ background: side }} />
+                    <span className="flex flex-1 flex-col gap-1.5 p-2">
+                        <span className="h-1.5 w-[70%] rounded-full" style={{ background: ink, opacity: 0.85 }} />
+                        <span className="h-1 w-full rounded-full" style={{ background: ink, opacity: 0.25 }} />
+                        <span className="h-1 w-[80%] rounded-full" style={{ background: ink, opacity: 0.25 }} />
+                    </span>
+                </span>
 
-                        {box.saving && <span className="text-xs text-muted">saving</span>}
-                        {!box.saving && unsaved && <span className="text-xs text-notice">unsaved changes</span>}
+                <span className={`text-[12.5px] ${chosen ? "font-medium text-text" : "text-muted"}`}>{entry.name}</span>
+            </button>
+        );
+    };
 
-                        <IconButton icon="close" label="Close" onClick={close} />
-                    </header>
+    //THE ROWS, BOXED BY SECTION
+    const groups: { label: string | null; rows: { item: SettingsItem; index: number }[] }[] = [];
 
-                    <div className="scroller flex-1 px-3 py-2">
-                        {/* THE ACCOUNT, WHICH IS THE SERVER'S AND NOT client.toml'S */}
-                        {account && (
-                            <>
-                                <div className="flex items-center gap-3 px-2 pb-1 pt-2">
-                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Account</span>
-                                    <span className="h-px flex-1 bg-border" />
-                                </div>
+    for (const { row, index } of listed)
+    {
+        if (row.row === "header") groups.push({ label: row.label, rows: [] });
+        else if (row.row === "item")
+        {
+            if (groups.length === 0) groups.push({ label: null, rows: [] });
+            groups[groups.length - 1].rows.push({ item: row.item, index });
+        }
+    }
 
-                                <div className="flex items-center gap-6 rounded-app border-l-2 border-transparent px-3 py-2.5">
-                                    <span className="min-w-0 flex-1 text-sm">Password</span>
+    const section = (label: string | null, children: React.ReactNode, key: string) => (
+        <div key={key} id={`settings-${key}`} className="scroll-mt-4 pt-6 first:pt-1">
+            {label && <h3 className="mb-2 text-[15px] font-semibold">{label}</h3>}
+            <div className="group-box">{children}</div>
+        </div>
+    );
 
-                                    <button
-                                        type="button"
-                                        onClick={() => account("passwd")}
-                                        className="shrink-0 rounded-app border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-border-strong hover:text-text"
-                                    >
-                                        Change password
-                                    </button>
-                                </div>
+    //THE NAV, AND WHICH ENTRY THE SELECTED ROW IS UNDER
+    const nav: { key: string; label: string }[] = [];
 
-                                <div className="flex items-center gap-6 rounded-app border-l-2 border-transparent px-3 py-2.5">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="text-sm">Delete account</div>
-                                        <div className="mt-0.5 pr-2 text-xs leading-snug text-faint">Removes the account from this server for good.</div>
-                                    </div>
+    if (theme !== null) nav.push({ key: "appearance", label: "Appearance" });
+    groups.forEach((group, at) => nav.push({ key: `group-${at}`, label: group.label ?? "General" }));
+    if (account) nav.push({ key: "account", label: "Account" });
 
-                                    <button
-                                        type="button"
-                                        onClick={() => account("delete")}
-                                        className="shrink-0 rounded-app border border-border px-4 py-1.5 text-sm font-semibold text-muted transition hover:border-error hover:text-error"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </>
-                        )}
+    const current = groups.findIndex((group) => group.rows.some((row) => row.index === box.selected));
 
-                        {/* THE WINDOW'S PALETTE */}
-                        {theme !== null && (
-                            <>
-                                <div className="flex items-center gap-3 px-2 pb-1 pt-5 first:pt-2">
-                                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Appearance</span>
-                                    <span className="h-px flex-1 bg-border" />
-                                </div>
+    return (
+        <Overlay
+            narrow={narrow}
+            width={760}
+            label={box.server ? "Server settings" : "Settings"}
+            cardRef={settingsRef}
+            onKeyDown={onKeyDown}
+            close={close}
+        >
+            <div className="flex min-h-0 flex-1">
+            {!narrow && (
+                <nav className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-border bg-sidebar p-2 pt-4">
+                    <div className="px-2.5 pb-2 text-[16px] font-semibold">{box.server ? "Server" : "Settings"}</div>
 
-                                <div className="rounded-app border-l-2 border-transparent px-3 py-2.5">
-                                    <div className="flex items-center gap-2">
-                                        <span className="min-w-0 flex-1 text-sm">Theme</span>
-                                        <span className="text-xs text-muted">{findTheme(theme).name}</span>
-                                    </div>
+                    {nav.map((entry) => (
+                        <button
+                            key={entry.key}
+                            type="button"
+                            onClick={() => document.getElementById(`settings-${entry.key}`)?.scrollIntoView({ block: "start", behavior: "smooth" })}
+                            className={`rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors ${entry.key === `group-${current}` ? "bg-selected font-medium text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                        >
+                            {entry.label}
+                        </button>
+                    ))}
+                </nav>
+            )}
 
-                                    <div className="mt-3 flex flex-wrap gap-2.5 p-1">
-                                        {THEMES.filter((entry) => !entry.gradient).map(swatch)}
-                                    </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+            <PanelHeader
+                title={narrow ? (box.server ? "Server settings" : "Settings") : ""}
+                aside={box.saving
+                    ? <span className="text-[13px] text-muted">Saving…</span>
+                    : unsaved ? <span className="text-[13px] text-muted">Unsaved changes</span> : null}
+                close={close}
+            />
 
-                                    <div className="mt-3 text-xs text-faint">Color themes</div>
-
-                                    <div className="mt-2 flex flex-wrap gap-2.5 p-1">
-                                        {THEMES.filter((entry) => entry.gradient).map(swatch)}
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {listed.map(({ row, index }) =>
-                        {
-                            //A SECTION HEADING CARRIES A RULE OUT TO THE EDGE, WHICH IS WHAT SEPARATES THE GROUPS
-                            if (row.row === "header")
-                            {
-                                return (
-                                    <div key={`header-${row.label}`} className="flex items-center gap-3 px-2 pb-1 pt-5 first:pt-2">
-                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{row.label}</span>
-                                        <span className="h-px flex-1 bg-border" />
-                                    </div>
-                                );
-                            }
-
-                            if (row.row !== "item") return null;
-
-                            const item = row.item;
-                            const chosen = index === box.selected;
-                            const stacked = stacks(item);
-
-                            return (
-                                <div
-                                    key={item.key}
-                                    ref={chosen ? settingsRowRef : undefined}
-                                    onMouseDown={() => editSettings((current) => ({ ...current, selected: index }))}
-                                    onClick={() => { if (item.value.kind === "toggle") activateRow(index); }}
-                                    className={`flex rounded-app border-l-2 px-3 py-2.5 ${stacked ? "flex-col items-start gap-2" : "items-center gap-6"} ${chosen ? "border-accent bg-selected" : "border-transparent hover:bg-hover"}`}
-                                >
-                                    <div className={`min-w-0 ${stacked ? "w-full" : "flex-1"}`}>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            {/* A SETTING'S NAME IS A PHRASE AND NOT SOMETHING MEASURED IN
-                                                CHARACTERS, SO A LONG ONE WRAPS RATHER THAN BEING CUT */}
-                                            <span className="text-sm">{item.label}</span>
-
-                                            {/* AN EDITED ROW IS MARKED UNTIL THE SERVER HAS SAID WHAT IT STORED, AND ONE IT
-                                                WILL NOT PICK UP UNTIL IT IS RESTARTED CARRIES THAT SAVED OR NOT */}
-                                            {item.changed && <span className="rounded bg-notice/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-notice">edited</span>}
-                                            {item.restart && <span className="rounded bg-warning/15 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-warning">restart</span>}
-                                        </div>
-
-                                        {item.hint && <div className="mt-0.5 pr-2 text-xs leading-snug text-faint">{item.hint}</div>}
-                                    </div>
-
-                                    <div className={stacked ? "w-full" : "shrink-0"}>{control(item, index)}</div>
-                                </div>
-                            );
-                        })}
+            <div className="scroller h-[min(640px,70vh)] flex-1 px-6 pb-6 pt-0">
+                {/* THE WINDOW'S PALETTE */}
+                {theme !== null && section("Appearance", (
+                    <div className="flex flex-wrap gap-4 px-4 py-4">
+                        {THEMES.map(swatch)}
                     </div>
+                ), "appearance")}
 
-                    {/* THE SERVER'S ROWS ARE THE ONLY ONES THAT ARE NOT WRITTEN THROUGH ON THE SPOT, SO THEY
-                        ARE THE ONLY ONES WITH ANYTHING TO PRESS */}
-                    {actions.length > 0 && (
-                        <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
-                            <span className="flex-1 text-xs text-faint">
-                                {box.confirm
-                                    ? "Restarting drops every client on the server."
-                                    : unsaved ? "Nothing leaves this window until you save."
-                                    : narrow ? "" : "Arrows move and change, esc closes."}
-                            </span>
+                {groups.map((group, at) => section(group.label, group.rows.map(({ item, index }) =>
+                {
+                    const chosen = index === box.selected;
+                    const stacked = stacks(item);
 
-                            {actions.map(({ row, index }) =>
+                    return (
+                        <div
+                            key={item.key}
+                            ref={chosen ? settingsRowRef : undefined}
+                            onMouseDown={() => editSettings((current) => ({ ...current, selected: index }))}
+                            onClick={() => { if (item.value.kind === "toggle") activateRow(index); }}
+                            className={`flex px-4 py-2.5 transition-colors ${stacked ? "flex-col items-start gap-2" : "items-center gap-6"} ${chosen ? "bg-selected" : ""}`}
+                        >
+                            <div className={`min-w-0 ${stacked ? "w-full" : "flex-1"}`}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[14px]">{item.label}</span>
+
+                                    {/* UNSAVED, OR ONLY READ AT STARTUP */}
+                                    {item.changed && <span className="h-1.5 w-1.5 rounded-full bg-accent" title="Edited" />}
+                                    {item.restart && <span className="rounded-full bg-warning/15 px-2 py-px text-[11px] font-medium text-warning">Restart</span>}
+                                </div>
+
+                                {item.hint && <div className="mt-0.5 pr-2 text-[12.5px] leading-snug text-faint">{item.hint}</div>}
+                            </div>
+
+                            <div className={stacked ? "w-full" : "shrink-0"}>{control(item, index)}</div>
+                        </div>
+                    );
+                }), `group-${at}`))}
+
+                {/* THE SERVER'S, NOT client.toml'S */}
+                {account && section("Account", (
+                    <>
+                        <button type="button" onClick={() => account("passwd")} className="flex w-full items-center px-4 py-2.5 text-left text-[14px] transition-colors hover:bg-hover">
+                            <span className="flex-1">Change password</span>
+                            <Icon name="chevron_right" className="h-4 w-4 text-faint" />
+                        </button>
+
+                        <button type="button" onClick={() => account("delete")} className="flex w-full items-center px-4 py-2.5 text-left text-[14px] text-error transition-colors hover:bg-hover">
+                            Delete account
+                        </button>
+                    </>
+                ), "account")}
+            </div>
+
+            {/* ONLY THE SERVER'S ROWS NEED A BUTTON */}
+            {actions.length > 0 && (
+                <PanelFooter>
+                    {box.confirm && <span className="mr-auto text-[13px] text-error">Everybody will be disconnected.</span>}
+
+                    {actions.map(({ row, index }) =>
+                    {
+                        if (row.row !== "action") return null;
+
+                        const restart = row.label === RESTART_LABEL;
+                        const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
+                        const armed = restart && box.confirm;
+                        const chosen = index === box.selected;
+
+                        return (
+                            <button
+                                key={row.label}
+                                type="button"
+                                disabled={!live}
+                                onClick={() => activateRow(index)}
+                                className={`btn ${restart ? `btn-danger ${armed ? "armed" : ""}` : "btn-accent"} ${chosen ? "ring-2 ring-border-strong ring-offset-2 ring-offset-overlay" : ""}`}
+                            >
+                                {armed ? "Restart now" : row.label}
+                            </button>
+                        );
+                    })}
+                </PanelFooter>
+            )}
+            </div>
+            </div>
+
+            {/* THE LIST A DEVICE OR CHOICE ROW OPENS */}
+            {box.picker && (
+                <div
+                    onMouseDown={(event) =>
+                    {
+                        if (event.target !== event.currentTarget) return;
+
+                        editSettings((current) => ({ ...current, picker: null }));
+                        settingsRef.current?.focus();
+                    }}
+                    className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 px-6"
+                >
+                    <div className="w-full max-w-[400px] overflow-hidden rounded-xl border border-border-strong bg-overlay p-1 shadow-2xl">
+                        <div className="label px-3 pb-1.5 pt-2">{box.picker.title}</div>
+
+                        <div className="scroller" style={{ maxHeight: "48vh" }}>
+                            {box.picker.entries.map((entry, index) =>
                             {
-                                if (row.row !== "action") return null;
-
-                                const restart = row.label === RESTART_LABEL;
-                                const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
-                                const armed = restart && box.confirm;
-                                const chosen = index === box.selected;
-
-                                const skin = restart
-                                    ? `border ${armed ? "border-error bg-error/15 text-error" : "border-border text-muted hover:border-error hover:text-error"}`
-                                    : "bg-accent text-on-accent hover:brightness-110";
+                                const chosen = index === box.picker!.selected;
+                                const owner = box.rows[box.picker!.row];
+                                const using = owner?.row === "item"
+                                    && (owner.item.value.kind === "device" || owner.item.value.kind === "choice")
+                                    && owner.item.value.value.id === entry.id;
 
                                 return (
-                                    <button
-                                        key={row.label}
-                                        type="button"
-                                        disabled={!live}
-                                        onClick={() => activateRow(index)}
-                                        className={`rounded-app px-4 py-1.5 text-sm font-semibold transition ${skin} ${chosen ? "ring-2 ring-accent/60" : ""} disabled:cursor-not-allowed disabled:opacity-40`}
+                                    <div
+                                        key={entry.id || "default"}
+                                        ref={chosen ? pickerRowRef : undefined}
+                                        onMouseEnter={() => editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: index } } : current))}
+                                        onClick={() =>
+                                        {
+                                            setPicked(box.picker!.row, entry.id);
+                                            editSettings((current) => ({ ...current, picker: null }));
+                                            settingsRef.current?.focus();
+                                        }}
+                                        className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-[14px] ${chosen ? "bg-selected" : ""}`}
                                     >
-                                        {armed ? "Press again" : row.label}
-                                    </button>
+                                        <span className={`min-w-0 flex-1 truncate ${entry.id ? "" : "text-muted"}`}>{entry.label}</span>
+                                        {using && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
+                                    </div>
                                 );
                             })}
-                        </footer>
-                    )}
-
-                    {/* THE DEVICE LIST, ON TOP OF THE ROWS AND NOT BESIDE THEM - IT IS ANSWERING THE ROW
-                        UNDERNEATH IT, AND THERE IS NOTHING ELSE TO DO IN THE DIALOG UNTIL IT IS ANSWERED.
-                        IT IS ONE LIST OF id/label PAIRS - A DEVICE ROW AND THE SERVER ROW BOTH OPEN IT */}
-                    {box.picker && (
-                        <div
-                            onMouseDown={(event) =>
-                            {
-                                if (event.target !== event.currentTarget) return;
-
-                                editSettings((current) => ({ ...current, picker: null }));
-                                settingsRef.current?.focus();
-                            }}
-                            className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 px-6"
-                        >
-                            <div className="rise w-full max-w-[440px] overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl">
-                                <div className="border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
-                                    {box.picker.title}
-                                </div>
-
-                                <div className="scroller p-1" style={{ maxHeight: "48vh" }}>
-                                    {box.picker.entries.map((entry, index) =>
-                                    {
-                                        const chosen = index === box.picker!.selected;
-                                        const owner = box.rows[box.picker!.row];
-                                        const using = owner?.row === "item"
-                                            && (owner.item.value.kind === "device" || owner.item.value.kind === "choice")
-                                            && owner.item.value.value.id === entry.id;
-
-                                        return (
-                                            <div
-                                                key={entry.id || "default"}
-                                                ref={chosen ? pickerRowRef : undefined}
-                                                onMouseEnter={() => editSettings((current) => (current.picker ? { ...current, picker: { ...current.picker, selected: index } } : current))}
-                                                onClick={() =>
-                                                {
-                                                    setPicked(box.picker!.row, entry.id);
-                                                    editSettings((current) => ({ ...current, picker: null }));
-                                                    settingsRef.current?.focus();
-                                                }}
-                                                className={`flex cursor-pointer items-center gap-2 rounded-app px-3 py-2 text-sm ${chosen ? "bg-selected" : ""}`}
-                                            >
-                                                <span className={`min-w-0 flex-1 truncate ${entry.id ? "" : "text-muted"}`}>{entry.label}</span>
-                                                {using && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
                         </div>
-                    )}
+                    </div>
                 </div>
-            </div>
-        );
+            )}
+        </Overlay>
+    );
 }

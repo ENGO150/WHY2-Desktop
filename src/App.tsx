@@ -75,16 +75,17 @@ import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
-import { ServerRail, AddServerDialog, useHoldMenu } from "./servers";
+import { ServerSwitcher, AddServerDialog, useHoldMenu } from "./servers";
 import { AccountDialog, type AccountBox } from "./account";
 import { SettingsDialog } from "./settings-dialog";
 import { applyTheme, cachedTheme, DEFAULT_THEME } from "./themes";
 import { Sidebar } from "./sidebar";
+import { Avatar } from "./components";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines, HeldPicture } from "./messages";
-import { renderNotice, renderChat, renderBlock, renderTransfer, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderTransfer, renderDay, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
 import type { People, ProfileFields } from "./profile";
 import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
@@ -126,6 +127,9 @@ const PAN_SLOP = 8;
 
 //HOW OFTEN THE COMPOSER TELLS THE BRIDGE IT IS STILL BEING WRITTEN IN
 const TYPING_TICK = 1000;
+
+//SECONDS OF SILENCE THAT START A NEW RUN
+const RUN_GAP = 600;
 
 //HOW SOON A CLICK FOLLOWS THE PRESS THAT CLOSED A CARD
 const CARD_TOGGLE = 500;
@@ -3646,32 +3650,16 @@ function App()
 
     const channelLabel = currentChannel || "lobby";
 
-    //THE TWO SHAPES OF EVERY WINDOW THAT COVERS THE CONVERSATION. ON A DESKTOP IT IS A CARD FLOATING IN
-    //A DARKENED ROOM; ON A PHONE THERE IS NO ROOM TO FLOAT IN, SO IT IS THE SCREEN
-    //THE NARROW ONE PAYS THE INSETS AGAIN, EVEN THOUGH <main> ALREADY DID: AN absolute inset-0 CHILD IS
-    //LAID OUT AGAINST ITS ANCESTOR'S *PADDING BOX*, SO IT COVERS THE NOTCH THAT PADDING WAS KEEPING CLEAR
-    //- AND A HEADER UNDER THE STATUS BAR IS AN X THAT PULLS DOWN THE NOTIFICATIONS INSTEAD OF CLOSING.
-    //THE WRAP PAYS AND NOT THE CARD, SO THE OVERLAY STILL REACHES THE GLASS BEHIND THE BAR
-    const dialogWrap = narrow
-        ? "safe-top safe-bottom absolute inset-0 z-40 flex bg-overlay"
-        : "absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4";
-
-    const dialogCard = (wide: string) => narrow
-        ? "flex h-full w-full flex-col overflow-hidden bg-overlay outline-none"
-        : wide;
-
-    //WHAT THE MIDDLE COLUMN IS: A CHANNEL, OR ONE PERSON. THE HEADING, THE TAB, THE WAY BACK OUT OF A
-    //SCREEN AND THE COMPOSER'S OWN PLACEHOLDER ARE ALL THE SAME QUESTION ASKED IN FOUR PLACES
+    //WHAT THE MIDDLE COLUMN IS: A CHANNEL, OR ONE PERSON
     const columnLabel = dm ? dm.username : channelLabel;
     const columnIcon = dm ? "at" : "hash";
 
-    //WHAT THE PALETTE IS OFFERING: THE COMMANDS, THE PARAMETER'S OWN VOCABULARY, OR THE PARAMETERS
+    //WHAT THE PALETTE IS OFFERING
     const paletteTitle = palette.mode === "values"
-        ? palette.arg ? `${palette.arg.name.charAt(0).toUpperCase()}${palette.arg.name.slice(1).toLowerCase()}` : "Mentions"
+        ? palette.arg ? `${palette.arg.name.charAt(0)}${palette.arg.name.slice(1).toLowerCase()}` : "Mentions"
         : palette.mode === "menu" ? "Commands" : "Parameters";
 
-    //ONE ROW PER COMMAND, OR THE SINGLE PARAMETER HINT. THE ACTIVE PARAMETER'S OWN DESCRIPTION TAKES OVER
-    //THE COLUMN WHILE IT IS BEING TYPED - index IS null FOR THE HINT, WHICH IS THERE TO BE READ, NOT PICKED
+    //ONE COMMAND, OR THE SIGNATURE HINT (index null)
     const entryRow = (entry: PaletteEntry, index: number | null, activeArgument: number | null) =>
     {
         const chosen = index !== null && index === selected;
@@ -3683,9 +3671,10 @@ function App()
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={index === null ? undefined : () => setSelected(index)}
                 onClick={index === null ? undefined : () => { setSelected(index); complete(true, index); chatInputRef.current?.focus(); }}
-                className={`flex items-baseline gap-2 border-l-2 px-3 py-1.5 ${index === null ? "border-transparent" : "cursor-pointer"} ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
+                className={`flex items-baseline gap-2 rounded-md px-2.5 py-1.5 ${index === null ? "" : "cursor-pointer"} ${chosen ? "bg-selected" : ""}`}
             >
-                <span className="font-mono text-[13px] font-semibold text-text">/{entry.name}</span>
+
+                <span className="text-[13.5px] font-medium text-text">/{entry.name}</span>
                 {entry.args.map((arg, position) => (
                     <span
                         key={arg.name}
@@ -3694,12 +3683,12 @@ function App()
                         {formatArg(arg)}
                     </span>
                 ))}
-                <span className="ml-auto truncate pl-6 text-xs text-muted">{described?.description ?? entry.description}</span>
+                <span className="ml-auto truncate pl-6 text-[12.5px] text-muted">{described?.description ?? entry.description}</span>
             </div>
         );
     };
 
-    //ONE ROW PER ANSWER THE PARAMETER ACCEPTS, EACH SHOWING ITS OWN COLOR - A NAME ALONE WOULD STILL BE A GUESS
+    //ONE ANSWER A PARAMETER ACCEPTS, WITH ITS COLOR
     const valueRow = (value: VocabularyValue, index: number) =>
     {
         const chosen = index === selected;
@@ -3710,16 +3699,17 @@ function App()
                 ref={chosen ? selectedRef : undefined}
                 onMouseEnter={() => setSelected(index)}
                 onClick={() => { setSelected(index); complete(true, index); chatInputRef.current?.focus(); }}
-                className={`flex cursor-pointer items-center gap-3 border-l-2 px-3 py-1.5 ${chosen ? "border-accent bg-selected" : "border-transparent"}`}
+                className={`flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-1.5 ${chosen ? "bg-selected" : ""}`}
             >
-                {/* THE SWATCH IS THE ACTUAL ANSI COLOR - EVEN black AND dark_grey ARE SOMETHING TO LOOK AT */}
+
+                {/* THE TRUE ANSI COLOR */}
                 {value.color !== null && (
                     <span
-                        className="h-4 w-4 shrink-0 rounded border border-border-strong"
+                        className="h-4 w-4 shrink-0 rounded-full ring-1 ring-white/10"
                         style={{ backgroundColor: ANSI_TRUE[value.color] }}
                     />
                 )}
-                <span className="text-sm">{value.value}</span>
+                <span className="text-[14px]">{value.value}</span>
             </div>
         );
     };
@@ -3761,53 +3751,82 @@ function App()
         return messageColor(config, listed?.username_color ?? null);
     };
 
-    //WHO IS WRITING HERE, AS THE TUI'S BORDER SAYS IT
+    //WHO IS WRITING HERE
     const typers = Object.keys(typingUsers).sort();
 
     const typingLine = dm || typers.length === 0 ? null
-        : typers.length === 1 ? `${typers[0]} is typing…`
-            : typers.length === 2 ? `${typers[0]} and ${typers[1]} are typing…`
-                : `${typers.length} people are typing…`;
+        : typers.length === 1 ? `${typers[0]} is typing`
+            : typers.length === 2 ? `${typers[0]} and ${typers[1]} are typing`
+                : `${typers.length} people are typing`;
 
-    //THE WHOLE PANE. THE GROUPING IS DECIDED HERE AND NOT PER MESSAGE, BECAUSE IT IS ABOUT WHAT CAME
-    //BEFORE - AND ANYTHING THAT IS NOT SOMEBODY TALKING BREAKS THE RUN
+    //THE WHOLE PANE: RUNS, NOTICES, AND A DIVIDER WHERE THE DAY CHANGES
     const paneNodes = (() =>
     {
+        //EACH LINE'S PLACE IN ITS RUN, DECIDED FIRST SO A RUN KNOWS ITS LAST LINE
         let previous: string | null = null;
+        let last: number | null = null;
+        let day = "";
 
-        return pane.map((entry, index) =>
+        const plan = pane.map((entry) =>
         {
-            if (entry.entry === "block")
+            if (entry.entry !== "message")
             {
                 previous = null;
-
-                return renderBlock(entry.title, entry.rows, index, config);
-            }
-
-            if (entry.entry === "transfer")
-            {
-                previous = null;
-
-                return renderTransfer(transfers[entry.uid], index);
+                return { grouped: false, day: null as number | null };
             }
 
             const message = entry.message;
+            let mark: number | null = null;
+
+            if (config.show_timestamps && message.timestamp !== null)
+            {
+                const date = new Date(message.timestamp * 1000).toDateString();
+
+                if (date !== day)
+                {
+                    day = date;
+                    previous = null;
+                    mark = message.timestamp;
+                }
+            }
 
             if (message.kind !== "user" && message.kind !== "private")
             {
                 previous = null;
-
-                return renderNotice(message, index);
+                return { grouped: false, day: mark };
             }
 
+            //A LONG PAUSE STARTS A NEW RUN
             const author = `${message.kind} ${message.username} ${message.id ?? ""}`;
-            const grouped = author === previous && message.reply === null;
+            const paused = last !== null && message.timestamp !== null && message.timestamp - last > RUN_GAP;
+            const grouped = author === previous && message.reply === null && !paused;
 
             previous = author;
+            if (message.timestamp !== null) last = message.timestamp;
 
-            return renderChat(message, index, grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
-                lines, people);
+            return { grouped, day: mark };
         });
+
+        const nodes: React.ReactNode[] = [];
+
+        pane.forEach((entry, index) =>
+        {
+            const step = plan[index];
+
+            if (step.day !== null) nodes.push(renderDay(step.day, `day-${index}`));
+
+            if (entry.entry === "block") { nodes.push(renderBlock(entry.title, entry.rows, index, config)); return; }
+            if (entry.entry === "transfer") { nodes.push(renderTransfer(transfers[entry.uid], index)); return; }
+
+            const message = entry.message;
+
+            if (message.kind !== "user" && message.kind !== "private") { nodes.push(renderNotice(message, index)); return; }
+
+            nodes.push(renderChat(message, index, step.grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
+                lines, people, narrow));
+        });
+
+        return nodes;
     })();
 
     //A SWATCH PRESSED
@@ -3818,16 +3837,13 @@ function App()
         invoke("set_theme", { id: id === DEFAULT_THEME ? "" : id }).catch((error) => setPopupMessage(String(error)));
     };
 
-    //THE SETTINGS DIALOG. IT OWNS THE KEYBOARD WHILE IT IS UP, THE WAY THE TUI'S OVERLAY DOES - THE FOCUS
-    //MOVES INTO IT, SO NOTHING TYPED HERE REACHES THE COMPOSER BEHIND IT
+    //THE SETTINGS SHEET, WHICH OWNS THE KEYBOARD WHILE UP
     const settingsBox = settings && (
         <SettingsDialog
             settings={settings}
             settingsRef={settingsRef}
             settingsRowRef={settingsRowRef}
             pickerRowRef={pickerRowRef}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
             narrow={narrow}
             onKeyDown={handleSettingsKey}
             setToggle={setToggle}
@@ -3843,32 +3859,34 @@ function App()
         />
     );
 
-    //THE GESTURE FOR THE PICTURE IN FRONT, BOUND ONCE: THE HOLD AND THE PINCH ARE THE SAME TOUCHES, SO
-    //THEY HAVE TO BE ONE SET OF HANDLERS AND NOT TWO THAT REPLACE EACH OTHER. IT IS ONLY EVER CALLED FROM
-    //INSIDE THE LIGHTBOX, WHICH IS NOT DRAWN WITHOUT ONE
+    //THE LIGHTBOX'S OWN GESTURES, BOUND ONCE
     const holdPicture = pictureHold.bind({ image: lightbox!, message: null });
 
-    //A PICTURE AT THE SIZE IT WAS SENT AT, WITH THE WINDOW TO ITSELF. IT IS NOT A DIALOG - THERE IS
-    //NOTHING TO ANSWER - SO IT IS THE PICTURE ON A DARKENED ROOM, AND A PRESS ANYWHERE PUTS IT AWAY
+    //A PICTURE WITH THE WINDOW TO ITSELF; A PRESS OUTSIDE PUTS IT AWAY
     const pictureBox = lightbox?.source && (
         <div
             role="presentation"
             onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
-            className="lightbox-room fixed inset-0 z-[60] flex flex-col overflow-hidden bg-black/85 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex flex-col overflow-hidden bg-black/90"
         >
-            {/* THE ROW SITS LOWER THAN A HEADER WOULD: THERE IS NOTHING ABOVE IT TO SEPARATE IT FROM, AND
-                A CLOSE BUTTON IN THE VERY CORNER OF A DARKENED ROOM IS ONE NOBODY FINDS */}
-            <div className="safe-top flex shrink-0 items-center gap-3 px-4 pb-3 pt-6">
-                <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />
-                <span className="min-w-0 flex-1 truncate text-sm text-muted">{lightbox.filename}</span>
-                <IconButton icon="close" label="Close" onClick={closeLightbox} />
+            <div className="safe-top flex shrink-0 items-center gap-3 px-5 pb-3 pt-5">
+                <Icon name="image" className="h-4 w-4 shrink-0 text-white/50" />
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white/70">{lightbox.filename}</span>
+                {lightbox.width > 0 && <span className="hidden shrink-0 font-mono text-[11px] text-white/40 sm:inline">{lightbox.width}×{lightbox.height}</span>}
+
+                <button
+                    type="button"
+                    title="Close"
+                    aria-label="Close"
+                    onClick={closeLightbox}
+                    className="touch-target flex h-8 w-8 items-center justify-center rounded-app text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                    <Icon name="close" className="h-[18px] w-[18px]" />
+                </button>
             </div>
 
             <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-4">
-                {/* THE PICTURE IS THE ONE THING IN THE ROOM A PRESS DOES NOT CLOSE: A CLICK - OR TWO
-                    TAPS, WHICH IS THE SAME STEP ASKED FOR THE WAY A PHONE ASKS - IS THE ZOOM, A HOLD OR A
-                    RIGHT-CLICK IS THE MENU, AND TWO FINGERS ARE THE SAME ZOOM WITHOUT THE STEPS. THE
-                    TRANSFORM IS THE STATE'S EXCEPT WHILE FINGERS ARE ACTUALLY ON IT */}
+                {/* CLICK OR TWO TAPS ZOOM, A HOLD IS THE MENU, TWO FINGERS PINCH */}
                 <img
                     ref={pictureRef}
                     src={lightbox.source}
@@ -3878,11 +3896,7 @@ function App()
                     onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
                     onTouchStart={(event) =>
                     {
-                        //TWO FINGERS ARE A PINCH AND NEVER A HOLD, SO THE TIMER THE FIRST ONE STARTED
-                        //IS PUT OUT RATHER THAN LEFT TO OPEN A MENU IN THE MIDDLE OF A ZOOM - AND NEVER
-                        //A TAP EITHER, WHICH IS WHAT THE FLAG IS FOR. ONE FINGER LANDING STARTS A FRESH
-                        //GESTURE AND CLEARS IT, SINCE A PINCH THAT LEFT NO CLICK BEHIND WOULD OTHERWISE
-                        //SWALLOW THE NEXT TAP
+                        //TWO FINGERS ARE NEVER A HOLD OR A TAP
                         if (event.touches.length > 1)
                         {
                             pinchedRef.current = true;
@@ -3916,14 +3930,13 @@ function App()
                     style={zoom
                         ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
                         : undefined}
-                    className={`lightbox-open lightbox-picture max-h-full max-w-full object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+                    className={`lightbox-picture max-h-full max-w-full object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
                 />
             </div>
         </div>
     );
 
-    //THE MENU A PICTURE OPENS, WHEREVER IT WAS OPENED FROM - THE PANE OR THE LIGHTBOX OVER IT. IT IS THE
-    //SAME TWO THINGS EITHER WAY, AND ON A PHONE THE FIRST OF THEM IS NOT ONE OF THEM
+    //A PICTURE'S MENU, FROM THE PANE OR THE LIGHTBOX
     const pictureMenu = pictureHold.menu && (
         <PictureMenu
             at={pictureHold.menu}
@@ -3937,7 +3950,7 @@ function App()
         />
     );
 
-    //AND THE ONE A LINE OPENS, WHICH IS THE ONLY WAY TO COPY ONE ON A PHONE
+    //A LINE'S MENU
     const messageMenu = lineHold.menu && (
         <MessageMenu
             at={lineHold.menu}
@@ -3951,7 +3964,7 @@ function App()
         />
     );
 
-    //AND THE ONE ITS HEART CHIP OPENS
+    //AND ITS HEART CHIP'S
     const heartsLine = heartsHold.menu && heartsHold.menu.value.message_id !== null
         ? lines.target(heartsHold.menu.value.message_id) ?? heartsHold.menu.value
         : heartsHold.menu?.value;
@@ -4034,8 +4047,6 @@ function App()
             avatar={people.avatar(username)}
             color={colorOf(username)}
             uploading={uploadingAvatar}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
             narrow={narrow}
             save={saveProfile}
             pickAvatar={pickAvatar}
@@ -4044,9 +4055,7 @@ function App()
         />
     );
 
-    //WHAT IS ON THE SERVER, IN A WINDOW OF ITS OWN. NOBODY SAID IT, SO IT DOES NOT BELONG IN THE
-    //SCROLLBACK - IT IS A DRAWER THAT IS OPENED, LOOKED THROUGH AND CLOSED, AND IT CLOSES THE WAY EVERY
-    //OTHER MENU HERE DOES: ESC, THE X, OR A PRESS THAT LANDED OUTSIDE IT
+    //WHAT IS ON THE SERVER, AS A SHEET
     const filesBox = files && (
         <FilesBox
             files={files}
@@ -4054,17 +4063,14 @@ function App()
             setFilter={setFilter}
             config={config}
             filesRef={filesRef}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
+            narrow={narrow}
             send={send}
             refresh={() => send("/files")}
             close={closeFiles}
         />
     );
 
-    //SCREENS, BOTH WAYS ROUND: WHICH OF OURS TO SHARE AND WHOSE TO WATCH. THE PICK NEVER LEAVES THIS
-    //MACHINE - THE SERVER ONLY EVER KNOWS *THAT* WE ARE SHARING - AND NAMING ANOTHER MONITOR WHILE THE
-    //SHARE IS UP SWAPS THE CAPTURE OVER WITHOUT STOPPING IT
+    //SCREENS, BOTH WAYS ROUND
     const screensBox = screensOpen && (
         <ScreensBox
             sharers={sharers}
@@ -4072,31 +4078,25 @@ function App()
             watching={watching}
             username={username}
             screen={screen}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
+            narrow={narrow}
             send={send}
             askScreens={askScreens}
             close={() => setScreensOpen(false)}
         />
     );
 
-    //THE CONNECT SCREEN ASKS FOR EVERYTHING UNTIL WE ARE IN: THE ADDRESS, THEN WHOEVER THE SERVER WANTS US
-    //TO BE. IT IS THE WHOLE WINDOW RATHER THAN A BOX OVER THE CHAT, BECAUSE THERE IS NO CHAT BEHIND IT YET
-    //THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT: THE CONNECT SCREEN IS THE FORM'S OTHER HOME, AND
-    //THAT ONE IS ONLY UP WHILE THERE IS NONE
     const accountBox = account && (
         <AccountDialog
             key={account.round}
             box={account}
             cardRef={accountRef}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
             narrow={narrow}
             submit={submitAccount}
             close={closeAccount}
         />
     );
 
+    //THE ADD FORM OVER A SESSION
     const addBox = addOpen && (
         <AddServerDialog
             form={form}
@@ -4104,23 +4104,20 @@ function App()
             connecting={connecting}
             errorMsg={errorMsg}
             cardRef={addRef}
-            dialogWrap={dialogWrap}
-            dialogCard={dialogCard}
             narrow={narrow}
             onSubmit={handleSubmit}
             close={closeAdd}
         />
     );
 
-    //THE FAR-LEFT COLUMN, WHICH STANDS INSIDE THE SESSION - THE SELECTION SCREEN IS THE SAME LIST DRAWN
-    //LARGE, AND DRAWING BOTH AT ONCE WOULD BE ASKING THE SAME QUESTION TWICE ON ONE SCREEN - IT IS THE WAY INTO ONE AND
-    //THE WAY BETWEEN TWO. IT IS DRAWN INSIDE THE LEFT COLUMN WHILE THERE IS ONE, AND INSIDE THE CONNECT
-    //SCREEN WHILE THERE IS NOT; ON A PHONE THAT MAKES IT PART OF THE SAME DRAWER RATHER THAN A SECOND ONE
-    const rail = (
-        <ServerRail
+    //THE SERVER WE ARE ON, AND THE WAY TO THE OTHERS
+    const switcher = (
+        <ServerSwitcher
             servers={servers}
             active={dialing?.id ?? null}
             connecting={connecting}
+            serverName={serverName}
+            address={address}
             onPick={pickServer}
             onAdd={openAdd}
             onForget={forgetServer}
@@ -4152,59 +4149,77 @@ function App()
         />
     );
 
-    //THE IDENTITY CHECK. IT COVERS EVEN THE CONNECT SCREEN, BECAUSE IT IS THE ONLY THING THE USER MAY
-    //ANSWER WHILE IT IS UP - AND IT CAN APPEAR MID-SESSION TOO, SINCE THE PERIODIC REKEY RUNS THE SAME CHECK
+    //THE IDENTITY CHECK, OVER EVERYTHING
     const tofuBox = tofu && (
         <TofuDialog tofu={tofu} typed={tofuTyped} setTyped={setTofuTyped} answer={answerTofu} />
     );
+
+    //ONE OF THE CHANNEL HEADER'S ACTIONS
+    const headerAction = (icon: string, label: string, onClick: () => void, state: "on" | "live" | null) => (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={state !== null}
+            onClick={onClick}
+            className={`touch-target flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${state === "live"
+                ? "bg-online/12 text-online"
+                : state === "on" ? "bg-active text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+        >
+            <Icon name={icon} className="h-[18px] w-[18px]" />
+        </button>
+    );
+
+    //THE LINE THE COMPOSER IS ABOUT TO REWORD OR ANSWER
+    const contextBar = (icon: string, title: React.ReactNode, text: string, cancel: () => void, label: string) => (
+        <div className="flex items-center gap-2.5 border-b border-border px-3 py-2 text-[13px]">
+            <Icon name={icon} className="h-4 w-4 shrink-0 text-faint" />
+            <span className="shrink-0 font-medium">{title}</span>
+            <span className="min-w-0 flex-1 truncate text-muted">{text}</span>
+            <button
+                type="button"
+                title={label}
+                aria-label={label}
+                onClick={cancel}
+                className="touch-target flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+            >
+                <Icon name="close" className="h-3.5 w-3.5" />
+            </button>
+        </div>
+    );
+
+    //WHAT THE HEADER SAYS UNDER THE NAME
+    const subtitle = typingLine ?? (dm
+        ? users.some((user) => user.id === dm.id) ? "online" : "offline"
+        : `${users.length} online`);
+
     const shell = (
         <main
-            //A CLICK ANYWHERE THAT IS NOT THE COMPOSER PUTS THE PALETTE AWAY - IT IS A MENU LIKE ANY OTHER,
-            //AND THE NEXT KEYSTROKE IN THE LINE BRINGS IT STRAIGHT BACK
+            //A PRESS OUTSIDE THE COMPOSER PUTS THE PALETTE AWAY
             onMouseDown={() => setDismissed(true)}
             onTouchStart={onSwipeStart}
             onTouchMove={onSwipeMove}
             onTouchEnd={onSwipeEnd}
             onTouchCancel={onSwipeCancel}
 
-            //h-dvh AND NOT h-screen: A PHONE'S VIEWPORT IS THE ONE THING THAT CHANGES HEIGHT WHILE THE
-            //PAGE IS UP, AND WITH interactive-widget=resizes-content THE SOFT KEYBOARD IS EXACTLY THAT.
-            //THE INSETS ARE PAID BACK HERE ONCE, SO EVERY COLUMN INSIDE IS ALREADY CLEAR OF THE NOTCH
-            //h-dvh IS THE WINDOW WHERE WE ARE THE ONLY THING IN IT, AND A COLUMN OF WHAT IS LEFT UNDER
-            //THE TITLE BAR WHERE THERE IS ONE
-            className={`noise-overlay safe-top safe-bottom relative flex overflow-hidden bg-chat text-[15px] text-text ${chrome === "none" ? "h-dvh w-screen" : "min-h-0 w-full flex-1"}`}
+            //h-dvh FOLLOWS THE SOFT KEYBOARD; THE INSETS ARE PAID ONCE HERE
+            className={`safe-top safe-bottom relative flex overflow-hidden bg-chat text-[15px] text-text ${chrome === "none" ? "h-dvh w-screen" : "min-h-0 w-full flex-1"}`}
 
-            //AND WHERE THE TOP OF THE PAGE ACTUALLY IS. THE DRAWERS OF A NARROW WINDOW ARE fixed, WHICH
-            //IS AGAINST THE VIEWPORT AND NOT AGAINST THIS COLUMN - SO WHERE THE BAR IS OURS THEY HAVE TO
-            //BE TOLD TO START UNDER IT, OR THEIR FIRST INCH IS BEHIND IT AND CUT OFF. IT IS A CUSTOM
-            //PROPERTY AND NOT A PROP BECAUSE IT INHERITS DOWN THE DOM, WHICH IS WHAT A fixed CHILD STILL
-            //READS - AND A WINDOW WIDE ENOUGH TO HAVE NO DRAWERS SIMPLY NEVER ASKS
+            //WHERE THE PAGE STARTS, FOR THE fixed DRAWERS
             style={{ "--chrome-top": chrome === "none" ? "0px" : "var(--titlebar)" } as React.CSSProperties}
         >
             {connected && (
                 <>
-                    {/* THE SHEET UNDER AN OPEN DRAWER, WHICH IS ALSO THE WAY OUT OF ONE. IT IS THERE
-                        WHENEVER A DRAWER COULD BE, ONLY FADED OUT AND OUT OF REACH WHILE THERE IS NONE:
-                        A DRAG DARKENS IT BY THE INCH, AND A SHEET MOUNTED AT THE END OF THE DRAG WOULD
-                        HAVE NOTHING TO DARKEN FROM */}
+                    {/* THE SHEET UNDER A DRAWER, ALWAYS MOUNTED SO A DRAG CAN DARKEN IT */}
                     {narrow && !theater && (
                         <div
                             ref={scrimEl}
                             onMouseDown={() => setDrawer(null)}
-                            //fixed AND NOT absolute, LIKE THE DRAWERS IT SITS UNDER: BOTH ARE AGAINST THE
-                            //VIEWPORT, SO THE DARKNESS REACHES THE SAME EDGES OF THE GLASS THEY DO -
-                            //THE BAR WE DRAW OURSELVES INCLUDED, WHICH IS WHAT --chrome-top IS
-                            className={`scrim fixed inset-x-0 bottom-0 top-[var(--chrome-top)] z-30 bg-black/50 ${drawer === null ? "pointer-events-none opacity-0" : "opacity-100"}`}
+                            className={`scrim fixed inset-x-0 bottom-0 top-[var(--chrome-top)] z-30 bg-black/55 ${drawer === null ? "pointer-events-none opacity-0" : "opacity-100"}`}
                         />
                     )}
 
-                    {/* THE LEFT COLUMN: WHERE WE ARE, WHERE WE COULD BE, AND WHO WE ARE WHILE WE ARE THERE.
-                        ON A PHONE IT IS THE SAME COLUMN SLID IN OVER THE CONVERSATION - AND IT IS ALWAYS
-                        RENDERED, TRANSLATED OUT OF SIGHT, BECAUSE A PANEL THAT IS MOUNTED WHEN IT OPENS
-                        HAS NOWHERE TO SLIDE FROM */}
                     <Sidebar
-                        serverName={serverName}
-                        address={address}
                         role={role}
                         username={username}
                         users={users}
@@ -4227,93 +4242,68 @@ function App()
                         showDirect={showDirect}
                         closeDirect={closeDirect}
                         openScreens={openScreens}
-                        rail={rail}
+                        switcher={switcher}
                         people={people}
                         panelRef={leftPanel}
                     />
 
-                    {/* THE MIDDLE: THE CHANNEL, WHAT WAS SAID IN IT, AND THE LINE THAT SAYS THE NEXT THING */}
+                    {/* THE CONVERSATION */}
                     <section className="flex min-w-0 flex-1 flex-col bg-chat">
-                        <header className={`h-14 shrink-0 items-center gap-2 border-b border-border ${narrow ? "px-2" : "px-4"} ${theater ? "hidden" : "flex"}`}>
+                        <header className={`h-14 shrink-0 items-center gap-2 ${narrow ? "px-2" : "px-4"} ${theater ? "hidden" : "flex"}`}>
                             {narrow && (
                                 <IconButton icon="menu" label="Channels" onClick={() => setDrawer("left")} />
                             )}
 
-                            {/* WHILE THERE IS A SCREEN TO LOOK AT, THE HEAD OF THE COLUMN IS THE CHOICE OF
-                                WHICH TO LOOK AT - THE PICTURE TAKES THE WHOLE COLUMN OR NONE OF IT, BECAUSE
-                                HALF A CHAT ABOVE HALF A SCREEN IS TWO THINGS TOO SMALL TO READ */}
+                            {/* WITH A SCREEN UP, THE HEAD IS THE CHOICE OF WHICH TO LOOK AT */}
                             {watching ? (
-                                <div className="flex min-w-0 items-center gap-1 rounded-app bg-deep p-1">
+                                <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-active p-0.5">
                                     {([["chat", columnIcon, columnLabel], ["screen", "monitor", watching]] as const).map(([which, icon, label]) => (
                                         <button
                                             key={which}
                                             type="button"
                                             onClick={() => setView(which)}
-                                            className={`flex min-w-0 items-center gap-1.5 rounded-app px-2.5 py-1.5 text-sm transition-colors ${view === which
-                                                ? "bg-active font-semibold text-text"
-                                                : "text-muted hover:bg-hover hover:text-text"}`}
+                                            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] transition-colors ${view === which
+                                                ? "bg-overlay text-text shadow-sm"
+                                                : "text-muted hover:text-text"}`}
                                         >
-                                            <Icon name={icon} className={`h-4 w-4 shrink-0 ${which === "screen" && view !== which ? "text-online" : ""}`} />
+                                            <Icon name={icon} className={`h-4 w-4 shrink-0 ${which === "screen" ? "text-online" : ""}`} />
                                             <span className="max-w-[14ch] truncate">{label}</span>
                                         </button>
                                     ))}
                                 </div>
                             ) : (
-                                <>
-                                    <Icon name={columnIcon} className="h-5 w-5 shrink-0 text-faint" />
-                                    <span className="truncate font-semibold">{columnLabel}</span>
+                                <button
+                                    type="button"
+                                    onClick={(event) => (dm ? people.open(dm.username, event.currentTarget) : undefined)}
+                                    className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left ${dm ? "hover:bg-hover" : "cursor-default"}`}
+                                >
+                                    {dm
+                                        ? <Avatar name={dm.username} color={colorOf(dm.username)} size={20} src={people.avatar(dm.username)} />
+                                        : <span className="text-[16px] leading-none text-faint">#</span>}
 
-                                    <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
-                                    <span className="hidden min-w-0 truncate text-xs text-faint sm:block">
-                                        {dm
-                                            ? users.some((user) => user.id === dm.id) ? "online" : "no longer on the server"
-                                            : `${users.length} online`}
+                                    <span className="truncate text-[14px] font-medium">{columnLabel}</span>
+
+                                    <span className={`flex min-w-0 items-center gap-1.5 truncate pl-1 text-[13px] ${typingLine ? "text-muted" : "text-faint"}`}>
+                                        {typingLine && <span className="typing-dots shrink-0"><span /><span /><span /></span>}
+                                        <span className="truncate">{subtitle}</span>
                                     </span>
-                                </>
+                                </button>
                             )}
 
-                            <div className="ml-auto flex items-center gap-1">
-                                <IconButton
-                                    icon="folder"
-                                    label="Files on the server"
-                                    active={filesOpen}
-                                    onClick={() => (filesOpen ? closeFiles() : send("/files"))}
-                                />
-                                {hasScreens && (
-                                    <IconButton
-                                        icon="monitor"
-                                        label="Screens"
-                                        tone={screen.sharing ? "ok" : "default"}
-                                        active={screen.sharing || screensOpen}
-                                        onClick={openScreens}
-                                    />
-                                )}
-                                {hasVoice && (
-                                    <IconButton
-                                        icon="headset"
-                                        label={voice.enabled ? "Leave the call" : "Join the call"}
-                                        tone={voice.enabled ? "ok" : "default"}
-                                        onClick={() => send("/voice")}
-                                    />
-                                )}
+                            <div className="ml-auto flex items-center gap-0.5">
+                                {hasVoice && headerAction("headset", voice.enabled ? "Leave call" : "Join call", () => send("/voice"), voice.enabled ? "live" : null)}
+                                {hasScreens && headerAction("monitor", "Screens", openScreens, screen.sharing ? "live" : screensOpen ? "on" : null)}
+                                {headerAction("folder", "Files", () => (filesOpen ? closeFiles() : send("/files")), filesOpen ? "on" : null)}
 
-                                {/* THE SAME BUTTON EITHER WAY ROUND: A COLUMN TO STAND BESIDE THE
-                                    CONVERSATION, OR A DRAWER TO SLIDE OVER IT */}
-                                <IconButton
-                                    icon="users"
-                                    label="Members"
-                                    active={narrow ? drawer === "right" : members}
-                                    onClick={() => (narrow
-                                        ? setDrawer((previous) => (previous === "right" ? null : "right"))
-                                        : setMembers((previous) => !previous))}
-                                />
+                                {/* A COLUMN WHEN WIDE, A DRAWER WHEN NARROW */}
+                                {headerAction("users", "Members", () => (narrow
+                                    ? setDrawer((previous) => (previous === "right" ? null : "right"))
+                                    : setMembers((previous) => !previous)), (narrow ? drawer === "right" : members) ? "on" : null)}
                             </div>
                         </header>
 
-                        {/* SOMEBODY ELSE'S SCREEN. IT IS ONLY HIDDEN AND NEVER UNMOUNTED WHILE IT IS BEING
-                            WATCHED - A CANVAS THAT LEFT THE PAGE WOULD TAKE THE DECODER'S TARGET WITH IT,
-                            AND THE PICTURE WOULD COME BACK BLACK */}
-                        <div className={`min-h-0 flex-1 flex-col bg-deep ${watching && view === "screen" ? "flex" : "hidden"}`}>
+                        {/* SOMEBODY'S SCREEN, HIDDEN AND NEVER UNMOUNTED WHILE WATCHED */}
+                        <div className={`min-h-0 flex-1 flex-col bg-black ${watching && view === "screen" ? "flex" : "hidden"}`}>
                             <div className="relative min-h-0 flex-1">
                                 <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
@@ -4324,24 +4314,22 @@ function App()
                                 )}
                             </div>
 
-                            {/* WHOSE PICTURE IT IS, WHO IS DECODING IT, AND THE TWO WAYS OUT OF IT: BACK TO
-                                WHAT IS BEING SAID, OR OUT OF THE SHARE ALTOGETHER */}
-                            <div className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-3">
+                            <div className="flex h-11 shrink-0 items-center gap-3 border-t border-border bg-deep px-3">
                                 <button
                                     type="button"
-                                    title="Back to the chat (esc)"
+                                    title="Back to the conversation (esc)"
                                     onClick={() => setView("chat")}
-                                    className="flex shrink-0 items-center gap-1.5 rounded-app px-2 py-1 text-sm text-muted transition-colors hover:bg-hover hover:text-text"
+                                    className="flex shrink-0 items-center gap-1.5 rounded-app px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
                                 >
-                                    <Icon name={columnIcon} className="h-4 w-4" />
+                                    <Icon name="chevron" className="h-4 w-4 rotate-90" />
                                     <span className="max-w-[14ch] truncate">{columnLabel}</span>
                                 </button>
 
                                 <span className="h-4 w-px shrink-0 bg-border" />
 
-                                <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
+                                <span className="pulse h-1.5 w-1.5 shrink-0 rounded-full bg-online" />
 
-                                <span className="min-w-0 truncate text-sm">
+                                <span className="min-w-0 truncate text-[13px]">
                                     <span className="font-semibold">{watching}</span>
                                     <span className="text-muted">&apos;s screen</span>
                                 </span>
@@ -4351,44 +4339,34 @@ function App()
                                         title={decoding === "webview"
                                             ? "The window is decoding the H.264 stream itself"
                                             : "This webview has no H.264 decoder, so the frames are decoded for it and sent on as pictures"}
-                                        className="shrink-0 rounded bg-hover px-1.5 py-px font-mono text-[10px] uppercase tracking-wide text-faint"
+                                        className="shrink-0 rounded-full bg-active px-2 py-0.5 text-[10.5px] font-medium uppercase text-muted"
                                     >
                                         {decoding === "webview" ? "h.264" : "jpeg"}
                                     </span>
                                 )}
 
-                                <button
-                                    type="button"
-                                    onClick={() => send("/deattach")}
-                                    className="ml-auto shrink-0 rounded-app border border-border px-3 py-1 text-xs font-semibold text-muted transition hover:border-error hover:text-error"
-                                >
+                                <button type="button" onClick={() => send("/deattach")} className="btn btn-danger armed ml-auto py-1.5">
                                     Stop watching
                                 </button>
                             </div>
                         </div>
 
                         <div className={`relative min-h-0 flex-1 flex-col ${watching && view === "screen" ? "hidden" : "flex"}`}>
-                            <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative [overflow-anchor:none] min-h-0 flex-1 pb-4">
-                                <div ref={watchContent}>
-                                    {/* THE HEAD OF EVERY CHANNEL SAYS WHAT IT IS - AND WITH NOTHING SAID IN IT YET,
-                                        IT IS THE WHOLE OF WHAT THERE IS TO LOOK AT */}
-                                    <div className="px-4 pb-2 pt-8">
-                                        <h1 className="text-2xl font-bold">{dm ? dm.username : `Welcome to #${channelLabel}`}</h1>
-                                        <p className="mt-1 text-sm text-muted">
-                                            {dm
-                                                ? `This is the beginning of your conversation with ${dm.username}. Nobody else can read it, and nothing keeps it past this session.`
-                                                : currentChannel
-                                                    ? `This is the start of #${currentChannel}. It exists as long as somebody is in it.`
-                                                    : `This is the beginning of ${serverName || "the server"}.`}
-                                        </p>
+                            <div ref={paneRef} onScroll={onPaneScroll} className="scroller relative [overflow-anchor:none] min-h-0 flex-1 pb-3">
+                                <div ref={watchContent} className={`transcript mx-auto max-w-[820px] ${narrow ? "compact px-1" : "px-6"}`}>
+                                    {/* THE PAGE'S TITLE */}
+                                    <div className={`pb-4 ${narrow ? "px-3 pt-8" : "px-3 pt-14"}`}>
+                                        {dm
+                                            ? <Avatar name={dm.username} color={colorOf(dm.username)} size={56} src={people.avatar(dm.username)} />
+                                            : <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-raised text-[28px] text-faint">#</span>}
+                                        <h1 className="mt-4 truncate text-[32px] font-bold leading-tight tracking-[-0.02em]">{columnLabel}</h1>
                                     </div>
 
                                     {paneNodes}
                                 </div>
                             </div>
 
-                            {/* THE PANE FOLLOWS THE BOTTOM ONLY WHILE IT IS ALREADY THERE - SCROLLING UP PARKS
-                                IT AND COUNTS WHAT ARRIVES, AND THIS IS THE WAY BACK DOWN */}
+                            {/* THE WAY BACK DOWN */}
                             {unread > 0 && (
                                 <button
                                     type="button"
@@ -4400,130 +4378,85 @@ function App()
                                         pinnedRef.current = true;
                                         setUnread(0);
                                     }}
-                                    className="absolute inset-x-4 bottom-1 flex items-center gap-2 rounded-app bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent shadow-lg"
+                                    title={`${unread} new`}
+                                    className="absolute bottom-4 right-6 flex h-10 w-10 items-center justify-center rounded-full border border-border-strong bg-overlay text-text shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]"
                                 >
-                                    <Icon name="arrow_down" className="h-3.5 w-3.5" />
-                                    {unread} new {unread === 1 ? "message" : "messages"}
+                                    <Icon name="arrow_down" className="h-5 w-5" />
+                                    <span className="absolute -top-1.5 left-1/2 flex h-[18px] min-w-[18px] -translate-x-1/2 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{unread}</span>
                                 </button>
                             )}
                         </div>
 
                         <div
-                            className={`relative shrink-0 pt-1 ${narrow ? "px-2 pb-2" : "px-4 pb-5"} ${theater ? "hidden" : ""}`}
+                            className={`relative shrink-0 ${narrow ? "px-2 pb-2 pt-1" : "px-6 pb-5 pt-1"} ${theater ? "hidden" : ""}`}
                             onMouseDown={(event) => event.stopPropagation()}
                         >
-                            {/* AND THE PREVIEW STANDS IN THE SAME PLACE, WHICH THE TWO NEVER WANT AT ONCE:
-                                THE PALETTE IS UP FOR A LINE STARTING WITH '/', AND A COMMAND IS NOT
-                                SOMETHING THE MARKUP TOUCHES. IT IS DRAWN ONLY WHERE THERE IS SOMETHING IN
-                                THE LINE TO SHOW - A LINE OF PLAIN TEXT PREVIEWED IS THE SAME LINE TWICE */}
-                            {palette.mode === "hidden" && previewing && (
-                                <MarkupPreview text={chatInput} config={config} narrow={narrow} />
-                            )}
+                            <div className={`relative mx-auto max-w-[820px] ${narrow ? "" : "px-3"}`}>
+                                {/* PREVIEW AND PALETTE NEVER WANT THE SPACE AT ONCE */}
+                                {palette.mode === "hidden" && previewing && (
+                                    <MarkupPreview text={chatInput} config={config} />
+                                )}
 
-                            {/* THE PALETTE SITS ON THE COMPOSER, WHICH IS WHERE THE LINE IT IS TALKING ABOUT IS */}
-                            {palette.mode !== "hidden" && (
-                                <div className={`rise absolute bottom-full z-20 mb-2 overflow-hidden rounded-app border border-border bg-overlay shadow-2xl ${narrow ? "inset-x-2" : "inset-x-4"}`}>
-                                    <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{paletteTitle}</span>
-                                        {/* THE KEYS THIS IS DRIVEN WITH, WHERE THERE ARE ANY: A PHONE HAS A
-                                            SOFT KEYBOARD WITH NONE OF THEM ON IT, AND A ROW IS TAPPED THERE */}
-                                        {active && !narrow && <span className="text-[11px] text-faint">↑↓ select · tab complete · esc dismiss</span>}
+                                {palette.mode !== "hidden" && (
+                                    <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl border border-border-strong bg-overlay shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
+                                        <div className="label px-3 pb-1 pt-2.5">{paletteTitle}</div>
+
+                                        <div className="scroller px-1 pb-1" style={{ maxHeight: `${PALETTE_ROWS * 2.2}rem` }}>
+                                            {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
+                                            {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
+                                            {palette.mode === "values" && palette.matches.map(valueRow)}
+                                        </div>
                                     </div>
+                                )}
 
-                                    <div className="scroller" style={{ maxHeight: `${PALETTE_ROWS * 2.1}rem` }}>
-                                        {palette.mode === "menu" && palette.entries.map((entry, index) => entryRow(entry, index, null))}
-                                        {palette.mode === "signature" && entryRow(palette.entry, null, palette.active)}
-                                        {palette.mode === "values" && palette.matches.map(valueRow)}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* WHAT THE NEXT LINE REWORDS */}
-                            {editTarget && (
-                                <div className={`mb-1 flex items-center gap-2 px-2 text-xs text-muted ${narrow ? "" : "px-3"}`}>
-                                    <Icon name="pencil" className="h-3.5 w-3.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate">Editing message #{editTarget.message_id}</span>
-                                    <button
-                                        type="button"
-                                        title="Cancel edit"
-                                        aria-label="Cancel edit"
-                                        onClick={stopEditing}
-                                        className="touch-target flex h-6 w-6 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-text"
-                                    >
-                                        <Icon name="close" className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* WHAT THE NEXT LINE ANSWERS */}
-                            {replyTo && (
-                                <div className={`mb-1 flex items-center gap-2 px-2 text-xs text-muted ${narrow ? "" : "px-3"}`}>
-                                    <Icon name="reply" className="h-3.5 w-3.5 shrink-0" />
-                                    <span className="min-w-0 flex-1 truncate">
-                                        Replying to <span className="font-semibold" style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        title="Cancel reply"
-                                        aria-label="Cancel reply"
-                                        onClick={() => setReplyTo(null)}
-                                        className="touch-target flex h-6 w-6 items-center justify-center rounded-app transition-colors hover:bg-hover hover:text-text"
-                                    >
-                                        <Icon name="close" className="h-3.5 w-3.5" />
-                                    </button>
-                                </div>
-                            )}
-
-                            <form onSubmit={handleChatSubmit} className={`flex items-end gap-1 bg-raised px-2 ${narrow ? "rounded-3xl py-1" : "rounded-app py-1.5"}`}>
-                                <IconButton icon="plus" label="Upload a file" onClick={() => uploadFile(false)} />
-                                <IconButton icon="image" label="Send an image" onClick={() => uploadFile(true)} />
-
-                                <textarea
-                                    ref={chatInputRef}
-                                    id="chat-input"
-                                    rows={1}
-                                    value={chatInput}
-                                    onChange={(event) => writeInput(event.currentTarget.value)}
-                                    onKeyDown={handleChatKey}
-                                    placeholder={dm ? `Message @${dm.username}` : `Message #${channelLabel}`}
-                                    className="composer-line min-w-0 flex-1 bg-transparent px-1 py-1.5 text-[15px] outline-none placeholder:text-faint"
-
-                                    //THE SOFT KEYBOARD OPENS WHEN THE LINE IS TAPPED AND NOT WHEN THE
-                                    //WINDOW APPEARS, AND ITS RETURN KEY SAYS WHAT IT ACTUALLY DOES -
-                                    //WHICH ON A SOFT KEYBOARD IS A NEWLINE (SEE handleChatKey)
-                                    autoFocus={!narrow}
-                                    enterKeyHint={touchPointer ? "enter" : "send"}
-                                    autoCapitalize="sentences"
-                                    autoCorrect="off"
-                                    spellCheck={false}
-                                />
-
-                                <button
-                                    type="submit"
-                                    title="Send"
-                                    aria-label="Send"
-                                    disabled={!chatInput.trim()}
-                                    //touch-target, LIKE THE TWO BESIDE IT: A FINGER'S BUTTON IS 40 AND
-                                    //A POINTER'S IS 32, AND THE ROW IS BOTTOM-ALIGNED - SO THE ONE THAT
-                                    //DID NOT GROW SAT EIGHT PIXELS BELOW THE OTHERS ON A PHONE
-                                    className="touch-target flex h-8 w-8 items-center justify-center rounded-app text-muted transition-colors hover:bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                                <form
+                                    onSubmit={handleChatSubmit}
+                                    className="overflow-hidden rounded-xl border border-border-strong bg-raised shadow-[0_4px_20px_-10px_rgba(0,0,0,0.35)] transition-colors focus-within:border-muted/50"
                                 >
-                                    <Icon name="send" className="h-[18px] w-[18px]" />
-                                </button>
-                            </form>
+                                    {editTarget && contextBar("pencil", "Editing", editTarget.text.split("\n")[0], stopEditing, "Cancel edit")}
 
-                            {/* UNDER THE LINE WHERE THERE IS ROOM, OVER IT ON A PHONE */}
-                            {typingLine && (
-                                <div className={`pointer-events-none absolute z-10 truncate text-[11px] text-muted ${narrow
-                                    ? "bottom-full left-4 right-4 mb-0.5"
-                                    : "bottom-0.5 left-6 right-6"}`}>
-                                    <span className={narrow ? "rounded bg-chat/90 px-1.5 py-px" : ""}>{typingLine}</span>
-                                </div>
-                            )}
+                                    {replyTo && contextBar("reply", (
+                                        <span style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
+                                    ), replyTo.image ? "Picture" : replyTo.text.split("\n")[0], () => setReplyTo(null), "Cancel reply")}
+
+                                    <textarea
+                                        ref={chatInputRef}
+                                        id="chat-input"
+                                        rows={1}
+                                        value={chatInput}
+                                        onChange={(event) => writeInput(event.currentTarget.value)}
+                                        onKeyDown={handleChatKey}
+                                        placeholder={dm ? `Message ${dm.username}` : `Message #${channelLabel}`}
+                                        className="composer-line block w-full bg-transparent px-4 pb-1 pt-3 text-[15px] outline-none placeholder:text-faint"
+
+                                        //THE KEYBOARD OPENS ON A TAP, AND RETURN IS A NEWLINE THERE
+                                        autoFocus={!narrow}
+                                        enterKeyHint={touchPointer ? "enter" : "send"}
+                                        autoCapitalize="sentences"
+                                        autoCorrect="off"
+                                        spellCheck={false}
+                                    />
+
+                                    <div className="flex items-center gap-0.5 px-2 pb-2">
+                                        <IconButton icon="paperclip" label="Attach a file" onClick={() => uploadFile(false)} />
+                                        <IconButton icon="image" label="Send a picture" onClick={() => uploadFile(true)} />
+
+                                        <button
+                                            type="submit"
+                                            title="Send"
+                                            aria-label="Send"
+                                            disabled={!chatInput.trim()}
+                                            className="touch-target ml-auto flex h-8 w-8 items-center justify-center rounded-lg bg-text text-chat transition hover:opacity-90 disabled:cursor-default disabled:bg-active disabled:text-faint"
+                                        >
+                                            <Icon name="arrow_down" className="h-4 w-4 rotate-180" />
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </section>
 
-                    {/* THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN */}
+                    {/* EVERYBODY ON THE SERVER */}
                     {(narrow ? !theater : members && !theater) && (
                         <MemberColumn
                             users={users}
@@ -4542,18 +4475,10 @@ function App()
                 </>
             )}
 
-            {/* WHAT THE SERVER SAID IN PASSING - IT IS NOT A MESSAGE, AND IT DOES NOT BELONG IN THE PANE.
-                IT HANGS FROM THE TOP, WHERE IT COVERS A HEADER THAT SAYS THE SAME THING WHENEVER IT IS
-                DISMISSED - AT THE BOTTOM IT SAT ON THE COMPOSER, WHICH IS WHERE SOMEBODY IS TYPING WHILE
-                IT IS UP. THE INSET IS ITS OWN: THIS IS PINNED TO main AND NOT INSIDE A COLUMN THAT HAS
-                ALREADY PAID FOR THE NOTCH.
-                IT STANDS OVER EVERYTHING IN main, THE LIGHTBOX AND ITS MENU INCLUDED: WHAT IT SAYS IS
-                USUALLY THE ANSWER TO WHATEVER WAS JUST DONE IN FRONT - COPYING A PICTURE, SAVING ONE -
-                AND A TOAST BEHIND THE DARKENED ROOM THAT ASKED FOR IT IS AN ANSWER NOBODY EVER SEES.
-                IT IS pointer-events-none, SO STANDING ON TOP COSTS THE MENU UNDER IT NOTHING */}
+            {/* WHAT THE SERVER SAID IN PASSING, OVER EVERYTHING */}
             {popupMessage && (
-                <div className="fall safe-top pointer-events-none absolute inset-x-0 top-0 z-[80] flex justify-center">
-                    <div className="mt-4 max-w-[80vw] rounded-app border border-border bg-overlay px-4 py-2 text-sm text-muted shadow-2xl">
+                <div className="safe-top pointer-events-none absolute inset-x-0 top-0 z-[80] flex justify-center">
+                    <div className="mt-4 max-w-[80vw] rounded-lg border border-border-strong bg-overlay px-3.5 py-2 text-[13.5px] text-text shadow-[0_14px_40px_-14px_rgba(0,0,0,0.5)]">
                         {popupMessage}
                     </div>
                 </div>
@@ -4575,11 +4500,10 @@ function App()
         </main>
     );
 
-    //AND THE FRAME AROUND IT, WHERE IT IS OURS TO DRAW. A PHONE AND A BROWSER GET THE SHELL ALONE - THE
-    //BAR IS NOT HIDDEN THERE, IT DOES NOT EXIST, AND NEITHER DOES THE COLUMN THAT WOULD HOLD IT
+    //THE FRAME, WHERE IT IS OURS TO DRAW
     return chrome === "none" ? shell : (
         <div className="flex h-dvh w-screen flex-col overflow-hidden bg-deep">
-            <TitleBar chrome={chrome} title="WHY2" />
+            <TitleBar chrome={chrome} />
             {shell}
         </div>
     );

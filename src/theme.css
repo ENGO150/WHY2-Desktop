@@ -16,81 +16,72 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* THE SURFACES ARE A DARK STACK - RAIL, SIDEBAR, CHAT, RAISED, OVERLAY - AND EVERY ONE OF THEM IS THE
-   SAME NEAR-BLACK WITH A TRACE OF ROSE IN IT, SO THE WINDOW READS AS ONE MATERIAL LIT FROM ONE SIDE.
-   THE ACCENTS ARE THE TERMINAL CLIENT'S PALETTE PULLED MOST OF THE WAY TOWARDS GREY - THE CHROME IS
-   NEARLY MONOCHROME ON PURPOSE, SO THE ONLY SATURATED THING IN THE WINDOW IS WHAT SOMEBODY SAID */
+/* BLACK - THE DEFAULT PALETTE */
 :root
 {
-    --deep: #050405;             /* THE RAIL, AND WHATEVER SITS BEHIND EVERYTHING */
-    --sidebar: #0a0809;          /* THE CHANNEL AND MEMBER COLUMNS */
-    --chat: #0d0b0c;             /* WHERE THE MESSAGES ARE */
-    --raised: #131011;           /* THE COMPOSER, CARDS, THE BLOCKS PRINTED INTO THE STREAM */
-    --overlay: #171314;          /* DIALOGS */
+    --deep: #000000;             /* FRAME */
+    --sidebar: #0a0a0a;          /* SIDEBAR */
+    --chat: #000000;             /* THE PAGE */
+    --raised: #141414;           /* WIDGETS, CARDS */
+    --overlay: #161616;          /* POPUPS */
 
-    --hover: #ffffff0a;
+    --hover: #ffffff09;
     --selected: #ffffff10;
     --active: #ffffff17;
 
-    --border: #1d191a;
-    --border-strong: #2d2729;
+    --border: #ffffff12;
+    --border-strong: #ffffff1f;
 
-    --text: #cec6c8;             /* WARM OFF-WHITE - THE BASE FOREGROUND */
-    --muted: #877c7f;            /* EVERY DIM LABEL */
-    --faint: #5a5154;            /* TIMESTAMPS, IDS, PLACEHOLDERS */
+    --text: #e5e3dc;
+    --muted: #9c9a93;
+    --faint: #6b6a65;
 
-    --accent: #93a0ac;           /* COLD PEWTER - LINKS, THE ACTIVE THING, THE CARET */
-    --on-accent: #000000d9;      /* TEXT ON AN ACCENT BUTTON */
-    --brand: #ae7f9b;            /* WHY2 ITSELF, DIMMED TO THE ROOM */
-    --notice: #ada0a3;           /* PALE ASH */
-    --ok: #9e8a8b;               /* SALMON, WORN DOWN */
-    --error: #ae5c68;
-    --online: #71917e;           /* PRESENCE, AND A CALL THAT IS UP */
-    --warning: #a69166;
-    --heart: #b86a7c;            /* A HEART WE GAVE */
+    --accent: #5c9df5;
+    --on-accent: #ffffff;
+    --mine: transparent;
+    --highlight: #f2c94c;        /* MENTIONS */
+    --brand: #e5e3dc;
+    --notice: #c4c2ba;
+    --ok: #6fbf73;
+    --error: #ec6a5e;
+    --online: #6fbf73;
+    --warning: #e9b949;
+    --heart: #ec6a7e;
 
-    --arg-required: #a0937f;     /* SOFT SAND */
-    --arg-optional: #a58c88;     /* FADED CORAL */
+    --arg-required: #d9b26a;
+    --arg-optional: #b8a2d6;
 
-    /* CODE. THESE FIVE ARE tui/theme.rs' OWN - CODE_BG, CODE, CODE_BLOCK, CODE_BAR AND CODE_LANG - SO A
-       BLOCK READS THE SAME IN BOTH CLIENTS. IT IS THE ONE WARM SURFACE IN THE WINDOW ON PURPOSE: A BLOCK
-       IS SOMEBODY ELSE'S TEXT SET IN SOMEBODY ELSE'S LANGUAGE, AND IT IS MEANT TO SIT APART */
-    --code-bg: #2e2428;          /* DEEP ROSE-BROWN */
-    --code-inline: #ffbbba;
-    --code-text: #eed1d6;
-    --code-bar: #9dceff;         /* THE BLOCK'S LEFT EDGE */
-    --code-lang: #cab4b7;
+    /* CODE */
+    --code-bg: #0e0e0e;
+    --code-inline: #eb8f6a;
+    --code-text: #e5e3dc;
+    --code-bar: #3a3a3a;
+    --code-lang: #8a8984;
 
-    /* MARKDOWN. tui/theme.rs' HEADING, QUOTE, BULLET AND RULE - THE FOUR THINGS THE LINE-LEVEL MARKUP
-       DRAWS THAT ARE NOT THE MESSAGE'S OWN TEXT */
-    --md-heading: #ffdde2;
-    --md-quote: #9dceff;         /* A BLOCKQUOTE'S EDGE, AND A LIST MARKER */
-    --md-rule: #cab4b7;
+    /* MARKDOWN */
+    --md-heading: #f2f0ea;
+    --md-quote: #5a5955;
+    --md-rule: #333333;
 
-    /* AND WHAT A HIGHLIGHTER PAINTS ON IT. THE TERMINAL HIGHLIGHTS NOTHING, SO THESE ARE THIS WINDOW'S
-       ALONE - PITCHED TO SIT ON --code-bg RATHER THAN TAKEN FROM THE CHROME, WHICH IS GREY BY DESIGN */
-    --syntax-keyword: #ffa0b4;
-    --syntax-string: #a9c99b;
-    --syntax-number: #e0b878;
-    --syntax-comment: #9a8a8e;
-    --syntax-title: #9dceff;
-    --syntax-type: #c9b0e8;
-    --syntax-builtin: #86c9c0;
-    --syntax-attr: #f0c9c4;
+    /* SYNTAX */
+    --syntax-keyword: #e5848f;
+    --syntax-string: #a8c98a;
+    --syntax-number: #e2b56b;
+    --syntax-comment: #7a7975;
+    --syntax-title: #86b3ec;
+    --syntax-type: #c4a5e3;
+    --syntax-builtin: #79c6bb;
+    --syntax-attr: #e3a98a;
 
-    /* THE SIXTEEN PROTOCOL COLORS, LIFTED OFF THE FLOOR (theme.ts::ANSI) */
-    --ansi-0: #6b6b6b;  --ansi-1: #e06c75;  --ansi-2: #7ec699;  --ansi-3: #d7b56b;
-    --ansi-4: #7aa2f7;  --ansi-5: #c792ea;  --ansi-6: #56b6c2;  --ansi-7: #c0c0c0;
-    --ansi-8: #909090;  --ansi-9: #ff6b7a;  --ansi-10: #8bea9b; --ansi-11: #ffe07a;
-    --ansi-12: #8ab4ff; --ansi-13: #ff8be0; --ansi-14: #7fe6ec; --ansi-15: #ffffff;
+    /* PROTOCOL COLORS */
+    --ansi-0: #7d7b75;  --ansi-1: #e5737a;  --ansi-2: #7cc48a;  --ansi-3: #ddb262;
+    --ansi-4: #7aa1ea;  --ansi-5: #c493dc;  --ansi-6: #60b8c0;  --ansi-7: #c8c6bf;
+    --ansi-8: #9a9891;  --ansi-9: #f2878d;  --ansi-10: #96dda2; --ansi-11: #edd27d;
+    --ansi-12: #96b7f2; --ansi-13: #e996d6; --ansi-14: #84d5dc; --ansi-15: #f5f4f0;
 
     --radius: 8px;
 
-    /* THE BAR WE DRAW OURSELVES (titlebar.tsx'S h-8 AND ITS BOTTOM BORDER - ONE ANSWER SPELLED TWICE),
-       AND HOW FAR DOWN THE GLASS THE PAGE ACTUALLY STARTS. A NARROW WINDOW'S DRAWERS ARE fixed, WHICH
-       IS AGAINST THE VIEWPORT AND NOT AGAINST THE COLUMN UNDER THE BAR - SO WITHOUT THIS THEIR TOP
-       INCH IS BEHIND IT. App.tsx SETS --chrome-top ON <main>, AND IT IS 0 WHERE THE FRAME IS SOMEBODY
-       ELSE'S TO DRAW (macOS, A PHONE, A BROWSER) */
+    /* TITLE BAR AND WHERE THE PAGE STARTS */
     --titlebar: calc(2rem + 1px);
     --chrome-top: 0px;
 }
@@ -105,6 +96,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     --color-chat: var(--chat);
     --color-raised: var(--raised);
     --color-overlay: var(--overlay);
+    --color-mine: var(--mine);
+    --color-highlight: var(--highlight);
 
     --color-hover: var(--hover);
     --color-selected: var(--selected);
@@ -146,8 +139,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         @apply bg-deep text-text;
 
         font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-feature-settings: "cv11";
         font-synthesis-weight: none;
         text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
         overflow: hidden;
     }
 
@@ -156,17 +151,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
         cursor: pointer;
     }
 
-    /* A TOUCH SCREEN. THE GREY FLASH ANDROID PAINTS OVER EVERY TAP IS THE WEB'S OWN TELL, AND A WINDOW
-       THAT BOUNCES WHEN THE PANE HITS ITS END READS AS A PAGE RATHER THAN AS A PROGRAM */
+    /* NO TAP FLASH, NO BOUNCE */
     html
     {
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior: none;
     }
 
-    /* NOTHING IN A CHAT WINDOW IS A DOCUMENT TO SELECT BY ACCIDENT - THE MESSAGE TEXT OPTS BACK IN */
     ::selection
     {
         background: color-mix(in oklab, var(--accent) 35%, transparent);
+    }
+
+    :focus-visible
+    {
+        outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
+        outline-offset: 1px;
     }
 }

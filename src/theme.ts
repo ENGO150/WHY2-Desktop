@@ -34,7 +34,7 @@ export const ANSI_TRUE: Record<number, string> =
 
 //THE COLOR AN AVATAR FALLS BACK TO WHEN THE USER HAS NOT PICKED ONE - THE SAME NAME ALWAYS GETS THE SAME
 //ONE, SO A FACE IS RECOGNISABLE DOWN THE PANE EVEN THOUGH NOTHING ABOUT IT IS STORED ANYWHERE
-export const AVATARS = ["#6f5ba8", "#a85b7a", "#5b86a8", "#a8875b", "#5ba884", "#a85b5b", "#7a5ba8", "#5ba8a0"];
+export const AVATARS = ["#d9a25b", "#7fb0d8", "#c98bbf", "#8fbf7a", "#d98b74", "#9b9bd9", "#6fbfb3", "#c7b46a"];
 
 export function avatarColor(name: string): string
 {

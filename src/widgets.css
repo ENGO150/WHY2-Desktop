@@ -16,9 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* THE SCROLLBAR IS ONLY THERE WHILE SOMETHING IS OFF-SCREEN, AND IT NEVER CLAIMS A COLUMN OF ITS OWN.
-   overflow-x IS SAID OUT LOUD BECAUSE overflow-y: auto ALONE COMPUTES THE OTHER AXIS TO auto AS WELL -
-   A COLUMN THAT SCROLLS SIDEWAYS IS A LINE THAT SHOULD HAVE WRAPPED */
+/* SCROLLING COLUMNS, NEVER SIDEWAYS */
 .scroller
 {
     overflow-y: auto;
@@ -29,8 +27,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 .scroller::-webkit-scrollbar
 {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
 }
 
 .scroller::-webkit-scrollbar-track
@@ -41,10 +39,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 .scroller::-webkit-scrollbar-thumb
 {
     background: var(--border-strong);
-    border-radius: 4px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
 }
 
-/* A COLUMN THAT ONLY SHOWS ITS SCROLLBAR WHILE THE POINTER IS IN IT, THE WAY THE SIDEBARS DO */
+/* SCROLLBAR ONLY UNDER THE POINTER */
 .scroller-quiet
 {
     scrollbar-color: transparent transparent;
@@ -63,23 +63,123 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 .scroller-quiet:hover::-webkit-scrollbar-thumb
 {
     background: var(--border-strong);
+    background-clip: padding-box;
 }
 
-/* SOMEBODY IS TALKING - THE RING AROUND THEIR AVATAR IS THE ONE THING IN THE WINDOW THAT MOVES */
+/* PIECES, BELOW THE UTILITIES */
+@layer components
+{
+    .label
+    {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+    }
+
+    .btn
+    {
+        @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-border-strong px-3 py-1.5 text-[13.5px] font-medium text-text transition-colors;
+    }
+
+    .btn:hover:not(:disabled)
+    {
+        @apply bg-hover;
+    }
+
+    .btn:disabled
+    {
+        @apply cursor-not-allowed opacity-40;
+    }
+
+    /* THE PRIMARY BUTTON IS THE TEXT COLOUR, INVERTED */
+    .btn-accent
+    {
+        @apply border-transparent bg-text text-chat;
+    }
+
+    .btn-accent:hover:not(:disabled)
+    {
+        @apply bg-text opacity-90;
+    }
+
+    .btn-quiet
+    {
+        @apply border-transparent text-muted;
+    }
+
+    .btn-quiet:hover:not(:disabled)
+    {
+        @apply text-text;
+    }
+
+    .btn-danger
+    {
+        @apply text-error;
+    }
+
+    .btn-danger:hover:not(:disabled)
+    {
+        @apply bg-error/10;
+    }
+
+    .btn-danger.armed
+    {
+        @apply border-transparent bg-error text-white;
+    }
+
+    .field
+    {
+        @apply w-full rounded-lg border border-border-strong bg-transparent px-3 py-2 text-[14px] text-text outline-none transition-colors placeholder:text-faint;
+    }
+
+    .field:focus
+    {
+        @apply border-muted;
+    }
+
+    .field:disabled
+    {
+        @apply opacity-50;
+    }
+
+    .caption
+    {
+        @apply mb-1.5 block text-[12.5px] text-muted;
+    }
+
+    /* A GROUP OF SETTINGS ROWS */
+    .group-box
+    {
+        @apply overflow-hidden rounded-xl border border-border;
+    }
+
+    .group-box > * + *
+    {
+        @apply border-t border-border;
+    }
+
+    /* A SIDEBAR WIDGET */
+    .widget
+    {
+        @apply rounded-xl bg-raised p-1;
+    }
+}
+
+/* SPEAKING */
 .speaking
 {
-    box-shadow: 0 0 0 2px var(--online);
+    box-shadow: 0 0 0 2px var(--raised), 0 0 0 3.5px var(--online);
     transition: box-shadow 90ms ease-out;
 }
 
-/* THE VOLUME SLIDERS. A NATIVE RANGE IS THE RIGHT CONTROL HERE; IT JUST HAS TO STOP LOOKING NATIVE */
+/* VOLUME SLIDERS */
 .slider
 {
     -webkit-appearance: none;
     appearance: none;
-    height: 4px;
+    height: 3px;
     border-radius: 999px;
-    background: var(--border-strong);
+    background: var(--active);
     outline: none;
 }
 
@@ -93,7 +193,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     background: var(--text);
     border: none;
     cursor: pointer;
-    box-shadow: 0 1px 3px #0009;
 }
 
 .slider::-moz-range-thumb
@@ -104,75 +203,136 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     background: var(--text);
     border: none;
     cursor: pointer;
-    box-shadow: 0 1px 3px #0009;
 }
 
-/* GRAIN OVER THE WHOLE WINDOW - THE ONE THING A TERMINAL COULD NOT HAVE DONE */
-.noise-overlay::before
+/* A MESSAGE, LAID OUT LIKE A BLOCK OF A DOCUMENT */
+.msg
+{
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    column-gap: 12px;
+    padding: 2px 12px;
+    border-radius: 10px;
+}
+
+.msg:hover
+{
+    background: var(--hover);
+}
+
+.msg.first
+{
+    margin-top: 14px;
+    padding-top: 6px;
+}
+
+.msg-time
+{
+    padding-top: 3px;
+    font-size: 11px;
+    line-height: 20px;
+    color: var(--faint);
+    text-align: right;
+    white-space: nowrap;
+    opacity: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.msg:hover .msg-time
+{
+    opacity: 1;
+}
+
+/* SOMEBODY NAMED US */
+.msg.mention
+{
+    background: color-mix(in oklab, var(--highlight) 9%, transparent);
+}
+
+.msg.mention::before
 {
     content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    pointer-events: none;
-    opacity: 0.016;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 256px 256px;
+    position: absolute;
+    inset-block: 6px;
+    left: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--highlight);
 }
 
-@keyframes rise
+.msg.whisper
 {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
+    background: color-mix(in oklab, var(--accent) 7%, transparent);
 }
 
-.rise
+/* WHAT NOBODY SAID */
+.note
 {
-    animation: rise 120ms ease-out;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    column-gap: 12px;
+    padding: 3px 12px;
+    font-size: 13.5px;
+    line-height: 20px;
+    color: var(--muted);
 }
 
-/* AND THE SAME THING FOR WHAT HANGS FROM THE TOP OF THE WINDOW: IT COMES DOWN OUT OF THE EDGE IT IS
-   PINNED TO, RATHER THAN UP THROUGH THE HEADER IT IS STANDING ON */
-@keyframes fall
+.note.head
 {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
+    margin-top: 14px;
 }
 
-.fall
+/* A NEW DAY */
+.day
 {
-    animation: fall 120ms ease-out;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 24px 12px 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--faint);
 }
 
-/* THE LIGHTBOX OPENING. THE ROOM DARKENS ON ITS OWN AND THE PICTURE COMES UP INTO IT A LITTLE LARGER
-   THAN IT STARTED - SLIGHT, AND OVER IN A FIFTH OF A SECOND, BECAUSE THE POINT IS TO SAY THAT THE LINE
-   THAT WAS CLICKED BECAME THIS AND NOT TO BE SOMETHING ANYBODY WAITS THROUGH */
-@keyframes lightbox-room
+.day::before,
+.day::after
 {
-    from { opacity: 0; }
-    to   { opacity: 1; }
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--border);
 }
 
-.lightbox-room
+.transcript.compact .msg,
+.transcript.compact .note
 {
-    animation: lightbox-room 120ms ease-out;
+    column-gap: 10px;
+    padding-inline: 8px;
 }
 
-@keyframes lightbox-open
+/* SOMEBODY IS TYPING */
+.typing-dots span
 {
-    from { opacity: 0; transform: scale(0.94) translateY(8px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    margin-right: 2px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: typing 1.2s infinite ease-in-out;
 }
 
-.lightbox-open
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing
 {
-    animation: lightbox-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    0%, 80%, 100% { opacity: 0.3; }
+    40% { opacity: 1; }
 }
 
-/* THE PICTURE IN THE LIGHTBOX. THE ZOOM IS A TRANSFORM, SO IT IS ALSO A TRANSITION - EXCEPT WHILE TWO
-   FINGERS ARE ON IT, WHERE App.tsx WRITES THE TRANSFORM STRAIGHT ONTO THE ELEMENT AND ANY CATCHING-UP
-   WOULD BE A PINCH THAT LAGS THE FINGERS. AND THE TWO-FINGER GESTURE IS OURS AND NOT THE PAGE'S */
+/* LIGHTBOX */
 .lightbox-picture
 {
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -182,8 +342,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     -webkit-touch-callout: none;
 }
 
-/* A HOLD ON A PICTURE IS OUR OWN MENU, SO THE SYSTEM'S - THE ONE ANDROID'S WEBVIEW OFFERS FOR AN IMAGE,
-   AND THE SELECTION A DESKTOP DRAG WOULD START - MUST NOT BE IN FRONT OF IT */
+/* OUR MENU, NOT THE SYSTEM'S */
 .picture-hold img
 {
     -webkit-user-select: none;
@@ -191,81 +350,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     -webkit-touch-callout: none;
 }
 
-/* THE OPENING (login.tsx). THE MARK IS THE SIZE index.html'S OWN IS, SO THE PAGE'S SPLASH FADING OVER
-   IT IS A HANDOVER RATHER THAN A CUT; IT SETTLES SMALLER ONCE THERE IS SOMETHING UNDER IT FOR IT TO BE
-   THE HEADING OF */
-.intro-mark
-{
-    width: 96px;
-    height: 96px;
-    transition: width 560ms cubic-bezier(0.22, 1, 0.36, 1), height 560ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.intro-mark-settled
-{
-    width: 64px;
-    height: 64px;
-}
-
-/* AND WHAT OPENS UNDER IT. A GRID ROW GOING 0fr -> 1fr IS THE ONE WAY TO ANIMATE SOMETHING TO WHATEVER
-   HEIGHT IT HAPPENS TO HAVE - AND SINCE THE WHOLE BLOCK IS CENTRED IN THE WINDOW, GROWING DOWNWARDS IS
-   EXACTLY WHAT CARRIES THE MARK UP. THE WRAPPER IS DROPPED WHEN THE SLIDE IS OVER, SINCE A ROW THAT
-   CLIPS ITS OWN CONTENT IS NOT SOMETHING TO LEAVE STANDING OVER A LIST THAT SCROLLS */
-.intro-body
-{
-    display: grid;
-    grid-template-rows: 0fr;
-    opacity: 0;
-    transition: grid-template-rows 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease 220ms;
-}
-
-.intro-body > *
-{
-    min-height: 0;
-    overflow: hidden;
-}
-
-.intro-open
-{
-    grid-template-rows: 1fr;
-    opacity: 1;
-}
-
-/* SOMEBODY WHO ASKED FOR NO MOTION STILL GETS THE MARK AND THEN THE LIST, JUST NOT THE TRAVEL */
-@media (prefers-reduced-motion: reduce)
-{
-    .intro-mark,
-    .intro-body
-    {
-        transition-duration: 1ms;
-    }
-}
-
-/* THE LINE-LEVEL MARKDOWN. THE TUI DRAWS ALL OF IT IN CELLS - A HEADING IS BOLD TEXT, A LIST MARKER IS
-   A BULLET GLYPH, A QUOTE IS AN EDGE CHARACTER IN FRONT OF EVERY ROW AND A RULE IS A ROW OF BOX-DRAWING
-   - BECAUSE A TERMINAL HAS NOTHING ELSE. A WINDOW HAS THE ELEMENTS, SO THESE ARE THE SAME ROWS DRAWN
-   WITH WHAT THIS SIDE HAS, AND THE SIZES ARE KEPT CLOSE TO THE TEXT AROUND THEM: A HEADING IN A CHAT
-   LINE IS A HEADING OVER THREE SENTENCES, NOT OVER A PAGE */
+/* LINE-LEVEL MARKDOWN */
 .md-heading
 {
     margin: 4px 0 2px;
-    font-weight: 600;
+    font-weight: 700;
     line-height: 1.3;
-
-    /* THE MESSAGE'S OWN COLOUR WHERE IT HAS ONE, THE WAY tui/markup.rs' heading PATCHES ONE IN ONLY WHERE
-       THE STYLE CARRIES NO FOREGROUND. THE BODY SETS --msg-color BESIDE ITS color FOR EXACTLY THIS */
     color: var(--msg-color, var(--md-heading));
 }
 
-.md-h1 { font-size: 1.3em; text-decoration: underline; text-underline-offset: 3px; }
-.md-h2 { font-size: 1.18em; }
+.md-h1 { font-size: 1.35em; }
+.md-h2 { font-size: 1.2em; }
 .md-h3 { font-size: 1.06em; }
 
 .md-quote
 {
     margin: 2px 0;
-    padding-left: 10px;
+    padding-left: 12px;
     border-left: 2px solid var(--md-quote);
+    color: var(--muted);
 }
 
 .md-list
@@ -284,22 +387,18 @@ ol.md-list { list-style: decimal; }
 
 .md-rule
 {
-    margin: 6px 0;
+    margin: 8px 0;
     border: 0;
     border-top: 1px solid var(--md-rule);
 }
 
-/* CODE. THE TUI PADS A FENCED BLOCK OUT TO THE PANE BECAUSE A TERMINAL HAS NOTHING BUT CELLS TO MAKE A
-   BOX WITH; A WINDOW HAS A BOX, SO WHAT IS KEPT IS WHAT THE BOX IS FOR - THE WARM SURFACE, THE BAR DOWN
-   THE LEFT EDGE AND THE LANGUAGE OVER IT. CODE IS BROKEN WHERE IT RUNS OUT OF ROOM AND NOT AT THE LAST
-   SPACE BEFORE IT, WHICH HERE MEANS IT IS NOT BROKEN AT ALL: THE BLOCK SCROLLS SIDEWAYS ON ITS OWN AND
-   THE PANE BEHIND IT NEVER DOES */
+/* CODE */
 .code-block
 {
     display: block;
-    margin: 6px 0;
-    border-radius: var(--radius);
-    border-left: 2px solid var(--code-bar);
+    margin: 6px 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     background: var(--code-bg);
     color: var(--code-text);
     overflow: hidden;
@@ -307,38 +406,35 @@ ol.md-list { list-style: decimal; }
 
 .code-lang
 {
-    padding: 4px 10px 0;
+    padding: 7px 12px 0;
     font-size: 11px;
-    font-style: italic;
+    font-weight: 600;
     color: var(--code-lang);
 }
 
 .code-block pre
 {
     margin: 0;
-    padding: 8px 10px;
+    padding: 8px 12px 10px;
     overflow-x: auto;
     white-space: pre;
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.55;
     tab-size: 4;
 }
 
-/* INLINE `code` IS A RUN INSIDE A SENTENCE AND NOT A BOX - IT WRAPS WITH THE TEXT AROUND IT, AND A
-   NEWLINE INSIDE ONE IS A SPACE, THE WAY tui/markup.rs TREATS IT */
 .code-inline
 {
     padding: 1px 5px;
-    border-radius: 4px;
+    border-radius: 5px;
     background: var(--code-bg);
     color: var(--code-inline);
-    font-size: 0.9em;
+    font-size: 0.88em;
     white-space: pre-wrap;
     word-break: break-word;
 }
 
-/* WHAT THE HIGHLIGHTER EMITS. IT IS highlight.js' CLASS NAMES AND NOT ITS STYLESHEET: THEIR THEMES ARE
-   WRITTEN FOR A WHITE PAGE OR FOR SOMEBODY ELSE'S DARK ONE, AND THIS SURFACE IS NEITHER */
+/* HIGHLIGHTER CLASSES */
 .hljs-comment,
 .hljs-quote { color: var(--syntax-comment); font-style: italic; }
 
@@ -385,12 +481,7 @@ ol.md-list { list-style: decimal; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
 
-/* MATH. KaTeX BRINGS ITS OWN EVERYTHING AND INHERITS THE COLOUR OF WHATEVER IT SITS IN, WHICH IS WHAT WE
-   WANT - A FORMULA IN A COLOURED MESSAGE IS THE SENDER'S COLOUR, THE WAY THE REST OF THEIR TEXT IS.
-   DISPLAY MATH OWNS ITS ROWS AND IS THE ONE THING IN THE PANE THAT CAN BE WIDER THAN THE PANE, SO IT
-   SCROLLS ON ITS OWN AND THE COLUMN BEHIND IT NEVER DOES */
-/* KaTeX SETS ITS OWN RUN nowrap, SO A LONG INLINE FORMULA IS THE ONE PIECE OF A MESSAGE THAT CANNOT
-   WRAP - IT IS BOXED AND SCROLLS IN ITS OWN INCH RATHER THAN WIDENING THE COLUMN BEHIND IT */
+/* MATH, BOXED WHEN WIDE */
 .math-inline
 {
     display: inline-block;
@@ -414,16 +505,13 @@ ol.md-list { list-style: decimal; }
     margin: 0;
 }
 
-/* THE COMPOSER'S LINE. IT IS A textarea AND NOT AN input BECAUSE Shift+Enter PUTS A NEWLINE IN A MESSAGE,
-   THE WAY IT DOES IN THE TERMINAL - AND A textarea BRINGS THREE THINGS A CHAT LINE DOES NOT WANT: A DRAG
-   HANDLE IN THE CORNER, A SCROLLBAR BEFORE IT IS TALL ENOUGH TO NEED ONE, AND A HEIGHT OF ITS OWN. THE
-   HEIGHT IS MEASURED IN App.tsx; THIS IS THE CEILING IT GROWS TO, AFTER WHICH THE LINE SCROLLS */
+/* THE COMPOSER'S LINE */
 .composer-line
 {
     resize: none;
     max-height: 40vh;
     overflow-y: auto;
-    line-height: 1.45;
+    line-height: 1.5;
 }
 
 /* A LINE A REPLY JUMPED TO */
@@ -434,16 +522,14 @@ ol.md-list { list-style: decimal; }
 
 @keyframes flash
 {
-    from { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+    from { background-color: color-mix(in srgb, var(--accent) 18%, transparent); }
     to { background-color: transparent; }
 }
 
-/* A ROW'S OWN BUTTONS - HEART, REPLY AND COPY. IT IS DRAWN ONLY WHILE THE ROW IS UNDER THE POINTER,
-   BECAUSE A BUTTON ON EVERY LINE OF A CONVERSATION IS A COLUMN OF BUTTONS AND NOT A CONVERSATION */
+/* A ROW'S OWN BUTTONS, ON HOVER */
 .row-action
 {
     opacity: 1;
-    transition: opacity 120ms ease;
 }
 
 @media (hover: hover)
@@ -460,12 +546,7 @@ ol.md-list { list-style: decimal; }
     }
 }
 
-/* AND WHERE THERE IS NOTHING TO HOVER WITH, THERE IS NO BUTTON AT ALL: A COPY BUTTON STANDING ON EVERY
-   LINE IS A COLUMN OF BUTTONS AND NOT A CONVERSATION, AND ONE FLOATING OVER THE TOP-RIGHT OF EVERY ROW
-   SITS ON THE END OF SOMEBODY'S FIRST LINE. THE GESTURE THERE IS A HOLD, WHICH OPENS THE SAME THING AS
-   A MENU (MessageMenu) - THE WAY A PICTURE IS ALREADY ASKED ABOUT */
-/* A WORD WITH NO BREAK IN IT - A URL, A HASH, SOMEBODY LEANING ON ONE KEY - IS BROKEN RATHER THAN
-   CARRIED PAST THE EDGE. anywhere AND NOT break-word, WHICH LEAVES THE MIN-CONTENT WIDTH ALONE */
+/* BREAK ANY WORD RATHER THAN OVERFLOW */
 .message-body,
 .message-body p,
 .message-body span,
@@ -481,12 +562,7 @@ ol.md-list { list-style: decimal; }
         display: none;
     }
 
-    /* AND THE WORDS THEMSELVES STOP BEING SELECTABLE THERE, BECAUSE ANDROID'S OWN SELECTION IS A HOLD TOO
-       AND TWO GESTURES ON ONE PRESS IS NEITHER OF THEM WORKING: THE HANDLES AND THE SYSTEM'S COPY BAR
-       CAME UP THROUGH OUR OWN MENU. THE MENU IS THE ANSWER TO BOTH - WHAT IT COPIES IS THE WHOLE LINE AS
-       IT WAS TYPED, WHICH IS WHAT A SELECTION ON A PHONE WAS BEING DRAGGED OUT TO GET.
-       -webkit-touch-callout IS THE OTHER HALF OF IT: WITHOUT IT A HOLD ON A LINK STILL OPENS THE SYSTEM
-       SHEET */
+    /* A HOLD IS OUR MENU */
     .message-body,
     .message-body *
     {
@@ -495,3 +571,4 @@ ol.md-list { list-style: decimal; }
         -webkit-touch-callout: none;
     }
 }
+

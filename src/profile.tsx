@@ -21,9 +21,8 @@ import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { ProfileInfo, OnlineUser, ClientConfig } from "./types";
-import { avatarColor } from "./theme";
-import { Icon, IconButton } from "./icons";
-import { Avatar } from "./components";
+import { Icon } from "./icons";
+import { Avatar, Overlay, PanelHeader } from "./components";
 import { linked } from "./messages";
 import { deviceIcon } from "./roster";
 
@@ -38,7 +37,7 @@ export interface People
 //THE FIELDS A SAVE CARRIES
 export type ProfileFields = Pick<ProfileInfo, "bio" | "pronouns" | "website" | "status">;
 
-const CARD_WIDTH = 300;
+const CARD_WIDTH = 308;
 const GAP = 8;
 
 //A WEBSITE WORTH OPENING
@@ -47,7 +46,7 @@ function webUrl(text: string): boolean
     return /^https?:\/\//i.test(text.trim());
 }
 
-//THE POPUP A NAME OPENS
+//THE CARD A NAME OPENS
 export function ProfileCard(
 {
     username, profile, loading, avatar, color, online, own, role, config, anchor, narrow, message, edit, close,
@@ -112,8 +111,7 @@ export function ProfileCard(
         };
     }, [close]);
 
-    const banner = color ?? avatarColor(username);
-    const device = online?.device ? deviceIcon(online.device) : null;
+        const device = online?.device ? deviceIcon(online.device) : null;
     const website = profile?.website.trim() ?? "";
 
     //CENTRED WITHOUT AN ANCHOR, A SHEET ON A PHONE
@@ -129,39 +127,36 @@ export function ProfileCard(
             style={narrow ? undefined : at
                 ? { left: at.x, top: at.y, width: CARD_WIDTH }
                 : { width: CARD_WIDTH, visibility: anchor ? "hidden" : undefined }}
-            className={`${placed} rise overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl`}
+            className={`${placed} overflow-hidden rounded-xl border border-border-strong bg-overlay shadow-[0_24px_64px_-12px_rgba(0,0,0,0.45)]`}
         >
-            <div className="h-16" style={{ background: banner, opacity: 0.55 }} />
+            <div className="p-4">
+                <div className="flex items-start justify-between">
+                    <Avatar name={username} color={color} size={56} src={avatar} />
 
-            <div className="relative px-4 pb-4">
-                <div className="-mt-10 mb-2 flex items-end justify-between">
-                    <div className="rounded-full border-4 border-overlay bg-overlay">
-                        <Avatar name={username} color={color} size={80} src={avatar} />
-                    </div>
-
-                    {device && <Icon name={device} className="mb-1 h-4 w-4 text-faint" />}
+                    {device && <Icon name={device} className="mt-1 h-[17px] w-[17px] text-faint" />}
                 </div>
 
-                <div className="flex items-baseline gap-2">
-                    <span className={`min-w-0 truncate text-lg font-bold ${color ? "" : "text-text"}`} style={{ color }}>
-                        {username}
+                <div className="mt-3 flex items-baseline gap-2">
+                    <span className="min-w-0 truncate text-[18px] font-semibold" style={{ color }}>{username}</span>
+                    {config.show_id && online && <span className="shrink-0 text-[12px] text-faint">{online.id}</span>}
+                    {own && <span className="shrink-0 text-[12px] text-faint">you</span>}
+                </div>
+
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
+                    <span className="flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${online ? "bg-online" : "bg-faint"}`} />
+                        {online ? `#${online.channel ?? "lobby"}` : "Offline"}
                     </span>
-                    {config.show_id && online && <span className="shrink-0 font-mono text-[11px] text-faint">#{online.id}</span>}
+                    {profile?.pronouns && <span>· {profile.pronouns}</span>}
+                    {role && <span className="capitalize">· {role}</span>}
                 </div>
-
-                {profile?.pronouns && <div className="text-sm text-muted">{profile.pronouns}</div>}
 
                 {profile?.status && (
-                    <div className="mt-2 rounded-app bg-deep/70 px-2.5 py-1.5 text-sm text-text">{profile.status}</div>
+                    <div className="mt-3 text-[14px]">{profile.status}</div>
                 )}
 
-                <div className="my-3 h-px bg-border" />
-
                 {profile?.bio && (
-                    <>
-                        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">About me</div>
-                        <div className="mt-1 select-text whitespace-pre-wrap break-words text-sm leading-relaxed">{linked(profile.bio)}</div>
-                    </>
+                    <div className="mt-2 select-text whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-muted">{linked(profile.bio)}</div>
                 )}
 
                 {website && (
@@ -169,57 +164,35 @@ export function ProfileCard(
                         type="button"
                         disabled={!webUrl(website)}
                         onClick={() => { openUrl(website).catch(() => {}); }}
-                        className="mt-2 flex w-full min-w-0 items-center gap-1.5 text-left text-sm text-accent hover:underline disabled:text-muted disabled:no-underline"
+                        className="mt-2 flex w-full min-w-0 items-center gap-1.5 text-left text-[13.5px] text-accent hover:underline disabled:text-muted disabled:no-underline"
                     >
                         <Icon name="globe" className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{website}</span>
+                        <span className="truncate">{website.replace(/^https?:\/\//i, "")}</span>
                     </button>
                 )}
 
-                {loading && !profile && <div className="text-sm text-faint">Loading profile...</div>}
-
-                <div className="mt-2 space-y-0.5 text-xs text-faint">
-                    {online
-                        ? <div>Online in #{online.channel ?? "lobby"}</div>
-                        : <div>Offline</div>}
-                    {role && <div className="flex items-center gap-1"><Icon name="shield" className="h-3 w-3" />{role}</div>}
-                </div>
+                {loading && !profile && <div className="mt-3 text-[13px] text-faint">Loading…</div>}
 
                 {(message || edit) && (
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-4 flex gap-2">
                         {message && (
-                            <button
-                                type="button"
-                                onClick={message}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-app bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition hover:brightness-110"
-                            >
-                                <Icon name="at" className="h-4 w-4" />
+                            <button type="button" onClick={message} className="btn btn-accent flex-1 py-2">
                                 Message
                             </button>
                         )}
 
                         {edit && (
-                            <button
-                                type="button"
-                                onClick={edit}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-app border border-border px-3 py-2 text-sm font-semibold transition hover:bg-hover"
-                            >
-                                <Icon name="pencil" className="h-4 w-4" />
+                            <button type="button" onClick={edit} className="btn flex-1 py-2">
                                 Edit profile
                             </button>
                         )}
                     </div>
                 )}
-
-                {own && !edit && <div className="mt-3 text-xs text-faint">This is you.</div>}
             </div>
         </div>,
         document.body,
     );
 }
-
-const FIELD = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2 text-[15px] outline-none placeholder:text-faint focus:border-accent";
-const CAPTION = "text-[11px] font-semibold uppercase tracking-wider text-muted";
 
 function fieldsOf(profile: ProfileInfo | null): ProfileFields
 {
@@ -240,15 +213,13 @@ function same(one: ProfileFields, other: ProfileFields): boolean
 //OUR OWN PROFILE, EDITABLE
 export function ProfileEditor(
 {
-    username, profile, avatar, color, uploading, dialogWrap, dialogCard, narrow, save, pickAvatar, dropAvatar, close,
+    username, profile, avatar, color, uploading, narrow, save, pickAvatar, dropAvatar, close,
 }: {
     username: string;
     profile: ProfileInfo | null;
     avatar: string | undefined;
     color: string | undefined;
     uploading: boolean;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
     narrow: boolean;
     save: (fields: ProfileFields) => Promise<unknown>;
     pickAvatar: () => void;
@@ -294,85 +265,43 @@ export function ProfileEditor(
         setDraft({ ...draft, [key]: event.currentTarget.value });
 
     return (
-        <div
-            onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-            className={dialogWrap}
-        >
-            <div
-                ref={cardRef}
-                tabIndex={-1}
-                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
-                className={`rise ${dialogCard("flex max-h-[88vh] w-full max-w-[460px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
-            >
-                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                    <Icon name="pencil" className="h-4 w-4 shrink-0 text-muted" />
-                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Your profile</h2>
-                    {saving && <span className="text-xs text-faint">saving...</span>}
-                    {!saving && changed && <span className="text-xs text-notice">unsaved</span>}
-                    <IconButton icon="close" label="Close" onClick={close} />
-                </header>
+        <Overlay narrow={narrow} width={440} label="Edit profile" cardRef={cardRef} close={close}>
+            <PanelHeader title="Edit profile" close={close} />
 
-                <form onSubmit={submit} className="scroller scroller-quiet flex-1 px-5 py-4">
-                    <div className="flex items-center gap-4">
-                        <Avatar name={username} color={color} size={72} src={avatar} />
+            <form onSubmit={submit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-2">
+                <div className="flex flex-col items-center">
+                    <button type="button" disabled={uploading} onClick={pickAvatar} title="Change picture" className="group relative rounded-full">
+                        <Avatar name={username} color={color} size={88} src={avatar} />
+                        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                            <Icon name="upload" className="h-6 w-6" />
+                        </span>
+                    </button>
 
-                        <div className="flex min-w-0 flex-1 flex-col gap-2">
-                            <button
-                                type="button"
-                                disabled={uploading}
-                                onClick={pickAvatar}
-                                className="flex items-center justify-center gap-2 rounded-app border border-border px-3 py-1.5 text-sm font-semibold transition hover:bg-hover disabled:opacity-50"
-                            >
-                                <Icon name="upload" className="h-4 w-4" />
-                                {uploading ? "Uploading..." : "Change avatar"}
+                    <div className="mt-2 flex gap-1">
+                        <button type="button" disabled={uploading} onClick={pickAvatar} className="btn btn-quiet px-3 py-1 text-[13px] text-accent">
+                            {uploading ? "Uploading…" : "Change picture"}
+                        </button>
+
+                        {profile?.avatar && (
+                            <button type="button" disabled={uploading} onClick={dropAvatar} className="btn btn-quiet px-3 py-1 text-[13px]">
+                                Remove
                             </button>
-
-                            {profile?.avatar && (
-                                <button
-                                    type="button"
-                                    disabled={uploading}
-                                    onClick={dropAvatar}
-                                    className="flex items-center justify-center gap-2 rounded-app border border-border px-3 py-1.5 text-sm text-muted transition hover:border-error hover:text-error disabled:opacity-50"
-                                >
-                                    <Icon name="trash" className="h-4 w-4" />
-                                    Remove avatar
-                                </button>
-                            )}
-                        </div>
+                        )}
                     </div>
+                </div>
 
-                    <label htmlFor="profile-pronouns" className={`${CAPTION} mt-5 block`}>Pronouns</label>
-                    <input id="profile-pronouns" value={draft.pronouns} onChange={set("pronouns")} className={FIELD} spellCheck={false} />
+                <div className="mt-4 flex flex-col gap-3">
+                    <input aria-label="Status" value={draft.status} onChange={set("status")} placeholder="Status" className="field" />
+                    <input aria-label="Pronouns" value={draft.pronouns} onChange={set("pronouns")} placeholder="Pronouns" className="field" spellCheck={false} />
+                    <input aria-label="Website" value={draft.website} onChange={set("website")} placeholder="Website" className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />
+                    {badWebsite && <div className="-mt-1.5 px-1 text-[12.5px] text-error">Starts with http:// or https://</div>}
+                    <textarea aria-label="About" rows={4} value={draft.bio} onChange={set("bio")} placeholder="About you" className="field resize-none leading-relaxed" />
+                </div>
 
-                    <label htmlFor="profile-status" className={`${CAPTION} mt-4 block`}>Status</label>
-                    <input id="profile-status" value={draft.status} onChange={set("status")} placeholder="What are you up to?" className={FIELD} />
-
-                    <label htmlFor="profile-website" className={`${CAPTION} mt-4 block`}>Website</label>
-                    <input id="profile-website" value={draft.website} onChange={set("website")} placeholder="https://" className={FIELD} spellCheck={false} />
-                    {badWebsite && <div className="mt-1 text-xs text-error">A website has to start with http:// or https://</div>}
-
-                    <label htmlFor="profile-bio" className={`${CAPTION} mt-4 block`}>About me</label>
-                    <textarea id="profile-bio" rows={4} value={draft.bio} onChange={set("bio")} className={`${FIELD} resize-none`} />
-
-                    <div className="mt-5 flex justify-end gap-2">
-                        <button
-                            type="button"
-                            onClick={close}
-                            className="rounded-app px-4 py-2 text-sm text-muted transition hover:bg-hover hover:text-text"
-                        >
-                            Close
-                        </button>
-
-                        <button
-                            type="submit"
-                            disabled={!changed || badWebsite || saving}
-                            className="rounded-app bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:opacity-40"
-                        >
-                            Save
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <button type="submit" disabled={!changed || badWebsite || saving} className="btn btn-accent mt-5 w-full py-2">
+                    {saving ? "Saving…" : "Save"}
+                </button>
+            </form>
+        </Overlay>
     );
 }

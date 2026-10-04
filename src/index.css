@@ -16,14 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* THE FONTS COME FIRST - @import ONLY COUNTS BEFORE ANY RULE, AND THE TAILWIND IMPORT EXPANDS INTO RULES.
-   THE INTERFACE IS PROPORTIONAL NOW; THE MONOSPACE IS KEPT FOR WHAT IS ACTUALLY MEASURED IN CHARACTERS -
-   FINGERPRINTS, THE LIST BLOCKS AND THEIR BRANCH GLYPHS, THE COMMAND SIGNATURES */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* FONTS FIRST */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..700;1,14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-/* THE PALETTE AND WHAT IT MAPS TO, THEN THE PIECES THE WINDOW IS BUILT OUT OF, THEN WHAT ONLY A PHONE
-   NEEDS. THEY ARE THREE FILES AND NOT ONE BECAUSE THEY ARE THREE DIFFERENT THINGS TO GO LOOKING FOR */
+/* TOKENS, PALETTES, PIECES, PHONE */
 @import "./theme.css";
 @import "./themes.css";
 @import "./widgets.css";

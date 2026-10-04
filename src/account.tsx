@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { useState } from "react";
 
 import type { AccountAction } from "./types";
-import { Icon, IconButton } from "./icons";
+import { Overlay, PanelHeader } from "./components";
 
 //AN OPEN /account FORM
 export interface AccountBox
@@ -37,18 +37,13 @@ const LABELS: Record<AccountAction, string[]> =
     delete: ["Current password"],
 };
 
-const FIELD = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
-const CAPTION = "text-[11px] font-semibold uppercase tracking-wider text-muted";
-
 //THE FORM
 export function AccountDialog(
 {
-    box, cardRef, dialogWrap, dialogCard, narrow, submit, close,
+    box, cardRef, narrow, submit, close,
 }: {
     box: AccountBox;
     cardRef: React.RefObject<HTMLDivElement | null>;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
     narrow: boolean;
     submit: (password: string, newPassword: string | null) => void;
     close: () => void;
@@ -102,61 +97,45 @@ export function AccountDialog(
     };
 
     const status = box.busy
-        ? <span className="text-accent">Waiting for the server…</span>
+        ? <span className="text-muted">Waiting for the server…</span>
         : armed
-            ? <span className="text-error">This cannot be undone. Press the button again to delete your account.</span>
+            ? <span className="text-error">This cannot be undone. Press again to confirm.</span>
             : error || box.error
                 ? <span className="text-error">{error || box.error}</span>
                 : null;
 
     return (
-        <div
-            onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-            className={dialogWrap}
-        >
-            <div
-                ref={cardRef}
-                tabIndex={-1}
-                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
-                className={`rise ${dialogCard("flex max-h-[84vh] w-full max-w-[420px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
-            >
-                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                    <Icon name={deleting ? "trash" : "lock"} className="h-4 w-4 shrink-0 text-muted" />
-                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">{deleting ? "Delete account" : "Change password"}</h2>
+        <Overlay narrow={narrow} width={400} label={deleting ? "Delete account" : "Change password"} cardRef={cardRef} close={close}>
+            <PanelHeader title={deleting ? "Delete account" : "Change password"} close={close} />
 
-                    <IconButton icon="close" label="Close" onClick={close} />
-                </header>
-
-                <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-5 py-4">
+            <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-3">
+                <div className="flex flex-col gap-3">
                     {labels.map((label, index) => (
-                        <div key={label} className={index > 0 ? "mt-4" : ""}>
-                            <label htmlFor={`account-${index}`} className={CAPTION}>{label}</label>
-
-                            <input
-                                id={`account-${index}`}
-                                type="password"
-                                value={fields[index]}
-                                onChange={(event) => write(index, event.currentTarget.value)}
-                                className={FIELD}
-                                disabled={box.busy}
-                                autoFocus={index === 0 && !narrow}
-                            />
-                        </div>
+                        <input
+                            key={label}
+                            id={`account-${index}`}
+                            type="password"
+                            aria-label={label}
+                            placeholder={label}
+                            value={fields[index]}
+                            onChange={(event) => write(index, event.currentTarget.value)}
+                            className="field"
+                            disabled={box.busy}
+                            autoFocus={index === 0 && !narrow}
+                        />
                     ))}
+                </div>
 
-                    <div className="mt-2 min-h-[1.25rem] text-xs">{status}</div>
+                {status && <div className="mt-3 text-[13px]">{status}</div>}
 
-                    <button
-                        type="submit"
-                        disabled={box.busy}
-                        className={`mt-3 w-full rounded-app py-2.5 text-sm font-semibold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${deleting ? "bg-error text-on-accent" : "bg-accent text-on-accent"}`}
-                    >
-                        {deleting ? (armed ? "Delete for good" : "Delete account") : "Change password"}
-                    </button>
-
-                    {deleting && <div className="mt-2 text-center text-[11px] text-faint">This also ends the session.</div>}
-                </form>
-            </div>
-        </div>
+                <button
+                    type="submit"
+                    disabled={box.busy}
+                    className={`btn mt-5 w-full py-2.5 ${deleting ? "btn-danger armed" : "btn-accent"}`}
+                >
+                    {deleting ? (armed ? "Delete for good" : "Delete account") : "Change password"}
+                </button>
+            </form>
+        </Overlay>
     );
 }

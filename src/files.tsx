@@ -17,140 +17,109 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import type { FileOwner, ClientConfig } from "./types";
-import { Icon, IconButton } from "./icons";
-import { Avatar } from "./components";
+import { Icon } from "./icons";
+import { Avatar, Overlay, PanelHeader } from "./components";
 import { fileKind } from "./format";
 
-//A FILE LIST IS NOT A TREE AND IT IS NOT SOMETHING ANYBODY SAID - IT IS A DRAWER, AND A WINDOW LIKE THE
-//SETTINGS DIALOG: THE OWNER IS A HEADING, THEIR FILES ARE ROWS, AND CLICKING ONE SENDS THE SAME
-///download TYPING IT OUT WOULD HAVE. AN EMPTY ANSWER OPENS IT ANYWAY, SAYING SO - WHERE THE TUI PRINTS
-//A LINE, A WINDOW THAT REFUSED TO OPEN WOULD LOOK LIKE A BUTTON THAT DOES NOTHING
+//WHAT IS UP FOR DOWNLOAD; A ROW SENDS THE SAME /download TYPING WOULD
 export function FilesBox(
 {
-    files, filter, setFilter, config, filesRef, dialogWrap, dialogCard, send, refresh, close,
+    files, filter, setFilter, config, filesRef, narrow, send, refresh, close,
 }: {
     files: FileOwner[];
     filter: string;
     setFilter: (value: string) => void;
     config: ClientConfig;
     filesRef: React.RefObject<HTMLDivElement | null>;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
+    narrow: boolean;
     send: (input: string) => void;
     refresh: () => void;
     close: () => void;
 })
 {
-        const needle = filter.trim().toLowerCase();
+    const needle = filter.trim().toLowerCase();
 
-        //THE SEARCH LOOKS AT BOTH HALVES OF WHAT A ROW SAYS - THE FILE'S NAME AND WHOSE IT IS - AND AN
-        //OWNER WITH NOTHING LEFT TO SHOW DROPS OUT ALONG WITH THEIR HEADING
-        const shown = files
-            .map((owner) =>
-            ({
-                ...owner,
-                files: owner.files.filter((file) => !needle
-                    || file.name.toLowerCase().includes(needle)
-                    || owner.username.toLowerCase().includes(needle)),
-            }))
-            .filter((owner) => owner.files.length > 0);
+    //BY FILE NAME OR BY OWNER
+    const shown = files
+        .map((owner) =>
+        ({
+            ...owner,
+            files: owner.files.filter((file) => !needle
+                || file.name.toLowerCase().includes(needle)
+                || owner.username.toLowerCase().includes(needle)),
+        }))
+        .filter((owner) => owner.files.length > 0);
 
-        const total = files.reduce((count, owner) => count + owner.files.length, 0);
-        const matching = shown.reduce((count, owner) => count + owner.files.length, 0);
+    return (
+        <Overlay narrow={narrow} width={500} label="Files" cardRef={filesRef} close={close}>
+            <PanelHeader
+                title="Files"
+                aside={(
+                    <button type="button" title="Refresh" aria-label="Refresh" onClick={refresh} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-hover hover:text-text">
+                        <Icon name="refresh" className="h-[18px] w-[18px]" />
+                    </button>
+                )}
+                close={close}
+            />
 
-        return (
-            <div
-                onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-                className={dialogWrap}
-            >
-                <div
-                    ref={filesRef}
-                    tabIndex={-1}
-                    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
-                    className={`rise ${dialogCard("flex max-h-[84vh] w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
-                >
-                    <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                        <Icon name="folder" className="h-4 w-4 shrink-0 text-muted" />
-                        <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Files on the server</h2>
+            <div className="shrink-0 px-6 pb-2 pt-2">
+                <div className="relative">
+                    <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
 
-                        <span className="shrink-0 text-xs text-faint">
-                            {needle ? `${matching} of ${total}` : `${total} ${total === 1 ? "file" : "files"}`}
-                        </span>
-
-                        <IconButton icon="close" label="Close" onClick={close} />
-                    </header>
-
-                    <div className="shrink-0 px-4 pt-3">
-                        <input
-                            autoFocus
-                            value={filter}
-                            onChange={(event) => setFilter(event.currentTarget.value)}
-                            placeholder="Search files"
-                            className="w-full rounded-app border border-border bg-deep px-3 py-2 text-sm outline-none placeholder:text-faint focus:border-border-strong"
-                            spellCheck={false}
-                        />
-                    </div>
-
-                    <div className="scroller flex-1 px-2.5 py-2">
-                        {shown.length === 0 && (
-                            <div className="px-2 py-8 text-center text-sm text-faint">
-                                {needle ? "Nothing here by that name." : "Nobody has a file up right now."}
-                            </div>
-                        )}
-
-                        {shown.map((owner) => (
-                            <div key={owner.id} className="mb-1 last:mb-0">
-                                <div className="flex items-center gap-2 px-1.5 pb-1 pt-2">
-                                    <Avatar name={owner.username} size={20} />
-                                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{owner.username}</span>
-                                    {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{owner.id}</span>}
-                                </div>
-
-                                {owner.files.map((file) =>
-                                {
-                                    const kind = fileKind(file.name);
-
-                                    return (
-                                        <button
-                                            key={file.id}
-                                            type="button"
-                                            title={`Download ${file.name}`}
-                                            onClick={() => send(`/download ${owner.id} ${file.id}`)}
-                                            className="group flex w-full items-center gap-2.5 rounded-app px-1.5 py-1.5 text-left transition-colors hover:bg-hover"
-                                        >
-                                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-app bg-deep text-muted">
-                                                <Icon name={kind.icon} className="h-4 w-4" />
-                                            </span>
-
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block truncate text-sm">{file.name}</span>
-                                                <span className="block text-[11px] text-faint">{kind.label}</span>
-                                            </span>
-
-                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-app text-faint transition-colors group-hover:bg-active group-hover:text-text">
-                                                <Icon name="download" className="h-4 w-4" />
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* THE LIST IS A PHOTOGRAPH OF THE SERVER AT THE MOMENT IT WAS ASKED, SO THE WAY TO A
-                        NEWER ONE IS TO ASK AGAIN - WHICH IS THE SAME /files THE HEADER'S FOLDER SENDS */}
-                    <footer className="flex shrink-0 items-center gap-2 border-t border-border bg-deep/40 px-5 py-3">
-                        <span className="flex-1 text-xs text-faint">A download starts where you keep them.</span>
-
-                        <button
-                            type="button"
-                            onClick={refresh}
-                            className="rounded-app border border-border px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-border-strong hover:text-text"
-                        >
-                            Refresh
-                        </button>
-                    </footer>
+                    <input
+                        autoFocus={!narrow}
+                        value={filter}
+                        onChange={(event) => setFilter(event.currentTarget.value)}
+                        placeholder="Search"
+                        className="field pl-10"
+                        spellCheck={false}
+                    />
                 </div>
             </div>
-        );
+
+            <div className="scroller min-h-[200px] flex-1 px-3 pb-5">
+                {shown.length === 0 && (
+                    <div className="px-4 py-16 text-center text-[14px] text-faint">
+                        {needle ? "No results" : "No files"}
+                    </div>
+                )}
+
+                {shown.map((owner) => (
+                    <div key={owner.id}>
+                        <div className="flex items-center gap-2 px-3 pb-1 pt-4">
+                            <Avatar name={owner.username} size={20} />
+                            <span className="label min-w-0 truncate">{owner.username}</span>
+                            {config.show_id && <span className="label ml-auto font-normal">{owner.id}</span>}
+                        </div>
+
+                        {owner.files.map((file) =>
+                        {
+                            const kind = fileKind(file.name);
+
+                            return (
+                                <button
+                                    key={file.id}
+                                    type="button"
+                                    title={`Download ${file.name}`}
+                                    onClick={() => send(`/download ${owner.id} ${file.id}`)}
+                                    className="group flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-hover"
+                                >
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted">
+                                        <Icon name={kind.icon} className="h-[18px] w-[18px]" />
+                                    </span>
+
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[14.5px]">{file.name}</span>
+                                        <span className="block text-[12.5px] text-faint">{kind.label}</span>
+                                    </span>
+
+                                    <Icon name="download" className="h-[18px] w-[18px] shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100" />
+                                </button>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+        </Overlay>
+    );
 }

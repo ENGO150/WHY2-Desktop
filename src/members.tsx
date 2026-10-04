@@ -18,14 +18,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { createPortal } from "react-dom";
 
 import type { OnlineUser, OfflineUser, ClientConfig, VocabularyValue } from "./types";
-import { Avatar, SectionLabel } from "./components";
+import { Avatar, SectionLabel, MenuBox, MENU_ITEM } from "./components";
 import { Icon } from "./icons";
 import { messageColor } from "./messages";
 import { deviceIcon, rosterSections, sectionLabel } from "./roster";
-import { useHoldMenu, MENU_WIDTH, type HeldMenu } from "./servers";
+import { useHoldMenu, type HeldMenu } from "./servers";
 import type { People } from "./profile";
 
 //HEADER, SIX ITEMS AND THE ROLES
@@ -48,15 +47,14 @@ export interface Moderation
     role: boolean;
 }
 
-//THE RIGHT COLUMN: EVERYBODY ON THE SERVER, AND WHICH CHANNEL THEY ARE SITTING IN. A ROW IS A BUTTON AND
-//IT OPENS THAT PERSON'S PROFILE CARD, WHICH IS WHERE THE CONVERSATION WITH THEM STARTS
+//EVERYBODY ON THE SERVER, BY ROLE; A ROW OPENS THEIR CARD
 export function MemberColumn(
 {
     users, offline, username, config, narrow, drawer, people, panelRef, moderation, message, send,
 }: {
     users: OnlineUser[];
 
-    //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM - null IS NO SUCH SECTION
+    //null IS A SERVER THAT KEEPS THEM TO ITSELF
     offline: OfflineUser[] | null;
 
     username: string;
@@ -65,7 +63,7 @@ export function MemberColumn(
     drawer: "left" | "right" | null;
     people: People;
 
-    //THE COLUMN ITSELF, WHICH App.tsx MOVES BY HAND WHILE A FINGER IS DRAGGING THE DRAWER
+    //MOVED BY HAND WHILE A DRAWER IS DRAGGED
     panelRef: React.Ref<HTMLElement>;
 
     moderation: Moderation;
@@ -75,7 +73,7 @@ export function MemberColumn(
 {
     const { menu, close, bind, held } = useHoldMenu<HeldMember>("pointer", MENU_HEIGHT);
 
-    //A ROW'S PRESS, UNLESS IT WAS THE END OF A HOLD
+    //A ROW'S PRESS, UNLESS IT ENDED A HOLD
     const press = (name: string) => (event: React.MouseEvent<HTMLElement>) =>
     {
         if (held()) return;
@@ -84,123 +82,113 @@ export function MemberColumn(
         people.open(name, event.currentTarget);
     };
 
+    const row = `flex w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2 text-left transition-colors hover:bg-hover ${narrow ? "py-2" : "py-1"}`;
+
     return (
-                        <aside ref={panelRef} className={narrow
-                            ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
-                            : "flex w-[220px] shrink-0 flex-col border-l border-border bg-sidebar"}>
-                            <div className="scroller scroller-quiet flex-1 px-2 pb-3">
-                                {/* ONE SECTION PER ROLE, THE HIGHEST FIRST */}
-                                {rosterSections(users).map((section) => (
-                                    <div key={section[0].role}>
-                                        <SectionLabel>{sectionLabel(section[0].role)} — {section.length}</SectionLabel>
+        <aside ref={panelRef} className={narrow
+            ? `drawer safe-top safe-bottom fixed bottom-0 right-0 top-[var(--chrome-top)] z-40 flex w-[86%] max-w-[300px] flex-col border-l border-border bg-sidebar shadow-2xl ${drawer === "right" ? "translate-x-0" : "drawer-shut translate-x-full"}`
+            : "flex w-[240px] shrink-0 flex-col border-l border-border bg-sidebar"}>
+            <header className="flex h-14 shrink-0 items-center gap-2 px-4">
+                <span className="text-[14px] font-semibold">Members</span>
+                <span className="text-[13px] text-faint">{users.length}</span>
+            </header>
 
-                                        {section.map((user) =>
-                                        {
-                                            const own = user.username === username;
+            <div className="scroller scroller-quiet flex-1 px-2 pb-3">
+                {/* HIGHEST ROLE FIRST */}
+                {rosterSections(users).map((section) => (
+                    <div key={section[0].role}>
+                        <SectionLabel>{sectionLabel(section[0].role)}</SectionLabel>
 
-                                            //EVERYBODY IS NAMED IN THEIR OWN COLOR HERE TOO - THE ACCENT IS ONLY
-                                            //WHAT IS LEFT ON OUR OWN ROW WHERE THERE IS NO COLOR TO USE
-                                            const color = messageColor(config, user.username_color);
+                        {section.map((user) =>
+                        {
+                            const own = user.username === username;
+                            const color = messageColor(config, user.username_color);
+                            const device = user.device ? deviceIcon(user.device) : null;
+                            const status = people.status(user.username);
 
-                                            //WHAT THEY ARE ON, WHERE THEY SHARE IT. THE TUI PRINTS THE WORD; A
-                                            //WINDOW HAS THE LINE ART, AND IT SITS ON THE RIGHT EDGE EITHER WAY
-                                            const device = user.device ? deviceIcon(user.device) : null;
+                            return (
+                                <button
+                                    key={user.id}
+                                    type="button"
+                                    title={`${user.username} in #${user.channel ?? "lobby"}`}
+                                    onClick={press(user.username)}
+                                    {...bind({ username: user.username, user, role: user.role })}
+                                    data-member={user.username}
+                                    className={row}
+                                >
+                                    <span className="relative shrink-0">
+                                        <Avatar name={user.username} color={color} size={26} src={people.avatar(user.username)} />
+                                        <span className="absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
+                                    </span>
 
-                                            const status = people.status(user.username);
+                                    <span className="min-w-0 flex-1">
+                                        <span
+                                            className={`block truncate text-[13.5px] leading-tight ${color ? "" : own ? "text-accent" : "text-text"}`}
+                                            style={color ? { color } : undefined}
+                                        >
+                                            {user.username}
+                                        </span>
 
-                                            return (
-                                                <button
-                                                    key={user.id}
-                                                    type="button"
-                                                    title={user.channel ? `${user.username} in #${user.channel}` : undefined}
-                                                    onClick={press(user.username)}
-                                                    {...bind({ username: user.username, user, role: user.role })}
-                                                    data-member={user.username}
-                                                    className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
-                                                >
-                                                    <div className="relative shrink-0">
-                                                        <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
-                                                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-online" />
-                                                    </div>
+                                        {(status || user.channel) && (
+                                            <span className="block truncate text-[11.5px] leading-tight text-faint">
+                                                {status ?? `#${user.channel}`}
+                                            </span>
+                                        )}
+                                    </span>
 
-                                                    <div className="min-w-0 flex-1">
-                                                        <div
-                                                            className={`truncate text-sm ${color ? "" : own ? "text-accent" : "text-muted"}`}
-                                                            style={color ? { color } : undefined}
-                                                        >
-                                                            {user.username}
-                                                        </div>
-                                                        {status
-                                                            ? <div className="truncate text-[11px] text-muted">{status}</div>
-                                                            : user.channel && <div className="truncate text-[11px] text-faint">#{user.channel}</div>}
-                                                    </div>
+                                    {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
+                                    {config.show_id && <span className="shrink-0 text-[11px] text-faint">{user.id}</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ))}
 
-                                                    {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
+                {/* REGISTERED, NOT HERE */}
+                {offline && offline.length > 0 && (
+                    <>
+                        <SectionLabel>Offline</SectionLabel>
 
-                                                    {config.show_id && <span className="shrink-0 font-mono text-[10px] text-faint">{user.id}</span>}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
+                        {offline.map((user) =>
+                        {
+                            const color = messageColor(config, user.username_color);
+                            const status = people.status(user.username);
 
-                                {/* THE SERVER'S OWN USERS WHO ARE NOT HERE. THEIR CARD HAS NO MESSAGE
-                                    BUTTON - A PM NEEDS AN ID, AND SOMEBODY OFFLINE HAS NONE */}
-                                {offline && offline.length > 0 && (
-                                    <>
-                                        <SectionLabel>Offline — {offline.length}</SectionLabel>
+                            return (
+                                <button
+                                    key={user.username}
+                                    type="button"
+                                    onClick={press(user.username)}
+                                    {...bind({ username: user.username, user: null, role: user.role })}
+                                    data-member={user.username}
+                                    className={`${row} opacity-45 hover:opacity-100`}
+                                >
+                                    <Avatar name={user.username} color={color} size={26} src={people.avatar(user.username)} />
 
-                                        {offline.map((user) =>
-                                        {
-                                            const color = messageColor(config, user.username_color);
-                                            const status = people.status(user.username);
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[13.5px] leading-tight" style={color ? { color } : undefined}>{user.username}</span>
+                                        {status && <span className="block truncate text-[11.5px] leading-tight text-faint">{status}</span>}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </>
+                )}
+            </div>
 
-                                            return (
-                                                <button
-                                                    key={user.username}
-                                                    type="button"
-                                                    onClick={press(user.username)}
-                                                    {...bind({ username: user.username, user: null, role: user.role })}
-                                                    data-member={user.username}
-                                                    className={`flex w-full select-none items-center gap-2 rounded-app px-2 text-left hover:bg-hover ${narrow ? "py-2" : "py-1"}`}
-                                                >
-                                                    <div className="relative shrink-0">
-                                                        <div className="opacity-50">
-                                                            <Avatar name={user.username} color={color} size={28} src={people.avatar(user.username)} />
-                                                        </div>
-                                                        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-faint" />
-                                                    </div>
-
-                                                    <div className="min-w-0 flex-1">
-                                                        <div
-                                                            className={`truncate text-sm ${color ? "opacity-60" : "text-faint"}`}
-                                                            style={color ? { color } : undefined}
-                                                        >
-                                                            {user.username}
-                                                        </div>
-                                                        {status && <div className="truncate text-[11px] text-faint">{status}</div>}
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </>
-                                )}
-
-                            </div>
-
-                            {menu && (menu.value.user === null || users.some((user) => user.id === menu.value.user!.id)) && (
-                                <MemberMenu
-                                    key={menu.value.username}
-                                    at={menu}
-                                    own={menu.value.username === username}
-                                    moderation={moderation}
-                                    profile={() => people.open(menu.value.username, document.querySelector<HTMLElement>(`[data-member="${CSS.escape(menu.value.username)}"]`))}
-                                    message={message}
-                                    send={send}
-                                    close={close}
-                                />
-                            )}
-                        </aside>
+            {menu && (menu.value.user === null || users.some((user) => user.id === menu.value.user!.id)) && (
+                <MemberMenu
+                    key={menu.value.username}
+                    at={menu}
+                    own={menu.value.username === username}
+                    moderation={moderation}
+                    profile={() => people.open(menu.value.username, document.querySelector<HTMLElement>(`[data-member="${CSS.escape(menu.value.username)}"]`))}
+                    message={message}
+                    send={send}
+                    close={close}
+                />
+            )}
+        </aside>
     );
 }
 
@@ -242,8 +230,6 @@ function MemberMenu(
 
     const target = own ? null : user;
 
-    const item = "flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover";
-
     //A BAN BY NAME, THE REST BY ID
     const moderate = (action: Action) =>
     {
@@ -264,62 +250,59 @@ function MemberMenu(
         send(`/server role ${username} ${role}`);
     };
 
-    return createPortal(
-        <div
-            data-hold-menu
-            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
-            className="fixed z-[70] rounded-app border border-border bg-overlay p-1 shadow-2xl"
-        >
-            <div className="truncate px-2 py-1.5 text-sm font-semibold">{username}</div>
+    const danger = (action: Action) => `${MENU_ITEM} ${armed === action ? "bg-error/10 text-error" : "text-error"}`;
 
-            <button type="button" onClick={() => { close(); profile(); }} className={item}>
-                <Icon name="user" className="h-4 w-4" />
+    return (
+        <MenuBox at={at} title={username}>
+            <button type="button" onClick={() => { close(); profile(); }} className={MENU_ITEM}>
+                <Icon name="user" className="h-4 w-4 text-muted" />
                 View profile
             </button>
 
             {target && (
-                <button type="button" onClick={() => { close(); message(target); }} className={item}>
-                    <Icon name="send" className="h-4 w-4" />
+                <button type="button" onClick={() => { close(); message(target); }} className={MENU_ITEM}>
+                    <Icon name="at" className="h-4 w-4 text-muted" />
                     Send message
                 </button>
             )}
 
+            {(moderation.kick || moderation.ban || moderation.banip || moderation.role) && !own && <div className="mx-2 my-1 h-px bg-border" />}
+
             {target && moderation.kick && (
-                <button type="button" onClick={() => moderate("kick")} className={`${item} text-error`}>
+                <button type="button" onClick={() => moderate("kick")} className={danger("kick")}>
                     <Icon name="logout" className="h-4 w-4" />
                     {armed === "kick" ? "Press again to kick" : "Kick"}
                 </button>
             )}
 
             {!own && moderation.ban && (
-                <button type="button" onClick={() => moderate("ban")} className={`${item} text-error`}>
+                <button type="button" onClick={() => moderate("ban")} className={danger("ban")}>
                     <Icon name="ban" className="h-4 w-4" />
                     {armed === "ban" ? "Press again to ban" : "Ban"}
                 </button>
             )}
 
             {target && moderation.banip && (
-                <button type="button" onClick={() => moderate("banip")} className={`${item} text-error`}>
+                <button type="button" onClick={() => moderate("banip")} className={danger("banip")}>
                     <Icon name="globe" className="h-4 w-4" />
                     {armed === "banip" ? "Press again to ban IP" : "Ban IP"}
                 </button>
             )}
 
             {!own && moderation.role && (
-                <button type="button" onClick={() => setPicking(!picking)} className={item}>
-                    <Icon name="shield" className="h-4 w-4" />
+                <button type="button" onClick={() => setPicking(!picking)} className={MENU_ITEM}>
+                    <Icon name="shield" className="h-4 w-4 text-muted" />
                     <span className="flex-1">Set role</span>
                     <Icon name="chevron" className={`h-4 w-4 text-faint transition-transform ${picking ? "rotate-180" : ""}`} />
                 </button>
             )}
 
             {!own && moderation.role && picking && roles?.map((role) => (
-                <button key={role} type="button" disabled={role === held} onClick={() => grant(role)} className={`${item} pl-8 disabled:text-faint disabled:hover:bg-transparent`}>
-                    <span className="flex-1">{armed === `role:${role}` ? `Press again to make ${role}` : role}</span>
+                <button key={role} type="button" disabled={role === held} onClick={() => grant(role)} className={`${MENU_ITEM} pl-10 ${armed === `role:${role}` ? "text-accent" : ""}`}>
+                    <span className="flex-1 capitalize">{armed === `role:${role}` ? `Make ${role}?` : role}</span>
                     {role === held && <Icon name="check" className="h-4 w-4" />}
                 </button>
             ))}
-        </div>,
-        document.body,
+        </MenuBox>
     );
 }

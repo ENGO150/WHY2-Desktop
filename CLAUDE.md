@@ -140,7 +140,8 @@ is closed — see **The tray**), plus `settings.rs`, `palette.rs`,
 event listener, the channel routing and the palette all read each other, and prop-drilling them apart would
 buy nothing. What moved out is what does not need the state: `types.ts` (the mirror of `UiEvent`, and
 `LOBBY`), `theme.ts` (the two ANSI tables), `format.ts`, `icons.tsx`, `components.tsx` (`Avatar`, `Switch`,
-`SectionLabel`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
+`SectionLabel`, and the shells every window and menu is drawn in: `Overlay`, `PanelHeader`, `PanelFooter`,
+`MenuBox`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `pictures.ts` (which caption an arriving
 picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
 `narrow.ts` — and the views that take props
@@ -282,7 +283,7 @@ server.
 
 A row holds an address, a username, an optional password, the name the server last called itself, and an
 `id` — and **nothing else**. The `id` is the window's own and is the row's identity: `save_server` and
-`remove_server` both match on it, the rail keys on it, and it is what says which row is the one we are
+`remove_server` both match on it, the switcher keys on it, and it is what says which row is the one we are
 standing in, because the same address twice is two accounts on one server rather than one row written down
 twice. There is no `last_used` any more: the program opens on the list and dials nothing, so the timestamp
 that was there to open the newest one was a fact about somebody written into a file that nothing read back.
@@ -303,7 +304,7 @@ What actually got the session in (`typedRef`, whichever of the two it came from)
 writes when `authenticated` arrives — which is also why a server typed into the form is **not** written down
 until it works: a typo is a failed connect rather than a row to be forgotten again.
 
-`dial` is the one way in. It is called by `goTo` — which is what the list's rows, the rail's tiles and the
+`dial` is the one way in. It is called by `goTo` — which is what the list's rows, the switcher's rows and the
 form all come back to — and by the `disconnected` event when a switch is parked. Picking a server while
 another one is up is a **switch and not a second session**: the one in front is asked to leave with `/exit`,
 `switchRef` parks where we are going, and the disconnect dials it.
@@ -345,14 +346,14 @@ the server has an identity step pending that nothing was stored for, the **form*
 username, password — and an empty list has nothing else), or the **list** itself waiting to be picked from.
 The list is **only** the list: it has no address field, because a row and a field beside it are the same
 question asked twice, and it has no form in front of it — the only two modes that draw one are the two with
-something to ask. A server not in the list is added through `Add another server`, which is the same form,
+something to ask. A server not in the list is added through `Add server`, which is the same form,
 and typing an address that is already a row dials *that* row rather than adding a second one beside it. Two
 rows for one address are two accounts, which is why the username counts when one is given.
 
 Forgetting a server is asked for the same way in both lists: a **right-click, or a hold on a phone**, opens
 one menu item and nothing else — it is the only destructive thing here, and a button sitting in the row would
 be brushed by accident. `useHoldMenu` and `ForgetMenu` in `servers.tsx` are that gesture and that menu,
-written once for the rail and the selection screen — and `useHoldMenu` is generic over what it is a menu
+written once for the switcher and the selection screen — and `useHoldMenu` is generic over what it is a menu
 *about*, since the pictures use the same gesture (see **Images**) and a picture has no id to look back up
 by: it carries the caller's own value, whole. Where the menu opens is the caller's too, and it follows the
 size of the thing: a row is a mouthful wide, so its menu stands **beside** it and points at it, while a
@@ -369,9 +370,9 @@ The selection screen has no form to carry the status line, so it carries **its o
 sentence between a heading and a list reads as neither, and the one that lands there is usually an error the
 form has already been dismissed from. It is drawn only when it says something.
 
-The rail is **not** drawn on this screen: the selection screen already is the list, in whole names rather
-than one letter each. It keeps its `+` for the other side of that — while there is a session, the selection
-screen is not up, so the `+` is the way to the form from in there. `AddServerDialog` is that form as a window
+The switcher is **not** drawn on this screen: the selection screen already is the list. Its `Add server`
+row is the other side of that — while there is a session, the selection screen is not up, so that row is the
+way to the form from in there. `AddServerDialog` is that form as a window
 over the chat (`addBox`), and `AddServerFields` is the three fields written once for both homes. It closes
 the way every other menu here does — esc, the X, a press outside, the back gesture (it is in `__why2Back`) —
 and submitting it is a switch like any other, so the session in front is left first.
@@ -429,27 +430,25 @@ Three columns, and a screen in front of them while there is no session — this 
 narrow one (a phone, or a window dragged down to one) turns the outer two into drawers over the middle; see
 **Android**:
 
-- **The rail**, at the far left of the left column: one tile per server in the list, the one we are in marked
-  with a pill against the edge, and a `+` that adds another. It is drawn inside the left column's `aside` (so
-  a phone slides one drawer and not two) and only while there is a session, since the screen that stands in
-  place of one is the same list already, written out in full. It is only as **tall** as the part of the
-  column that scrolls, and the row with the person using the program runs under it across the whole column,
-  on both layouts — on a phone the drawer is 86% of the glass and the rail takes 68 of it, which with an
-  avatar and three fingertip-wide buttons left the name and the role about forty pixels between them, and a
-  desktop column is narrower still. That row is the one thing in the column with nothing to scroll, so it is
-  the one that can have the width. A right-click, or a long press on a phone,
-  opens the tile's one menu item: forgetting the server, which is for good, and which is also leaving it when
-  it is the one we are standing in.
-- **Left** — the server (name over the address as it was typed) and, where our role has one, the door to
-  *its* config; the channel list with a `+` that makes one; the conversations, while there are any; then the
+- **The switcher** is the head of the left column: the server's rounded-square icon and name, and a press
+  drops the list of every server the window remembers under it — the one we are in ticked, then
+  `Add server`. It replaced a rail of one-letter tiles, which spent a column on what is
+  asked for a few times a day. A right-click on a row, or a long press on a phone, opens its one menu item:
+  forgetting the server, which is for good, and which is also leaving it when it is the one we are
+  standing in. It is `ServerSwitcher` in `servers.tsx`, and the selection screen draws the same
+  `ServerRow`s large.
+- **Left** (the sidebar) — the switcher and, where our role has one, the door to *its* config; then
+  **widgets**, Anytype's shape: rounded cards on the sidebar's ground, one for the channels (`#` and the
+  name, compact rows), one for the conversations while there are any, one for the call; the channel list with a `+` that makes one; the conversations, while there are any; then the
   call: the voice roster whenever somebody is in voice in this channel — being in it ourselves is not the
   question — the `Voice connected` strip with the button that hangs up — and, on a phone, the one that moves the
   call between the loud speaker and the earpiece — the `Sharing your screen` strip beside it,
   and at the bottom the person using the program — face, name, role, microphone, **our own** settings, and the way out. The two gears are two
   different configs and sit with what they belong to: the server's by the server's name, ours by ours.
-- **Middle** — the channel header (`#name`, how many are online, and the buttons for files, screen sharing,
-  voice and the member column), the messages, and the composer, whose `+` is the one upload button. The command palette
-  floats on the composer.
+- **Middle** — a slim header (the chat's name, how many are online or who is typing, then the call, screens,
+  files and member buttons), the document column, and the composer: a card with the line on top and a
+  toolbar under it — the two upload buttons, and the send button in the inverted primary colour. The
+  command palette floats on the composer.
   **The composer's line is a `textarea` and not an `input`**, because a message can have more than one row
   in it: ⏎ sends and **⇧⏎ (or ⌥⏎) is a newline**, which is `tui/mod.rs`'s own pair — and a newline puts the
   palette away, since what is being written is no longer the line it was offering to finish. A `textarea`
@@ -461,12 +460,12 @@ narrow one (a phone, or a window dragged down to one) turns the outer two into d
 `touch-target` like the two upload buttons opposite it, since the row is bottom-aligned and a button
 that did not grow to a fingertip's 40 pixels while its neighbours did sits visibly below them - and the
 line itself is padded to that same 40 under `(pointer: coarse)` (`mobile.css`), for the same reason:
-a `textarea` shorter than the buttons beside it sits the difference too low in the pill. It is as tall as what is in it — measured in a
+a `textarea` shorter than the buttons beside it sits the difference too low in the row. It is as tall as what is in it — measured in a
   `useLayoutEffect` (`height` back to `auto` first, since `scrollHeight` never shrinks below what the element
   is already set to) up to `.composer-line`'s ceiling, past which it scrolls: a composer that can eat the
   pane is not a composer.
-- **Right** — everybody on the server, with the channel each of them is sitting in, toggled by the header's
-  own button. A row is a button, and it opens the conversation with that person — see **Direct messages**.
+- **Right** (Members) — everybody on the server, by role, toggled by the header's own button. A row is a
+  button, and it opens that person's card — see **Direct messages**.
 
 A line that has a link in it gets one: `linkParts` in `format.ts` finds the `http://` and `https://` in the
 text — those two and nothing else, since a line is written by a stranger on a server and `file://` is not
@@ -510,12 +509,21 @@ on both targets now; only the picture half is a desktop question. **An error tha
 given a sentence** before it is shown, at both ends: an empty toast is indistinguishable from a button that
 did nothing, which is the one thing a copy button must never look like.
 
-Messages are grouped: a run of lines by one person carries one avatar and one name, and every line after the
-first is just text under it. `paneNodes` decides that, and **anything that is not somebody talking breaks the
-run** — a system line, a notice, a `/list` card. A line nobody said keeps the avatar column but puts an icon
-in it, so the text of the whole pane stays under one edge. Private messages take an accent rule down their
-left side and a `private` badge. There are no avatars in this protocol, so a face is the first letter of the
-name over the color the user picked — or, where they picked none, the one `avatarColor` always hashes it to.
+**The pane reads like a document, not a column of bubbles**: it is a centred column (`max-w-[820px]`)
+that opens on the chat's title set large, and every message is a block in it (`.msg`) — a small round
+face, the name and the time over the text, the hover a soft rounded highlight — with ours drawn the same
+way as everybody else's. Messages are grouped: a run of lines by one person shares one face and one name,
+and the lines after the first show their time on hover where the face would be. `paneNodes` decides that,
+and **anything that is not somebody talking breaks the run**: a system line, a notice, a `/list` card, a new
+day, or ten minutes of silence (`RUN_GAP`). A line nobody said is a quiet line with a small icon in the face
+column (`.note`), a new day is a thin rule with the date in it (`renderDay`), and a transfer or a `/list`
+answer is a bordered card in the text column. A face is the user's picture, or the first letter of the name
+on a disc tinted with the color they picked — or, where they picked none, the one `avatarColor` always
+hashes it to.
+
+**Nothing in the window explains itself.** No captions under headings, no key hints under the composer, no
+description on an empty pane: a messenger is something everybody already knows how to use, and copy that
+says what the chat can do is clutter. Who is typing is said in the header, beside the chat's name.
 
 `↑`/`↓` still walk what was typed before, the palette still answers `/`, and every button still goes through
 `send_input`. What changed is what it looks like, not what it does.
@@ -545,19 +553,21 @@ Two things the layout depends on:
   fenced code block, display math and a long inline formula — still scroll, each **inside its own box**, which
   is what keeps the column behind them still.
 
-The default palette (`why2`) is nearly monochrome on purpose. The surfaces are a near-black stack (`deep` → `sidebar` →
-`chat` → `raised` → `overlay`) with a trace of rose in every one of them, and the accents are still
-`tui/theme.rs`'s meanings — the active thing, a notice, what went right, an error, presence — pulled most of
-the way towards grey, so **the only saturated thing in the window is what somebody said**: the sixteen
-protocol colors in `ANSI`. `theme.css` holds the whole palette as CSS custom properties, mapped to Tailwind
-tokens in one `@theme inline` block beside them. **2.2.7's `theme` key (`client.toml`, thirteen palettes,
-light ones among them) is the TUI's alone**: it is neither a settings row nor read here, since the window
-has palettes of its own (see **Themes**).
+The default palette (`why2`, named Black) is true black with neutral grey surfaces on it and no brand colour in
+the chrome at all: the primary button is the text colour inverted (`.btn-accent` is `bg-text text-chat`, the
+way Anytype's is black on light), `--accent` is a quiet blue kept for links and unread counts, and a mention
+is a soft yellow wash (`--highlight`). Depth is a hairline and a soft shadow on what floats (menus,
+dialogs, the composer); nothing is a coloured slab.
 
-The interface font is proportional (Inter). **The monospace is kept for what is actually measured in
-characters**: the fingerprints, the list-block rows and their branch glyphs, the palette's command
-signatures, IDs and latencies. A file name is **not** one of those — it is a name, and it is set in the
-interface face like every other name.
+**Nothing animates in.** Menus, dialogs, the profile card, the palette, the toast and the lightbox appear
+in place, and the hover bar has no fade. WebKitGTK flickered on every one of them: an opacity or transform
+animation promotes the element to a compositing layer for its length and drops it after, and with the
+shadows on these (and a backdrop blur on the lightbox) that showed as the element blinking a few times as
+it opened. What still moves is what follows a finger — the drawers, the scrim, the lightbox zoom — and the
+typing dots, which animate opacity only.
+
+The interface font is Inter. **The monospace is kept for what is actually measured in characters**: the
+fingerprints, the list-block rows and their branch glyphs, and code.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
@@ -571,24 +581,13 @@ drawn (see **Images**).
 
 ### Themes
 
-The window has **its own** themes, Discord's shape rather than the TUI's list: four flat ones (`why2`, the
-default and `:root` itself, then `dark`, `ash` and `light`) and ten **color themes**, each a gradient behind the
-whole window (seven dark, three light). `themes.ts` is the list — id, name, whether it is light, whether it
-is a gradient, and what its swatch is painted in — and `themes.css` is the palettes, each a block of the same
-custom properties `theme.css` declares, so **nothing in a component knows a theme exists**: it is all tokens.
-`applyTheme` puts three attributes on `<html>`: `data-theme` (the id, absent for `why2`), `data-tone="light"`
-(the darker meanings, code colors, syntax and protocol colors every light theme shares) and
-`data-backdrop` (`dark` or `light`, for a gradient).
-
-**A gradient is one picture seen through every surface**, the way Discord's are. In a color theme `--deep`,
-`--sidebar`, `--chat` and `--overlay` are translucent tints, and every element painted in one of them
-(`.bg-deep`, `.bg-sidebar`, `.bg-chat`, `.bg-overlay`, and `body`) paints the tint over `--backdrop` with
-`background-attachment: fixed`. So each surface is **opaque** — a drawer over the conversation, a menu
-over a message and a dialog over the pane hide what is under them — and yet all of them show the same
-gradient, anchored to the window, at different depths. `--raised` and the opacity variants (`bg-deep/40`)
-stay plain translucent tints over whatever they sit on. Those rules only add a background **image**, so an
-element that also changes its background **color** on hover would have the change hidden under it — there
-is none, and one should not be written.
+The window has **its own** themes: four flat palettes, two dark (`why2` — Black, the default and `:root`
+itself — and `dark`) and two light (`light`, `paper`). `themes.ts` is the list — id, name, whether it is
+light, and the three colours its little window preview is drawn from — and `themes.css` is the palettes,
+each a block of the same custom properties `theme.css` declares, so **nothing in a component knows a theme
+exists**: it is all tokens. `applyTheme` puts two attributes on `<html>`: `data-theme` (the id, absent for
+`why2`) and `data-tone="light"` (the darker meanings, code colors, syntax and protocol colors every light
+theme shares). A stored id that is not in the list any more falls back to the default.
 
 It is stored **beside the server list** (`theme` in `desktop_servers.toml`, `get_theme`/`set_theme`), for the
 same reason `auto_connect` is: `client.toml` is the terminal client's too, and its own `theme` key means
@@ -598,8 +597,12 @@ Because the bridge answers a frame or two after the page is up, the last palette
 `localStorage`** and put on the page in `main.tsx` before the first render; the file wins when it answers.
 `index.html`'s boot screen stays `#050405` whatever the theme, since the mark is what it is there to show.
 
-Text on an accent button is `text-on-accent` (`--on-accent`): dark on the default's pewter, white on the
-blurple and the light themes' accents.
+The settings dialog is a modal with a section nav down its left side (on a phone, just the sections); the
+nav entry of whichever section holds the selected row is highlighted, so the keyboard and the nav agree.
+
+**The component classes are layered.** `.btn`, `.field`, `.caption`, `.label`, `.group-box` and `.widget` live in
+`@layer components` in `widgets.css`, below Tailwind's utilities — written unlayered they beat every utility
+put beside them, so a `btn px-5` or a `field pl-9` silently kept the class's own padding.
 
 ### Message markup
 
@@ -1565,8 +1568,8 @@ chat app has settled on:
 - **The keyboard hints go**, since a soft keyboard has none of those keys on it: the palette's
   `↑↓ select · tab complete · esc dismiss` and the settings footer's `Arrows move and change, esc closes.`
   are both drawn only where `narrow` is false. The footer's other two lines are not hints and stay.
-- Every dialog is the whole screen rather than a card in a darkened room (`dialogWrap`/`dialogCard`), the
-  composer is a pill — a large radius rather than a true one, since it is a box that grows — and the composer
+- Every dialog is the whole screen rather than a card over a darkened room (`Overlay` in
+  `components.tsx` takes `narrow`), and the composer
   does not take the focus on its own: a soft keyboard is half the screen,
   and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
   before pulling the focus back.
@@ -1809,9 +1812,7 @@ history page replays. `ChatMessage::message_id` is where it travels, and it is w
 **this app's and not `client.toml`'s**: the TUI's is on by default and the window's is **off**, so the row
 reads and writes it in `desktop_servers.toml` beside `auto_connect` (`ClientKind::Own`,
 `servers::read_own`/`write_own`) and the TUI's own setting is left alone. It is drawn
-right-aligned against the **last row** of every line's text, the TUI's own place for it since 2.2.4 (`Theme::message_id`), so the name and the time line up down the pane. It is a column of its
-own beside `.message-body` (`items-end`, the same `text-[15px] leading-relaxed` line box around a smaller
-span), which is what keeps it on the text's baseline. The client id beside the name is `(id)` rather than
+right-aligned on the **last row** of the text — the TUI's own place for it since 2.2.4 (`Theme::message_id`). The client id beside the name is `(id)` rather than
 `#id` — it is the TUI's own spelling.
 
 ### Timestamps
@@ -1820,9 +1821,8 @@ span), which is what keeps it on the text's baseline. The client id beside the n
 four picture events that put a line up and on `StoredMessage`, so a replayed line shows the time the live one
 did; `ChatMessage::timestamp` (`.at()`) carries it. The server's `message_timestamps` turns it off, and then
 it is `None` everywhere. `sentAt` in `format.ts` is `Theme::timestamp`: local time, `HH:MM` today and the
-date in front of it otherwise. It sits beside the name on the first line of a run, and in the avatar column
-of the lines after it **on hover only** (`HH:MM`, the whole date in the tooltip) — every line carrying a clock
-is a column of clocks. `show_timestamps` (`client.toml`, default on) is a settings row and one of the keys
+date in front of it otherwise. It is `HH:MM` beside the name on the first line of a run, and on the lines after it in the face column **on
+hover only** — the day dividers already say the date, and the tooltip carries the whole of it. `show_timestamps` (`client.toml`, default on) is a settings row and one of the keys
 `get_client_config` hands over, since it changes how a line already in the pane is drawn.
 
 **The crate's message stripes are deliberately not here** (`message_stripes`, every other message shaded):
@@ -1834,7 +1834,7 @@ and a hover highlight does not. The key is neither a settings row nor read.
 2.2.4's `@name` and `@everyone`. **A line that mentions us is tinted** — `mentions` in `palette.ts` is
 `palette::mentions` (a name made of `[A-Za-z0-9_-]`, not glued to one before it, case-insensitive), asked
 of every `user` line, replayed ones included, and every incoming `private` one, never our own or a picture's.
-The tint is the whisper's shape in `warning` (a left rule and a faint wash), and wins over it — the TUI's
+The tint is a yellow rule down the block's left edge and a faint wash (`--highlight`), and wins over it — the TUI's
 `MENTION` wins over its stripe the same way. **A mention also notifies from a parked channel** (see
 **Notifications**), which the TUI has no equivalent of.
 

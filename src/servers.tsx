@@ -17,14 +17,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import type { StoredServer } from "./types";
-import { avatarColor } from "./theme";
-import { Icon, IconButton } from "./icons";
+import { Icon } from "./icons";
+import { SpaceIcon, Overlay, PanelHeader, MenuBox, MENU_ITEM, MENU_WIDTH } from "./components";
 
-//WHAT A SERVER IS TYPED IN AS. THE PASSWORD IS PART OF IT BECAUSE THE WHOLE POINT OF THE LIST IS THAT
-//NONE OF THIS IS ASKED TWICE - AND IT IS ALLOWED TO BE EMPTY, WHICH IS THE ROW SAYING "ASK ME"
+export { MENU_WIDTH };
+
+//WHAT A SERVER IS TYPED IN AS; AN EMPTY PASSWORD IS "ASK ME"
 export interface ServerForm
 {
     address: string;
@@ -32,11 +32,7 @@ export interface ServerForm
     password: string;
 }
 
-const FIELD = "mt-1.5 w-full rounded-app border border-border bg-deep px-3 py-2.5 text-[15px] outline-none placeholder:text-faint focus:border-accent";
-const CAPTION = "text-[11px] font-semibold uppercase tracking-wider text-muted";
-
-//THE THREE THINGS A SERVER IS. THEY ARE ASKED IN TWO PLACES - THE CONNECT SCREEN WHILE THERE IS NO
-//SESSION, AND A WINDOW OVER THE CHAT WHILE THERE IS - SO THEY ARE WRITTEN ONCE
+//THE THREE FIELDS, FOR THE CONNECT SCREEN AND THE DIALOG
 export function AddServerFields(
 {
     form, setForm, connecting, inputRef, autoFocus,
@@ -49,127 +45,85 @@ export function AddServerFields(
 })
 {
     return (
-        <>
-            <label htmlFor="login-input" className={CAPTION}>Server address</label>
-
+        <div className="flex flex-col gap-3">
             <input
                 id="login-input"
                 ref={inputRef}
                 type="text"
+                aria-label="Server address"
                 value={form.address}
                 onChange={(event) => setForm({ ...form, address: event.currentTarget.value })}
-                placeholder="127.0.0.1:8080"
-                className={FIELD}
+                placeholder="Server address"
+                className="field"
                 disabled={connecting}
                 autoFocus={autoFocus}
                 spellCheck={false}
             />
 
-            <label htmlFor="login-username" className={`${CAPTION} mt-4 block`}>Username</label>
-
             <input
                 id="login-username"
                 type="text"
+                aria-label="Username"
                 value={form.username}
                 onChange={(event) => setForm({ ...form, username: event.currentTarget.value })}
-                className={FIELD}
+                placeholder="Username"
+                className="field"
                 disabled={connecting}
                 spellCheck={false}
             />
 
-            <label htmlFor="login-password" className={`${CAPTION} mt-4 block`}>Password</label>
-
             <input
                 id="login-password"
                 type="password"
+                aria-label="Password"
                 value={form.password}
                 onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
-                className={FIELD}
+                placeholder="Password (optional)"
+                className="field"
                 disabled={connecting}
             />
-
-            {/* THE HONEST FOOTNOTE. THERE IS NO KEY TO ENCRYPT THIS WITH THAT THE PROGRAM WOULD NOT HAVE
-                TO KEEP BESIDE IT, SO IT SAYS WHAT IT DOES */}
-            <div className="mt-2 flex items-start gap-1.5 text-[11px] text-faint">
-                <Icon name="lock" className="mt-px h-3.5 w-3.5 shrink-0" />
-                <span>Kept in a file only you can read. Leave the password empty to be asked at every connect.</span>
-            </div>
-        </>
+        </div>
     );
 }
 
-//AND THE SAME FORM AS A WINDOW, FOR THE RAIL'S + WHILE THERE IS A SESSION BEHIND IT. A SERVER ADDED FROM
-//IN HERE IS A SWITCH LIKE ANY OTHER: THE ONE WE ARE IN IS LEFT FIRST, AND THE CONNECT SCREEN TAKES OVER
-//WITH WHAT WAS TYPED STILL IN IT
+//THE SAME FORM OVER A SESSION
 export function AddServerDialog(
 {
-    form, setForm, connecting, errorMsg, cardRef, dialogWrap, dialogCard, narrow, onSubmit, close,
+    form, setForm, connecting, errorMsg, cardRef, narrow, onSubmit, close,
 }: {
     form: ServerForm;
     setForm: (form: ServerForm) => void;
     connecting: boolean;
     errorMsg: string;
     cardRef: React.RefObject<HTMLDivElement | null>;
-    dialogWrap: string;
-    dialogCard: (wide: string) => string;
     narrow: boolean;
     onSubmit: (event: React.FormEvent) => void;
     close: () => void;
 })
 {
     return (
-        <div
-            onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
-            className={dialogWrap}
-        >
-            <div
-                ref={cardRef}
-                tabIndex={-1}
-                onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}
-                className={`rise ${dialogCard("flex max-h-[84vh] w-full max-w-[420px] flex-col overflow-hidden rounded-xl border border-border bg-overlay shadow-2xl outline-none")}`}
-            >
-                <header className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
-                    <Icon name="plus" className="h-4 w-4 shrink-0 text-muted" />
-                    <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">Add a server</h2>
+        <Overlay narrow={narrow} width={420} label="Add server" cardRef={cardRef} close={close}>
+            <PanelHeader title="Add server" close={close} />
 
-                    <IconButton icon="close" label="Close" onClick={close} />
-                </header>
+            <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-3">
+                <AddServerFields form={form} setForm={setForm} connecting={connecting} autoFocus={!narrow} />
 
-                <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-5 py-4">
-                    {/* THE SOFT KEYBOARD IS HALF THE SCREEN, SO ON A PHONE IT OPENS WHEN THE FIELD IS
-                        TAPPED RATHER THAN BECAUSE A WINDOW CAME UP */}
-                    <AddServerFields form={form} setForm={setForm} connecting={connecting} autoFocus={!narrow} />
-
-                    <div className="mt-2 min-h-[1.25rem] text-xs">
-                        {connecting
-                            ? <span className="text-accent">Connecting…</span>
-                            : errorMsg
-                                ? <span className="text-error">{errorMsg}</span>
-                                : null}
+                {(connecting || errorMsg) && (
+                    <div className={`mt-3 text-[13px] ${connecting ? "text-muted" : "text-error"}`}>
+                        {connecting ? "Connecting…" : errorMsg}
                     </div>
+                )}
 
-                    <button
-                        type="submit"
-                        disabled={connecting || !form.address}
-                        className="mt-3 w-full rounded-app bg-accent py-2.5 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                        Add and connect
-                    </button>
-
-                    {/* IT LEAVES THE SERVER WE ARE IN, WHICH IS WORTH SAYING BEFORE IT HAPPENS */}
-                    <div className="mt-2 text-center text-[11px] text-faint">This leaves the server you are on.</div>
-                </form>
-            </div>
-        </div>
+                <button type="submit" disabled={connecting || !form.address} className="btn btn-accent mt-5 w-full py-2.5">
+                    Connect
+                </button>
+            </form>
+        </Overlay>
     );
 }
 
-//FORGETTING A SERVER IS THE ONE DESTRUCTIVE THING THE LIST CAN DO, SO IT IS NOT A BUTTON SITTING THERE
-//WAITING TO BE BRUSHED: IT IS A RIGHT-CLICK ON A DESKTOP AND A HOLD ON A PHONE, WHICH IS WHAT EVERY OTHER
-//PROGRAM ASKS FOR BEFORE THROWING SOMETHING AWAY. BOTH LISTS THAT HAVE IT - THE RAIL AND THE SELECTION
-//SCREEN - ASK THE SAME WAY, SO THE GESTURE IS WRITTEN ONCE
+//A RIGHT-CLICK OR A HOLD OPENS A MENU ABOUT WHATEVER WAS HELD
 const HOLD = 500;
-export const MENU_WIDTH = 224;
 const MENU_HEIGHT = 96;
 
 export interface HeldMenu<T>
@@ -315,9 +269,7 @@ export function useHoldMenu<T>(anchor: "element" | "pointer" = "element", height
     return { menu, close: () => setMenu(null), bind, held };
 }
 
-//THE MENU ITSELF, WHICH IS ONE ITEM. IT GOES THROUGH A PORTAL BECAUSE BOTH THINGS THAT OPEN IT LIVE IN
-//BOXES THAT WOULD SWALLOW IT: A LIST THAT SCROLLS CLIPS WHATEVER LEAVES IT, AND A DRAWER IS TRANSLATED,
-//WHICH IS ENOUGH TO MAKE position: fixed MEAN "INSIDE THE DRAWER"
+//THE ONE THING TO DO WITH A HELD SERVER
 export function ForgetMenu(
 {
     server, at, onForget, close,
@@ -328,97 +280,155 @@ export function ForgetMenu(
     close: () => void;
 })
 {
-    return createPortal(
-        <div
-            data-hold-menu
-            style={{ left: at.x, top: at.y, width: MENU_WIDTH }}
-            className="fixed z-[60] rounded-app border border-border bg-overlay p-1 shadow-2xl"
-        >
-            <div className="px-2 py-1.5">
-                <div className="truncate text-sm font-semibold">{serverLabel(server)}</div>
-                <div className="truncate font-mono text-[11px] text-faint">{server.address}</div>
-            </div>
-
-            <button
-                type="button"
-                onClick={() => { close(); onForget(server.id); }}
-                className="flex w-full items-center gap-2 rounded-app px-2 py-1.5 text-left text-sm text-error transition-colors hover:bg-hover"
-            >
-                <Icon name="close" className="h-4 w-4" />
-                Forget this server
+    return (
+        <MenuBox at={at} title={serverLabel(server)}>
+            <button type="button" onClick={() => { close(); onForget(server.id); }} className={`${MENU_ITEM} text-error`}>
+                <Icon name="trash" className="h-4 w-4" />
+                Remove server
             </button>
-        </div>,
-        document.body,
+        </MenuBox>
     );
 }
 
-//WHAT A SERVER IS CALLED WHEN THERE IS SOMETHING TO CALL IT BY: WHAT IT CALLED ITSELF LAST TIME, AND THE
-//ADDRESS UNTIL IT HAS. A SERVER THAT HAS NEVER BEEN REACHED IS STILL A TILE, BECAUSE IT WAS TYPED IN
+//WHAT A SERVER IS CALLED
 export function serverLabel(server: StoredServer): string
 {
     return server.name || server.address;
 }
 
-//THE FAR-LEFT COLUMN: EVERY SERVER THE WINDOW REMEMBERS, THE ONE WE ARE IN MARKED, AND THE + THAT ADDS
-//ANOTHER. IT IS DRAWN INSIDE THE SESSION AND NOT ON THE SELECTION SCREEN, WHICH IS THE SAME LIST WRITTEN
-//OUT IN FULL - SO THE + IS THE WAY TO THE FORM FROM IN HERE, AND THE SELECTION SCREEN IS IT FROM OUT THERE
-export function ServerRail(
+//ONE SERVER AS A ROW
+export function ServerRow(
 {
-    servers, active, connecting, onPick, onAdd, onForget,
+    server, here, connecting, onPick, bind,
+}: {
+    server: StoredServer;
+    here: boolean;
+    connecting: boolean;
+    size?: "small" | "large";
+    onPick: () => void;
+    bind: Record<string, unknown>;
+})
+{
+    const label = serverLabel(server);
+
+    return (
+        <button
+            type="button"
+            onClick={onPick}
+            {...bind}
+            className={`group flex w-full select-none items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover ${here ? "bg-selected" : ""}`}
+        >
+            <SpaceIcon name={label} size={32} />
+
+            <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium">{label}</span>
+                <span className="block truncate text-[12px] text-faint">{server.username ? `${server.username} · ${server.address}` : server.address}</span>
+            </span>
+
+            {here && connecting && <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-faint border-t-accent" />}
+            {here && !connecting && <Icon name="check" className="h-4 w-4 shrink-0 text-accent" />}
+        </button>
+    );
+}
+
+//THE SERVER WE ARE ON, AND THE OTHERS UNDER IT
+export function ServerSwitcher(
+{
+    servers, active, connecting, serverName, onPick, onAdd, onForget,
 }: {
     servers: StoredServer[];
     active: string | null;
     connecting: boolean;
+    serverName: string;
+    address: string;
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
     onForget: (id: string) => void;
 })
 {
+    const [open, setOpen] = useState(false);
+    const box = useRef<HTMLDivElement>(null);
     const { menu, close, bind, held } = useHoldMenu<string>();
 
+    //A PRESS OUTSIDE, OR ESC
+    useEffect(() =>
+    {
+        if (!open) return;
+
+        const outside = (event: Event) =>
+        {
+            const target = event.target as HTMLElement | null;
+
+            if (box.current?.contains(target) || target?.closest?.("[data-hold-menu]")) return;
+
+            setOpen(false);
+        };
+
+        const key = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+
+        document.addEventListener("mousedown", outside);
+        document.addEventListener("touchstart", outside);
+        document.addEventListener("keydown", key);
+
+        return () =>
+        {
+            document.removeEventListener("mousedown", outside);
+            document.removeEventListener("touchstart", outside);
+            document.removeEventListener("keydown", key);
+        };
+    }, [open]);
+
+    const name = serverName || "WHY2";
+
     return (
-        <nav className="scroller scroller-quiet relative z-10 flex w-[68px] shrink-0 flex-col items-center gap-2 border-r border-border bg-deep py-3">
-            {servers.map((server) =>
-            {
-                const label = serverLabel(server);
-                const current = server.id === active;
-
-                return (
-                    <div key={server.id} className="relative shrink-0">
-                        <button
-                            type="button"
-                            title={`${label}\n${server.address}${server.username ? ` — ${server.username}` : ""}`}
-                            aria-label={label}
-                            onClick={() => { if (held()) return; close(); onPick(server); }}
-                            {...bind(server.id)}
-                            className={`flex h-12 w-12 select-none items-center justify-center text-[17px] font-semibold text-white/90 transition-all ${current
-                                ? "rounded-2xl ring-2 ring-accent"
-                                : "rounded-full opacity-70 hover:rounded-2xl hover:opacity-100"}`}
-                            style={{ background: avatarColor(server.name || server.address) }}
-                        >
-                            {(label.trim()[0] ?? "?").toUpperCase()}
-                        </button>
-
-                        {/* THE ONE WE ARE IN, SAID THE WAY EVERY PROGRAM WITH A RAIL SAYS IT: A PILL AGAINST
-                            THE EDGE RATHER THAN A WORD THERE IS NO ROOM FOR. IT IS FAINT WHILE WE ARE STILL
-                            ON OUR WAY IN, SINCE THAT IS THE DIFFERENCE BETWEEN PICKED AND CONNECTED */}
-                        {current && (
-                            <span className={`absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r bg-text ${connecting ? "opacity-40" : ""}`} />
-                        )}
-
-                    </div>
-                );
-            })}
-
+        <div ref={box} className="min-w-0 flex-1">
             <button
                 type="button"
-                title="Add a server"
-                aria-label="Add a server"
-                onClick={() => { close(); onAdd(); }}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border-strong text-muted transition-all hover:rounded-2xl hover:border-accent hover:text-accent"
+                title="Switch server"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
             >
-                <Icon name="plus" className="h-5 w-5" />
+                <SpaceIcon name={name} size={26} />
+                <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">{name}</span>
+                <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
+
+            {open && (
+                <div className="absolute left-2 right-2 top-full z-30 overflow-hidden rounded-xl border border-border-strong bg-overlay p-1 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
+                    <div className="scroller scroller-quiet max-h-[50vh]">
+                        {servers.map((server) => (
+                            <ServerRow
+                                key={server.id}
+                                server={server}
+                                here={server.id === active}
+                                connecting={connecting}
+                                bind={bind(server.id)}
+                                onPick={() =>
+                                {
+                                    if (held()) return;
+
+                                    close();
+                                    setOpen(false);
+
+                                    if (server.id !== active) onPick(server);
+                                }}
+                            />
+                        ))}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => { close(); setOpen(false); onAdd(); }}
+                        className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[14px] text-muted transition-colors hover:bg-hover hover:text-text"
+                    >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-[9px] border border-dashed border-border-strong">
+                            <Icon name="plus" className="h-4 w-4" />
+                        </span>
+                        Add server
+                    </button>
+                </div>
+            )}
 
             {menu && servers.some((server) => server.id === menu.value) && (
                 <ForgetMenu
@@ -428,6 +438,6 @@ export function ServerRail(
                     close={close}
                 />
             )}
-        </nav>
+        </div>
     );
 }

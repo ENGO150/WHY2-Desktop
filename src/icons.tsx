@@ -16,8 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-//THE LINE ART. ONE COMPONENT AND A TABLE OF PATHS, BECAUSE AN ICON SET IS NOT WORTH A DEPENDENCY AND A
-//STROKED 24×24 GRID IS WHAT EVERY ONE OF THESE WOULD HAVE BEEN ANYWAY
+//STROKED 24x24 PATHS
 export const ICONS: Record<string, string[]> =
 {
     hash: ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3 14 21"],
@@ -63,16 +62,18 @@ export const ICONS: Record<string, string[]> =
     reply: ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 0 11H11"],
     at: ["M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"],
     menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
+    paperclip: ["M20.5 11.5 12 20a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7.5"],
+    chevron_right: ["M9 6l6 6-6 6"],
+    updown: ["M8 9l4-4 4 4", "M8 15l4 4 4-4"],
+    search: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "M20 20l-4-4"],
+    refresh: ["M20 11a8 8 0 0 0-14.6-4.5L4 8", "M4 4v4h4", "M4 13a8 8 0 0 0 14.6 4.5L20 16", "M20 20v-4h-4"],
+    eye: ["M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
 
-    //THE WINDOW'S OWN THREE, WHICH EVERY DESKTOP HAS DRAWN THE SAME WAY FOR THIRTY YEARS - A LINE, A
-    //SQUARE, AND A SQUARE STANDING OFF ANOTHER. THE FOURTH IS close, WHICH WAS ALREADY HERE
+    //WINDOW BUTTONS
     win_minimize: ["M6 12h12"],
     win_maximize: ["M5 5h14v14H5z"],
     win_restore: ["M8 8h11v11H8z", "M16 8V5H5v11h3"],
 };
-
-//AN ACCESS UNIT IS A KEYFRAME WHEN IT CARRIES AN IDR SLICE, OR THE PARAMETER SETS THAT COME IN FRONT OF
-//ONE. A DECODER CANNOT START ANYWHERE ELSE, AND ANNEX-B PUTS THE TYPE IN THE LOW FIVE BITS OF THE FIRST
 
 export function Icon({ name, className }: { name: keyof typeof ICONS | string; className?: string })
 {
@@ -81,7 +82,7 @@ export function Icon({ name, className }: { name: keyof typeof ICONS | string; c
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={1.6}
             strokeLinecap="round"
             strokeLinejoin="round"
             className={className ?? "h-4 w-4"}
@@ -92,8 +93,7 @@ export function Icon({ name, className }: { name: keyof typeof ICONS | string; c
     );
 }
 
-//AN ICON THAT IS A BUTTON, WHICH IN THIS WINDOW IS MOST OF THEM. THE LABEL IS THE TOOLTIP AND THE
-//ACCESSIBLE NAME BOTH - NOTHING HERE IS A GUESSING GAME ABOUT WHAT A GLYPH MEANT
+//AN ICON THAT IS A BUTTON; THE LABEL IS ITS TOOLTIP AND NAME
 export function IconButton(
 {
     icon,
@@ -112,10 +112,10 @@ export function IconButton(
 })
 {
     const color = tone === "error"
-        ? "text-error hover:text-error"
+        ? "text-error"
         : tone === "ok"
-            ? "text-online hover:text-online"
-            : active ? "text-text" : "text-muted hover:text-text";
+            ? "text-online"
+            : active ? "text-text bg-active" : "text-muted hover:text-text";
 
     return (
         <button
@@ -123,12 +123,9 @@ export function IconButton(
             title={label}
             aria-label={label}
             onClick={onClick}
-            className={`touch-target flex h-8 w-8 items-center justify-center rounded-app transition-colors hover:bg-hover ${color} ${className ?? ""}`}
+            className={`touch-target flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-hover ${color} ${className ?? ""}`}
         >
             <Icon name={icon} className="h-[18px] w-[18px]" />
         </button>
     );
 }
-
-//A FACE. THERE ARE NO UPLOADED PICTURES IN THIS PROTOCOL, SO IT IS THE FIRST LETTER OVER THE COLOR THE
-//USER PICKED - OR, WHERE THEY PICKED NONE, THE ONE THEIR NAME ALWAYS HASHES TO
