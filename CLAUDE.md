@@ -1638,6 +1638,9 @@ chat app has settled on:
   does not take the focus on its own: a soft keyboard is half the screen,
   and it opens when the line is tapped. `showDirect`, `closeSettings` and `closeFiles` all check `narrow`
   before pulling the focus back.
+- **The page does not pinch-zoom**: the viewport says `maximum-scale=1, user-scalable=no` and `html` is
+  `touch-action: pan-x pan-y` (the WebView honours one or the other depending on version and accessibility
+  settings). A zoomed page is a layout nobody can get out of; the lightbox's zoom is its own (see **Images**).
 - `index.html` asks for `viewport-fit=cover` **and** `interactive-widget=resizes-content` — the second is the
   whole difference between a composer above the keys and one pushed off the top of the screen. `<main>` is
   `h-dvh` for the same reason, and pays the safe-area insets back once (`.safe-top`/`.safe-bottom`) so every
