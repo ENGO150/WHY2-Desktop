@@ -1538,7 +1538,9 @@ chat app has settled on:
   else's — macOS, a phone, a browser), inherited down the DOM, which is what a `fixed` child still reads. The
   scrim under them takes it too, so the darkness begins where they do.
 - The channel header gains the hamburger, and its members button toggles the right drawer instead of the
-  column. Picking a channel, a conversation or a member closes the drawer it was picked in.
+  column. Picking a channel, a conversation or a member closes the drawer it was picked in. Opening one
+  puts the soft keyboard away (the composer is blurred once `drawer` is set, so a swipe does it on letting
+  go rather than mid-drag): a drawer over half a screen of keys is a sliver of a drawer.
 - A **sideways swipe** on the window opens and closes them, and the drawer follows the finger rather than
   appearing at the end of it (`onSwipeStart`/`onSwipeMove`/`onSwipeEnd`/`onSwipeCancel`). What the drag is
   about is decided once, after `SWIPE_SLOP`, and then kept: a drawer already open is the one being moved,

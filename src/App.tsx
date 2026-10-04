@@ -489,6 +489,12 @@ function App()
     //BELONG, AND A DRAWER LEFT OPEN BEHIND THEM WOULD BE A PANEL FLOATING OVER ITS OWN TWIN
     useEffect(() => { if (!narrow) setDrawer(null); }, [narrow]);
 
+    //AN OPEN DRAWER PUTS THE KEYBOARD AWAY
+    useEffect(() =>
+    {
+        if (drawer !== null && document.activeElement === chatInputRef.current) chatInputRef.current?.blur();
+    }, [drawer]);
+
     useEffect(() =>
     {
         openDmRef.current = openDm;
