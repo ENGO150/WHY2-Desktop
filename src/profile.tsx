@@ -211,6 +211,71 @@ function same(one: ProfileFields, other: ProfileFields): boolean
         && one.website === other.website && one.status === other.status;
 }
 
+const colorName = (choice: VocabularyValue) => choice.value.replace(/_/g, " ");
+
+//ONE COLOR, AND THE MENU OF THE OTHERS
+function ColorRow({ label, colors, current, pick }: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
+{
+    const [open, setOpen] = useState(false);
+    const boxRef = useRef<HTMLDivElement>(null);
+    const chosen = colors.find((choice) => choice.color !== null && choice.color === current);
+
+    //A PRESS OUTSIDE CLOSES IT
+    useEffect(() =>
+    {
+        if (!open) return;
+
+        const away = (event: MouseEvent) =>
+        {
+            if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+
+        document.addEventListener("mousedown", away);
+
+        return () => document.removeEventListener("mousedown", away);
+    }, [open]);
+
+    return (
+        <div
+            ref={boxRef}
+            className="relative"
+            onKeyDown={(event) => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}
+        >
+            <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className="field flex w-full items-center gap-3 text-left"
+            >
+                <span className="flex-1 truncate">{label}</span>
+                <span
+                    className="h-4 w-4 shrink-0 rounded-full ring-1 ring-border-strong"
+                    style={{ backgroundColor: chosen?.color != null ? ANSI_TRUE[chosen.color] : "transparent" }}
+                />
+                <span className="text-[13px] text-muted">{chosen ? colorName(chosen) : "Not set"}</span>
+                <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`} />
+            </button>
+
+            {open && (
+                <div className="absolute right-0 top-full z-10 mt-1.5 grid grid-cols-8 gap-1.5 rounded-xl border border-border-strong bg-overlay p-2.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
+                    {colors.map((choice) => choice.color !== null && (
+                        <button
+                            key={choice.value}
+                            type="button"
+                            title={colorName(choice)}
+                            aria-label={colorName(choice)}
+                            aria-pressed={choice.color === current}
+                            onClick={() => { pick(choice); setOpen(false); }}
+                            className={`h-6 w-6 rounded-full ring-1 ring-border-strong ${choice.color === current ? "ring-2 ring-text ring-offset-2 ring-offset-overlay" : "hover:ring-muted"}`}
+                            style={{ backgroundColor: ANSI_TRUE[choice.color] }}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 //OUR OWN PROFILE, EDITABLE
 export function ProfileEditor(
 {
@@ -266,27 +331,6 @@ export function ProfileEditor(
         save({ ...draft, website }).catch(() => setSaving(false));
     };
 
-    //ONE ROW OF SWATCHES, SET THE MOMENT ONE IS PRESSED
-    const palette = (label: string, name: boolean, current: number | null) => (
-        <div>
-            <div className="label mb-2 px-1">{label}</div>
-            <div className="grid grid-cols-8 justify-items-center gap-y-2">
-                {colors.map((choice) => choice.color !== null && (
-                    <button
-                        key={choice.value}
-                        type="button"
-                        title={choice.value.replace(/_/g, " ")}
-                        aria-label={choice.value.replace(/_/g, " ")}
-                        aria-pressed={choice.color === current}
-                        onClick={() => pickColor(name, choice)}
-                        className={`h-7 w-7 rounded-full ring-1 ring-border-strong transition-shadow ${choice.color === current ? "ring-2 ring-text ring-offset-2 ring-offset-overlay" : "hover:ring-muted"}`}
-                        style={{ backgroundColor: ANSI_TRUE[choice.color] }}
-                    />
-                ))}
-            </div>
-        </div>
-    );
-
     const set = (key: keyof ProfileFields) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
         setDraft({ ...draft, [key]: event.currentTarget.value });
 
@@ -317,9 +361,9 @@ export function ProfileEditor(
                 </div>
 
                 {colors.length > 0 && (
-                    <div className="mt-5 flex flex-col gap-4">
-                        {palette("Name color", true, nameColor)}
-                        {palette("Message color", false, messageColor)}
+                    <div className="mt-5 flex flex-col gap-3">
+                        <ColorRow label="Name color" colors={colors} current={nameColor} pick={(choice) => pickColor(true, choice)} />
+                        <ColorRow label="Message color" colors={colors} current={messageColor} pick={(choice) => pickColor(false, choice)} />
                     </div>
                 )}
 

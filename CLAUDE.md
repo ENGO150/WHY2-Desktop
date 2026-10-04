@@ -1964,9 +1964,9 @@ name (a color no code can carry is refused here rather than after a round trip) 
 the server's own. Nothing already in the pane changes color for a `/color`, each line keeping the colors it
 was said in.
 
-**Both are also picked in the profile editor**, as two rows of swatches (`Name color`, `Message color`)
-drawn from `get_vocabulary("colors")` — `offered_colors`' order, so the bright half sits over the dark one —
-and a press sends the same `/ucolor` or `/color` typing it would, at once, like the avatar. The server never
+**Both are also picked in the profile editor**, as two rows (`Name color`, `Message color`, `ColorRow`) that
+show the color held and open a menu of swatches when pressed, drawn from `get_vocabulary("colors")` —
+`offered_colors`' order, so the bright half sits over the dark one — and a press on a swatch sends the same `/ucolor` or `/color` typing it would, at once, like the avatar. The server never
 says what it holds, so which swatch is marked is this window's guess: the name's is **our roster row, patched
 on the press** (the row a `List` would have carried anyway), and the message's is `ownMessageColor`, taken off
 our own last line and off the press, and unmarked until there is either.
