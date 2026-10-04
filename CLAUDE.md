@@ -565,11 +565,14 @@ toast appear in place, and the hover bar has no fade. WebKitGTK flickered on eve
 or transform animation promotes the element to a compositing layer for its length and drops it after, and
 with the shadows on these that showed as the element blinking a few times as it opened. What still moves is
 what follows a finger — the drawers, the scrim, the lightbox zoom — and the typing dots, which animate
-opacity only. The lightbox was asked for an open and a close by name, and it is written to dodge exactly
-that: the room and the card carry `will-change` for as long as they are mounted, so the layer is made once
-when the picture opens and not made and dropped around each animation, and what moves is opacity and a
-4% scale and nothing else. **If it blinks on WebKitGTK anyway, that is this paragraph coming true**, and
-the answer is the two `animation`s and the `.shut` transitions in `widgets.css`, not the layout.
+opacity only. The lightbox was asked for an open and a close by name, and **it is animated by hand, with
+no CSS animation, transition, `will-change` or backdrop filter anywhere in it** — that is the whole of how
+it dodges this. The first try used all four and flashed the **whole window** on every open and close: a
+`backdrop-filter` makes everything behind it a compositing layer, and making and dropping that is the
+window repainting from nothing. `fadeLightbox` is a `requestAnimationFrame` loop that writes plain styles —
+the room's `opacity`, the card's 2D `scale`, `#root`'s `filter: blur` — and a plain style is something
+WebKitGTK paints in software, the same way the old blurred-picture background was a `filter` and never
+flashed. Reduced motion makes it one frame.
 
 The interface font is Inter. **The monospace is kept for what is actually measured in characters**: the
 fingerprints, the list-block rows and their branch glyphs, and code.
@@ -1082,11 +1085,13 @@ first in `__why2Back`, above the theater — a picture opened while watching a s
 about). It is not a dialog, because there is nothing to answer, and it appears in place like everything
 else (see **The window**), except that it fades and the card grows the last 4% in, and does both backwards
 on the way out (`LIGHTBOX_MS`). Closing is therefore two steps: `closeLightbox` sets `lightboxShut`, which
-fades the room and takes its pointer events away, and a timer unmounts it once it has faded; opening again
-in the middle of that cancels the timer. The room is the chat, dimmed and **slightly** blurred
-(`backdrop-filter: blur(6px)` on `.lightbox-room`) — enough to put it behind the picture, not so much that
-it stops being the conversation it was opened from. The card itself is opaque, since text behind a
-translucent strip is legible enough to read and too blurred to ignore.
+takes the room's pointer events away, and `fadeLightbox(0)` unmounts it once it has faded; opening again in
+the middle of that fades it back from wherever it got to. The room is the chat, dimmed and **slightly**
+blurred (`LIGHTBOX_BLUR`, 3 px) — enough to put it behind the picture, not so much that it stops being the
+conversation it was opened from. The blur is on `#root`, so **the lightbox is a portal into `body`**: inside
+`main` it would be blurred with everything else, and a `filter` also makes its element the containing
+block of every `fixed` thing inside it. The card itself is opaque, since text behind a translucent strip is
+legible enough to read and too blurred to ignore.
 
 **Everything about the picture sits on the picture**, not on the edges of the glass: `lightbox-card` is the
 picture with a strip over it — who sent it, when, its size, and the × — and a strip under it — the filename

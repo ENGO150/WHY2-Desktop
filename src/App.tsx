@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -116,8 +117,9 @@ const RECONNECT_ATTEMPTS = 5;
 const ZOOM = 2.5;
 const ZOOM_MAX = 6;
 
-//HOW LONG THE LIGHTBOX TAKES TO GO
+//HOW LONG THE LIGHTBOX TAKES TO COME AND GO, AND HOW BLURRED THE WINDOW BEHIND IT IS
 const LIGHTBOX_MS = 160;
+const LIGHTBOX_BLUR = 3;
 
 //AND HOW A FINGER ASKS FOR THAT STEP, WHICH IS TWICE AND NOT ONCE: A TAP ON A PICTURE IS HOW SOMEBODY
 //DISMISSES THE ROOM IT IS STANDING IN AS OFTEN AS IT IS HOW THEY ZOOM IT, SO THE ZOOM IS THE SECOND OF A
@@ -292,7 +294,11 @@ function App()
 
     //WHILE IT IS ON ITS WAY OUT
     const [lightboxShut, setLightboxShut] = useState(false);
-    const lightboxTimer = useRef<number | null>(null);
+
+    //THE FADE, DRAWN BY HAND
+    const roomRef = useRef<HTMLDivElement | null>(null);
+    const lightboxCardRef = useRef<HTMLDivElement | null>(null);
+    const fadeRef = useRef<{ frame: number | null; at: number }>({ frame: null, at: 0 });
 
     //AND HOW FAR INTO IT SOMEBODY HAS GONE: THE FACTOR, AND THE POINT OF THE PICTURE IT GREW OUT OF - A
     //ZOOM ANCHORED IN THE MIDDLE IS ONE THAT MOVES WHATEVER WAS BEING LOOKED AT OFF THE SCREEN. null IS
@@ -2424,13 +2430,58 @@ function App()
     //TIME, WHICHEVER WAY THE LAST ONE WAS LEFT
     function openLightbox(image: MessageImage, message: ChatMessage | null)
     {
-        if (lightboxTimer.current !== null) window.clearTimeout(lightboxTimer.current);
-
-        lightboxTimer.current = null;
+        //BACK IN, IF IT WAS ON ITS WAY OUT
+        if (lightbox) fadeLightbox(1);
 
         setZoom(null);
         setLightboxShut(false);
         setLightbox({ image, message });
+    }
+
+    //ONE STEP OF THE FADE
+    function paintLightbox(at: number)
+    {
+        const room = roomRef.current;
+        const card = lightboxCardRef.current;
+        const root = document.getElementById("root");
+
+        if (room) room.style.opacity = at >= 1 ? "" : String(at);
+        if (card) card.style.transform = at >= 1 ? "" : `scale(${0.96 + 0.04 * at})`;
+        if (root) root.style.filter = at <= 0 ? "" : `blur(${(LIGHTBOX_BLUR * at).toFixed(2)}px)`;
+    }
+
+    //FROM WHERE IT IS TO SHOWN OR GONE
+    function fadeLightbox(to: number, done?: () => void)
+    {
+        const fade = fadeRef.current;
+
+        if (fade.frame !== null) cancelAnimationFrame(fade.frame);
+
+        const from = fade.at;
+        const start = performance.now();
+        const instant = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        const frame = (now: number) =>
+        {
+            const k = instant ? 1 : Math.min(1, (now - start) / LIGHTBOX_MS);
+
+            fade.at = from + (to - from) * (1 - (1 - k) ** 3);
+
+            paintLightbox(fade.at);
+
+            if (k < 1)
+            {
+                fade.frame = requestAnimationFrame(frame);
+
+                return;
+            }
+
+            fade.frame = null;
+
+            done?.();
+        };
+
+        fade.frame = requestAnimationFrame(frame);
     }
 
     const closeLightbox = () =>
@@ -2439,20 +2490,37 @@ function App()
         //PAIR WITH THE FIRST TAP ON WHATEVER IS OPENED NEXT
         tapRef.current = null;
 
-        if (lightboxTimer.current !== null) return;
-
         setZoom(null);
         setLightboxShut(true);
 
         //GONE ONCE IT HAS FADED
-        lightboxTimer.current = window.setTimeout(() =>
+        fadeLightbox(0, () =>
         {
-            lightboxTimer.current = null;
-
             setLightbox(null);
             setLightboxShut(false);
-        }, LIGHTBOX_MS);
+        });
     };
+
+    //FADES IN WHEN IT OPENS
+    const lightboxOpen = lightbox !== null;
+
+    useLayoutEffect(() =>
+    {
+        if (!lightboxOpen) return;
+
+        fadeRef.current.at = 0;
+
+        paintLightbox(0);
+        fadeLightbox(1);
+
+        //NO BLUR OUTLIVES IT
+        return () =>
+        {
+            const root = document.getElementById("root");
+
+            if (root) root.style.filter = "";
+        };
+    }, [lightboxOpen]);
 
     //A LINE ONTO THE CLIPBOARD, THROUGH A COMMAND OF OURS RATHER THAN THE CLIPBOARD PLUGIN'S OWN IPC -
     //THE SAME PATH THE PICTURE ALREADY TAKES, AND THE ONE THAT NEEDS NOTHING SPELLED OUT IN THE ACL.
@@ -4036,15 +4104,16 @@ function App()
     );
 
     //A PICTURE WITH THE WINDOW TO ITSELF; A PRESS OUTSIDE PUTS IT AWAY
-    const pictureBox = shownImage?.source && (
+    const pictureBox = shownImage?.source && createPortal(
         <div
+            ref={roomRef}
             role="presentation"
             onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
             className={`lightbox-room fixed inset-0 z-[60] overflow-hidden ${lightboxShut ? "shut" : ""}`}
         >
 
             <div className="safe-top safe-bottom relative flex h-full w-full items-center justify-center">
-                <div className="lightbox-card" onMouseDown={(event) => event.stopPropagation()}>
+                <div ref={lightboxCardRef} className="lightbox-card" onMouseDown={(event) => event.stopPropagation()}>
                     <div className="lightbox-strip flex items-center gap-2.5 py-2 pl-3 pr-2">
                         {shownAuthor !== null && (
                             <Avatar
@@ -4132,7 +4201,8 @@ function App()
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 
     //A PICTURE'S MENU, FROM THE PANE OR THE LIGHTBOX
