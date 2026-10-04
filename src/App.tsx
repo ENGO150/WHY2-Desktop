@@ -335,6 +335,10 @@ function App()
     const closedCardRef = useRef<{ username: string; at: number } | null>(null);
     const [editing, setEditing] = useState(false);
 
+    //THE SIXTEEN COLORS, AND OUR MESSAGE COLOR AS LAST SEEN
+    const [colorChoices, setColorChoices] = useState<VocabularyValue[]>([]);
+    const [ownMessageColor, setOwnMessageColor] = useState<number | null | undefined>(undefined);
+
     //THE /account FORM, WHILE UP
     const [account, setAccount] = useState<AccountBox | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -937,6 +941,7 @@ function App()
         setUploadingAvatar(false);
         setTypingUsers({});
         setTransfers({});
+        setOwnMessageColor(undefined);
 
         askedRef.current = new Set();
         avatarHashRef.current = new Set();
@@ -1235,6 +1240,12 @@ function App()
                         const author = usersRef.current.find((user) => user.username === usernameRef.current);
 
                         message = { ...message, username_color: author?.username_color ?? null };
+                    }
+
+                    //OUR OWN LINE CARRIES OUR MESSAGE COLOR
+                    if ((message.kind === "user" && message.username === usernameRef.current) || message.direct?.outgoing)
+                    {
+                        setOwnMessageColor(message.message_color);
                     }
 
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
@@ -4033,6 +4044,23 @@ function App()
         invoke("save_profile", { profile: { username, avatar: null, ...fields } })
             .catch((error: unknown) => { setPopupMessage(String(error)); throw error; });
 
+    //ASKED ONCE, WHEN THE EDITOR FIRST OPENS
+    useEffect(() =>
+    {
+        if (!editing || colorChoices.length > 0) return;
+
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "colors" }).then(setColorChoices).catch(console.error);
+    }, [editing]);
+
+    //SET A COLOR ON THE SERVER
+    const pickColor = (name: boolean, choice: VocabularyValue) =>
+    {
+        send(`/${name ? "ucolor" : "color"} ${choice.value}`);
+
+        if (name) setUsers((previous) => previous.map((user) => user.username === username ? { ...user, username_color: choice.color } : user));
+        else setOwnMessageColor(choice.color);
+    };
+
     const closeEditor = () =>
     {
         setEditing(false);
@@ -4046,6 +4074,10 @@ function App()
             profile={profiles[username] ?? null}
             avatar={people.avatar(username)}
             color={colorOf(username)}
+            colors={colorChoices}
+            nameColor={users.find((user) => user.username === username)?.username_color ?? null}
+            messageColor={ownMessageColor ?? null}
+            pickColor={pickColor}
             uploading={uploadingAvatar}
             narrow={narrow}
             save={saveProfile}

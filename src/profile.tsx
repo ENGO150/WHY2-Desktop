@@ -20,11 +20,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { ProfileInfo, OnlineUser, ClientConfig } from "./types";
+import type { ProfileInfo, OnlineUser, ClientConfig, VocabularyValue } from "./types";
 import { Icon } from "./icons";
 import { Avatar, Overlay, PanelHeader } from "./components";
 import { linked } from "./messages";
 import { deviceIcon } from "./roster";
+import { ANSI_TRUE } from "./theme";
 
 //WHAT A NAME ANYWHERE IN THE WINDOW CAN ASK FOR
 export interface People
@@ -213,12 +214,16 @@ function same(one: ProfileFields, other: ProfileFields): boolean
 //OUR OWN PROFILE, EDITABLE
 export function ProfileEditor(
 {
-    username, profile, avatar, color, uploading, narrow, save, pickAvatar, dropAvatar, close,
+    username, profile, avatar, color, colors, nameColor, messageColor, pickColor, uploading, narrow, save, pickAvatar, dropAvatar, close,
 }: {
     username: string;
     profile: ProfileInfo | null;
     avatar: string | undefined;
     color: string | undefined;
+    colors: VocabularyValue[];
+    nameColor: number | null;
+    messageColor: number | null;
+    pickColor: (name: boolean, choice: VocabularyValue) => void;
     uploading: boolean;
     narrow: boolean;
     save: (fields: ProfileFields) => Promise<unknown>;
@@ -261,6 +266,27 @@ export function ProfileEditor(
         save({ ...draft, website }).catch(() => setSaving(false));
     };
 
+    //ONE ROW OF SWATCHES, SET THE MOMENT ONE IS PRESSED
+    const palette = (label: string, name: boolean, current: number | null) => (
+        <div>
+            <div className="label mb-2 px-1">{label}</div>
+            <div className="grid grid-cols-8 justify-items-center gap-y-2">
+                {colors.map((choice) => choice.color !== null && (
+                    <button
+                        key={choice.value}
+                        type="button"
+                        title={choice.value.replace(/_/g, " ")}
+                        aria-label={choice.value.replace(/_/g, " ")}
+                        aria-pressed={choice.color === current}
+                        onClick={() => pickColor(name, choice)}
+                        className={`h-7 w-7 rounded-full ring-1 ring-border-strong transition-shadow ${choice.color === current ? "ring-2 ring-text ring-offset-2 ring-offset-overlay" : "hover:ring-muted"}`}
+                        style={{ backgroundColor: ANSI_TRUE[choice.color] }}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+
     const set = (key: keyof ProfileFields) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
         setDraft({ ...draft, [key]: event.currentTarget.value });
 
@@ -290,7 +316,14 @@ export function ProfileEditor(
                     </div>
                 </div>
 
-                <div className="mt-4 flex flex-col gap-3">
+                {colors.length > 0 && (
+                    <div className="mt-5 flex flex-col gap-4">
+                        {palette("Name color", true, nameColor)}
+                        {palette("Message color", false, messageColor)}
+                    </div>
+                )}
+
+                <div className="mt-5 flex flex-col gap-3">
                     <input aria-label="Status" value={draft.status} onChange={set("status")} placeholder="Status" className="field" />
                     <input aria-label="Pronouns" value={draft.pronouns} onChange={set("pronouns")} placeholder="Pronouns" className="field" spellCheck={false} />
                     <input aria-label="Website" value={draft.website} onChange={set("website")} placeholder="Website" className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />
