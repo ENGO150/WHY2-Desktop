@@ -560,12 +560,16 @@ way Anytype's is black on light), `--accent` is a quiet blue kept for links and 
 is a soft yellow wash (`--highlight`). Depth is a hairline and a soft shadow on what floats (menus,
 dialogs, the composer); nothing is a coloured slab.
 
-**Nothing animates in.** Menus, dialogs, the profile card, the palette, the toast and the lightbox appear
-in place, and the hover bar has no fade. WebKitGTK flickered on every one of them: an opacity or transform
-animation promotes the element to a compositing layer for its length and drops it after, and with the
-shadows on these (and a backdrop blur on the lightbox) that showed as the element blinking a few times as
-it opened. What still moves is what follows a finger — the drawers, the scrim, the lightbox zoom — and the
-typing dots, which animate opacity only.
+**Nothing animates in — except the lightbox.** Menus, dialogs, the profile card, the palette and the
+toast appear in place, and the hover bar has no fade. WebKitGTK flickered on every one of them: an opacity
+or transform animation promotes the element to a compositing layer for its length and drops it after, and
+with the shadows on these that showed as the element blinking a few times as it opened. What still moves is
+what follows a finger — the drawers, the scrim, the lightbox zoom — and the typing dots, which animate
+opacity only. The lightbox was asked for an open and a close by name, and it is written to dodge exactly
+that: the room and the card carry `will-change` for as long as they are mounted, so the layer is made once
+when the picture opens and not made and dropped around each animation, and what moves is opacity and a
+4% scale and nothing else. **If it blinks on WebKitGTK anyway, that is this paragraph coming true**, and
+the answer is the two `animation`s and the `.shut` transitions in `widgets.css`, not the layout.
 
 The interface font is Inter. **The monospace is kept for what is actually measured in characters**: the
 fingerprints, the list-block rows and their branch glyphs, and code.
@@ -1071,8 +1075,13 @@ The pane draws a picture at a size somebody can read around it, and the **lightb
 looked at: the picture on a darkened room, closed by esc, the ×, a press anywhere, or the back gesture (it is
 first in `__why2Back`, above the theater — a picture opened while watching a screen is what the key is
 about). It is not a dialog, because there is nothing to answer, and it appears in place like everything
-else (see **The window**). The room is the picture's own colours: `lightbox-ambient` is the same `data:` URL
-blurred and dimmed behind it, a static filter rather than a backdrop blur, which is what flickered.
+else (see **The window**), except that it fades and the card grows the last 4% in, and does both backwards
+on the way out (`LIGHTBOX_MS`). Closing is therefore two steps: `closeLightbox` sets `lightboxShut`, which
+fades the room and takes its pointer events away, and a timer unmounts it once it has faded; opening again
+in the middle of that cancels the timer. The room is the chat, dimmed and **slightly** blurred
+(`backdrop-filter: blur(6px)` on `.lightbox-room`) — enough to put it behind the picture, not so much that
+it stops being the conversation it was opened from. The card itself is opaque, since text behind a
+translucent strip is legible enough to read and too blurred to ignore.
 
 **Everything about the picture sits on the picture**, not on the edges of the glass: `lightbox-card` is the
 picture with a strip over it — who sent it, when, its size, and the × — and a strip under it — the filename

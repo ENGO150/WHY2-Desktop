@@ -116,6 +116,9 @@ const RECONNECT_ATTEMPTS = 5;
 const ZOOM = 2.5;
 const ZOOM_MAX = 6;
 
+//HOW LONG THE LIGHTBOX TAKES TO GO
+const LIGHTBOX_MS = 160;
+
 //AND HOW A FINGER ASKS FOR THAT STEP, WHICH IS TWICE AND NOT ONCE: A TAP ON A PICTURE IS HOW SOMEBODY
 //DISMISSES THE ROOM IT IS STANDING IN AS OFTEN AS IT IS HOW THEY ZOOM IT, SO THE ZOOM IS THE SECOND OF A
 //PAIR - CLOSE ENOUGH IN TIME AND IN PLACE TO BE THE SAME GESTURE, WHICH IS WHAT EVERY PHONE GALLERY DOES
@@ -286,6 +289,10 @@ function App()
     //THE PICTURE BEING LOOKED AT, WHILE ONE IS. THE PANE DRAWS EVERY IMAGE SMALL ENOUGH TO READ AROUND -
     //A SHARED SCREENSHOT IS NOT LEGIBLE AT THAT SIZE, AND THIS IS WHERE IT IS ACTUALLY LOOKED AT
     const [lightbox, setLightbox] = useState<Viewed | null>(null);
+
+    //WHILE IT IS ON ITS WAY OUT
+    const [lightboxShut, setLightboxShut] = useState(false);
+    const lightboxTimer = useRef<number | null>(null);
 
     //AND HOW FAR INTO IT SOMEBODY HAS GONE: THE FACTOR, AND THE POINT OF THE PICTURE IT GREW OUT OF - A
     //ZOOM ANCHORED IN THE MIDDLE IS ONE THAT MOVES WHATEVER WAS BEING LOOKED AT OFF THE SCREEN. null IS
@@ -2417,7 +2424,12 @@ function App()
     //TIME, WHICHEVER WAY THE LAST ONE WAS LEFT
     function openLightbox(image: MessageImage, message: ChatMessage | null)
     {
+        if (lightboxTimer.current !== null) window.clearTimeout(lightboxTimer.current);
+
+        lightboxTimer.current = null;
+
         setZoom(null);
+        setLightboxShut(false);
         setLightbox({ image, message });
     }
 
@@ -2427,8 +2439,19 @@ function App()
         //PAIR WITH THE FIRST TAP ON WHATEVER IS OPENED NEXT
         tapRef.current = null;
 
+        if (lightboxTimer.current !== null) return;
+
         setZoom(null);
-        setLightbox(null);
+        setLightboxShut(true);
+
+        //GONE ONCE IT HAS FADED
+        lightboxTimer.current = window.setTimeout(() =>
+        {
+            lightboxTimer.current = null;
+
+            setLightbox(null);
+            setLightboxShut(false);
+        }, LIGHTBOX_MS);
     };
 
     //A LINE ONTO THE CLIPBOARD, THROUGH A COMMAND OF OURS RATHER THAN THE CLIPBOARD PLUGIN'S OWN IPC -
@@ -4017,10 +4040,8 @@ function App()
         <div
             role="presentation"
             onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
-            className="fixed inset-0 z-[60] overflow-hidden bg-black"
+            className={`lightbox-room fixed inset-0 z-[60] overflow-hidden ${lightboxShut ? "shut" : ""}`}
         >
-            {/* THE PICTURE ITSELF, BLURRED BEHIND IT */}
-            <img src={shownImage.source} alt="" aria-hidden draggable={false} className="lightbox-ambient" />
 
             <div className="safe-top safe-bottom relative flex h-full w-full items-center justify-center">
                 <div className="lightbox-card" onMouseDown={(event) => event.stopPropagation()}>
