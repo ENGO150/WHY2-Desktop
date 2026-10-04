@@ -35,6 +35,13 @@ export interface StoredServer
     icon: string | null; //ITS PICTURE'S HASH, KEPT FOR THE LIST
 }
 
+//THE SERVER'S ICON AT ONE SIZE
+export interface IconSource
+{
+    size: number;
+    source: string; //A data: URL
+}
+
 //WHAT AN /account FORM DOES
 export type AccountAction = "passwd" | "delete";
 
@@ -428,6 +435,7 @@ export type BridgeEvent =
     | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
     | { event: "popup"; data: { text: string } }
     | { event: "server_icon"; data: { hash: string | null } }
+    | { event: "server_icon_image"; data: { hash: string; sources: IconSource[] } }
     | { event: "locale"; data: { locale: Locale } }
     | { event: "own_colors"; data: { username_color: number | null; message_color: number | null } }
     | { event: "tofu_prompt"; data: TofuPrompt }

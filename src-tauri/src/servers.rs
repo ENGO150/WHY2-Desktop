@@ -27,6 +27,8 @@ use base64::prelude::{ Engine, BASE64_STANDARD };
 use why2_chat::misc;
 
 use crate::tr;
+use crate::types::IconSource;
+use crate::picture::ICON_SIZES;
 
 //THE SERVERS THIS WINDOW KNOWS ABOUT. THE TUI ASKS FOR AN ADDRESS AND AN IDENTITY EVERY TIME IT STARTS,
 //BECAUSE A TERMINAL CLIENT IS RUN AT A SERVER; A WINDOW IS LEFT OPEN, AND THE ONE QUESTION IT SHOULD NOT
@@ -94,9 +96,9 @@ fn icons() -> PathBuf
 }
 
 //A HASH IS 64 HEX CHARACTERS AND NOTHING ELSE
-fn icon_path(hash: &str) -> Option<PathBuf>
+fn icon_path(hash: &str, size: u32) -> Option<PathBuf>
 {
-    (hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())).then(|| icons().join(hash))
+    (hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())).then(|| icons().join(format!("{hash}-{size}")))
 }
 
 //DROP THE ICONS NO ROW NAMES
@@ -108,7 +110,12 @@ fn prune(servers: &[StoredServer])
     {
         let name = entry.file_name();
 
-        if !servers.iter().any(|server| server.icon.as_deref().is_some_and(|icon| name == icon)) { let _ = fs::remove_file(entry.path()); }
+        let name = name.to_string_lossy();
+
+        if !servers.iter().any(|server| server.icon.as_deref().is_some_and(|icon| name.starts_with(&format!("{icon}-"))))
+        {
+            let _ = fs::remove_file(entry.path());
+        }
     }
 }
 
@@ -271,28 +278,36 @@ pub(crate) fn set_auto_connect(id: String) -> Result<(), String>
     store(&file)
 }
 
-//KEEP THE SERVER'S PICTURE, AS THE WINDOW WAS SENT IT
-pub(crate) fn store_icon(hash: &str, source: &str)
+//KEEP THE SERVER'S PICTURE, ONE FILE PER SIZE
+pub(crate) fn store_icon(hash: &str, sources: &[IconSource])
 {
-    let Some(path) = icon_path(hash) else { return };
-    let Some((_, payload)) = source.split_once(',') else { return };
-    let Ok(bytes) = BASE64_STANDARD.decode(payload) else { return };
+    if fs::create_dir_all(icons()).is_err() { return }
 
-    if fs::create_dir_all(icons()).is_ok() { let _ = fs::write(path, bytes); }
+    for IconSource { size, source } in sources
+    {
+        let Some(path) = icon_path(hash, *size) else { return };
+        let Some((_, payload)) = source.split_once(',') else { continue };
+        let Ok(bytes) = BASE64_STANDARD.decode(payload) else { continue };
+
+        let _ = fs::write(path, bytes);
+    }
 }
 
-//A KEPT ICON AS A data: URL
+//THE KEPT SIZES AS data: URLS
 #[tauri::command]
-pub(crate) fn get_server_icon(hash: String) -> Option<String>
+pub(crate) fn get_server_icon(hash: String) -> Vec<IconSource>
 {
-    let bytes = fs::read(icon_path(&hash)?).ok()?;
-
-    let mime = match bytes.as_slice()
+    ICON_SIZES.iter().filter_map(|size|
     {
-        [0x89, b'P', b'N', b'G', ..] => "image/png",
-        [b'G', b'I', b'F', ..] => "image/gif",
-        _ => "image/jpeg",
-    };
+        let bytes = fs::read(icon_path(&hash, *size)?).ok()?;
 
-    Some(format!("data:{mime};base64,{}", BASE64_STANDARD.encode(bytes)))
+        let mime = match bytes.as_slice()
+        {
+            [0x89, b'P', b'N', b'G', ..] => "image/png",
+            [b'G', b'I', b'F', ..] => "image/gif",
+            _ => "image/jpeg",
+        };
+
+        Some(IconSource { size: *size, source: format!("data:{mime};base64,{}", BASE64_STANDARD.encode(bytes)) })
+    }).collect()
 }

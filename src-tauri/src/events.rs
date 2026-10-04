@@ -210,19 +210,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
             let hex = picture::hex(&hash);
 
+            //THE SERVER'S PICTURE, RESAMPLED HERE AND KEPT FOR THE LIST
+            let icon = *state.server_icon.lock().unwrap() == Some(hash);
+
+            if let Some(frames) = image.as_ref().filter(|_| icon)
+            {
+                let sources = picture::icon_sizes(frames.clone()).await;
+
+                servers::store_icon(&hex, &sources);
+                emit(app, UiEvent::ServerIconImage { hash: hex.clone(), sources });
+            }
+
             let image = match image
             {
                 Some(image) => picture::encode(image, String::new(), Some(hash)).await,
                 None => None,
             };
-
-            //THE SERVER'S PICTURE IS KEPT FOR THE LIST
-            let icon = *state.server_icon.lock().unwrap() == Some(hash);
-
-            if let Some(source) = image.as_ref().and_then(|image| image.source.as_deref()).filter(|_| icon)
-            {
-                servers::store_icon(&hex, source);
-            }
 
             emit(app, UiEvent::ImageData { hash: hex, image });
         },

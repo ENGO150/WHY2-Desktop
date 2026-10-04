@@ -56,6 +56,7 @@ import type
     VocabularyValue,
     ClientConfig,
     TofuPrompt,
+    IconSource,
     PaletteEntry,
     PaletteShape,
     PaletteState,
@@ -337,7 +338,7 @@ function App()
 
     //THE SERVER'S PICTURE BY HASH, EVERY ICON WE HOLD, AND AN UPLOAD OF OURS IN FLIGHT
     const [serverIcon, setServerIcon] = useState<string | null>(null);
-    const [icons, setIcons] = useState<Record<string, string>>({});
+    const [icons, setIcons] = useState<Record<string, IconSource[]>>({});
     const [uploadingIcon, setUploadingIcon] = useState(false);
     const iconHashRef = useRef<string | null>(null);
     const iconsAskedRef = useRef<Set<string>>(new Set());
@@ -510,8 +511,8 @@ function App()
 
             iconsAskedRef.current.add(hash);
 
-            invoke<string | null>("get_server_icon", { hash })
-                .then((source) => { if (source) setIcons((previous) => ({ ...previous, [hash]: source })); })
+            invoke<IconSource[]>("get_server_icon", { hash })
+                .then((sources) => { if (sources.length) setIcons((previous) => ({ ...previous, [hash]: sources })); })
                 .catch(() => {});
         }
     }, [servers]);
@@ -1493,9 +1494,6 @@ function App()
                     const source = image?.source;
 
                     if (source && avatarHashRef.current.has(hash)) setAvatars((previous) => ({ ...previous, [hash]: source }));
-
-                    //AND THE SERVER'S
-                    if (source && iconHashRef.current === hash) setIcons((previous) => ({ ...previous, [hash]: source }));
                     break;
                 }
 
@@ -1705,6 +1703,15 @@ function App()
                 case "own_colors":
                 {
                     setOwnColors({ name: payload.data.username_color, message: payload.data.message_color });
+                    break;
+                }
+
+                //THE SERVER'S PICTURE, RESAMPLED BY THE BRIDGE
+                case "server_icon_image":
+                {
+                    const { hash, sources } = payload.data;
+
+                    if (iconHashRef.current === hash) setIcons((previous) => ({ ...previous, [hash]: sources }));
                     break;
                 }
 

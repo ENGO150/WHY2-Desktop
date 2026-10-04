@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useState } from "react";
 
-import type { UIState, StoredServer } from "./types";
+import type { UIState, StoredServer, IconSource } from "./types";
 import { Icon } from "./icons";
 import type { ServerForm } from "./servers";
 import { serverLabel, AddServerFields, ForgetMenu, ServerRow, useHoldMenu } from "./servers";
@@ -33,7 +33,7 @@ export function LoginScreen(
     uiState: UIState;
     mode: "add" | "prompt" | "idle";
     servers: StoredServer[];
-    icons: Record<string, string>;
+    icons: Record<string, IconSource[]>;
     target: StoredServer | null;
     form: ServerForm;
     setForm: (form: ServerForm) => void;

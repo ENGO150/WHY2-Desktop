@@ -28,6 +28,7 @@ use image::
 {
     Frame,
     Delay,
+    imageops::FilterType,
     DynamicImage,
     ImageFormat,
     codecs::
@@ -40,7 +41,7 @@ use image::
 use why2_chat::network::client::image::Animation;
 
 use crate::tr;
-use crate::types::{ MessageImage, PictureState, PictureActions };
+use crate::types::{ MessageImage, PictureState, PictureActions, IconSource };
 
 //CONSTS
 const JPEG_QUALITY: u8 = 88; //WHAT A PHOTOGRAPH SURVIVES WITHOUT ANYBODY LOOKING FOR THE DIFFERENCE
@@ -157,6 +158,35 @@ pub(crate) async fn encode(animation: Animation, filename: String, hash: Option<
         width,
         height,
     })
+}
+
+//THE SIZES A SERVER ICON IS RESAMPLED TO, EACH TWICE THE LAST
+pub(crate) const ICON_SIZES: [u32; 4] = [32, 64, 128, 256];
+
+//THE ICON AT EVERY SIZE, SO THE WEBVIEW NEVER SHRINKS ONE MORE THAN 2:1
+pub(crate) async fn icon_sizes(animation: Animation) -> Vec<IconSource>
+{
+    let Some(first) = animation.first() else { return Vec::new() };
+
+    let largest = first.image.width().min(first.image.height());
+
+    task::spawn_blocking(move ||
+    {
+        ICON_SIZES.iter().filter(|size| **size <= largest.max(ICON_SIZES[0])).filter_map(|size|
+        {
+            let frames = animation.iter()
+                .map(|frame| (frame.image.resize_exact(*size, *size, FilterType::Lanczos3), frame.delay))
+                .collect::<Vec<(DynamicImage, Duration)>>();
+
+            let (mime, bytes) = match frames.len()
+            {
+                1 => write(&frames[0].0)?,
+                _ => write_animation(frames)?,
+            };
+
+            Some(IconSource { size: *size, source: format!("data:{mime};base64,{}", BASE64_STANDARD.encode(bytes)) })
+        }).collect()
+    }).await.unwrap_or_default()
 }
 
 //WHAT A data: URL IS CARRYING. THE WINDOW HOLDS THE PICTURE AND THE DISK DOES NOT - WHAT IT WAS SENT IS

@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { SettingsBox, SettingsItem, AccountAction } from "./types";
+import type { SettingsBox, SettingsItem, AccountAction, IconSource } from "./types";
 import { Icon } from "./icons";
 import { Switch, Overlay, PanelHeader, PanelFooter, SpaceIcon } from "./components";
 import { defaultDevice, noChoice, unsavedRows } from "./settings";
@@ -27,7 +27,7 @@ import { t, tOr } from "./i18n";
 export interface ServerIconBox
 {
     name: string;
-    src: string | undefined;
+    src: IconSource[] | undefined;
     busy: boolean;
     pick: () => void;
     remove: () => void;

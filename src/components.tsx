@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 
 import { avatarColor } from "./theme";
 import { IconButton } from "./icons";
+import type { IconSource } from "./types";
 import { t } from "./i18n";
 
 //HOLD MENUS ARE THIS WIDE
@@ -77,16 +78,26 @@ export function Avatar(
     );
 }
 
+//THE SMALLEST SIZE THAT COVERS THE DRAWN PIXELS, SO NOTHING IS SHRUNK PAST 2:1
+function iconFor(sources: IconSource[], size: number): string | undefined
+{
+    const wanted = size * (window.devicePixelRatio || 1);
+    const sorted = [...sources].sort((one, other) => one.size - other.size);
+
+    return (sorted.find((source) => source.size >= wanted) ?? sorted[sorted.length - 1])?.source;
+}
+
 //A SERVER'S ICON, A ROUNDED SQUARE: ITS PICTURE, OR ITS INITIAL
-export function SpaceIcon({ name, size, src }: { name: string; size: number; src?: string })
+export function SpaceIcon({ name, size, src }: { name: string; size: number; src?: IconSource[] })
 {
     const hue = avatarColor(name);
+    const picture = src && iconFor(src, size);
 
-    if (src)
+    if (picture)
     {
         return (
             <img
-                src={src}
+                src={picture}
                 alt={name}
                 draggable={false}
                 className="shrink-0 select-none object-cover"

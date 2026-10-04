@@ -1832,16 +1832,23 @@ says anything in the pane: `Server icon set.`/`removed.`, the TUI's lines).
 
 **It is fetched exactly the way an avatar is**: the hash goes in `AppState::server_icon`, through
 `client::image::fetch_image` — the cache first, then the same two-at-a-time queue a caption joins — and comes
-back as the ordinary `image_data` event. `UiEvent::ServerIcon` tells the window the hash; `iconHashRef` is
-what says an arriving picture is the server's, and `icons` keeps its `data:` URL by hash.
+back as `ImageData`. `UiEvent::ServerIcon` tells the window the hash.
+
+**It is drawn small, so it is resampled here and not in the webview.** The cut is 512 px and the icon is
+drawn at 26–56: a webview shrinking that in one bilinear tap reads four pixels of every sixteen, which is the
+same aliasing **Screen sharing** halves its way around. So when `ImageData` arrives for the current icon,
+`picture::icon_sizes` resizes every frame with Lanczos to `ICON_SIZES` (32, 64, 128, 256 — each twice the
+last) and sends them as `UiEvent::ServerIconImage`; `SpaceIcon` draws the smallest one that covers its own
+size times `devicePixelRatio`, so nothing is shrunk past 2:1. `icons` keeps the set by hash, and
+`iconHashRef` is what says an arriving set is the server's.
 
 **The second is that a list draws it offline.** The switcher and both server lists are rows of servers that
 are mostly *not* connected, and the crate's cache is scoped to the server we are on (its fingerprint is a
 session global), so it cannot answer for them. So the row keeps the hash (`icon` in
 `desktop_servers.toml`, written by the `server_icon` handler the way `name` is) and the bridge keeps the
-picture itself: when `ImageData` arrives for the current icon, `servers::store_icon` writes the bytes the
-window was sent to `desktop_icons/<hash>`, and `get_server_icon` reads one back as a `data:` URL. A
-`save_server` or `remove_server` prunes every file no row names. `dial` puts the row's kept icon up as its
+picture itself: `servers::store_icon` writes each resampled size to `desktop_icons/<hash>-<size>`, and
+`get_server_icon` reads the set back as `data:` URLs. A `save_server` or `remove_server` prunes every file no
+row names. `dial` puts the row's kept icon up as its
 first guess, and the live answer replaces it. `SpaceIcon` takes `src` and draws the picture where there is
 one and the letter where there is not.
 

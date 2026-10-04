@@ -63,6 +63,14 @@ pub(crate) struct MessageImage
     pub(crate) height: u32,
 }
 
+//THE SERVER'S ICON AT ONE SIZE
+#[derive(Serialize, Clone)]
+pub(crate) struct IconSource
+{
+    pub(crate) size: u32,
+    pub(crate) source: String, //A data: URL
+}
+
 //WHAT THIS PLATFORM CAN DO WITH A PICTURE SOMEBODY IS KEEPING: WHETHER THERE IS A CLIPBOARD THAT TAKES
 //PIXELS, AND WHETHER THERE IS A FILE DIALOG TO ASK WHERE WITH. THE MENU IS DRAWN FROM THE FIRST AND THE
 //SAVE PATH FROM THE SECOND, AND ON A PHONE BOTH ARE false
@@ -420,6 +428,7 @@ pub(crate) enum UiEvent
     Locale { locale: crate::i18n::LocaleInfo },                   //THE LANGUAGE CHANGED
     OwnColors { username_color: Option<u8>, message_color: Option<u8> }, //WHAT THE SERVER HOLDS FOR US
     ServerIcon { hash: Option<String> },                          //THE SERVER'S PICTURE, BY HASH
+    ServerIconImage { hash: String, sources: Vec<IconSource> },   //AND THE PICTURE, AT EVERY SIZE
     TofuPrompt                                                    //THE SESSION IS PARKED ON THIS ANSWER
     {
         host: String,

@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { StoredServer } from "./types";
+import type { StoredServer, IconSource } from "./types";
 import { Icon } from "./icons";
 import { SpaceIcon, Overlay, PanelHeader, MenuBox, MENU_ITEM, MENU_WIDTH } from "./components";
 import { t } from "./i18n";
@@ -305,7 +305,7 @@ export function ServerRow(
     server: StoredServer;
     here: boolean;
     connecting: boolean;
-    icon?: string;
+    icon?: IconSource[];
     onPick: () => void;
     bind: Record<string, unknown>;
 })
@@ -342,8 +342,8 @@ export function ServerSwitcher(
     connecting: boolean;
     serverName: string;
     address: string;
-    icon?: string;                 //THE ONE WE ARE ON
-    icons: Record<string, string>; //EVERY KEPT ONE, BY HASH
+    icon?: IconSource[];                 //THE ONE WE ARE ON
+    icons: Record<string, IconSource[]>; //EVERY KEPT ONE, BY HASH
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
     onForget: (id: string) => void;
