@@ -64,7 +64,6 @@ export const ICONS: Record<string, string[]> =
     menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
     paperclip: ["M20.5 11.5 12 20a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7.5"],
     chevron_right: ["M9 6l6 6-6 6"],
-    chevron_left: ["M15 6l-6 6 6 6"],
     zoom_in: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "M20 20l-4-4", "M11 8v6", "M8 11h6"],
     zoom_out: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "M20 20l-4-4", "M8 11h6"],
     updown: ["M8 9l4-4 4 4", "M8 15l4 4 4-4"],

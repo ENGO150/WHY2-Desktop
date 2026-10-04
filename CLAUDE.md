@@ -1072,19 +1072,23 @@ looked at: the picture on a darkened room, closed by esc, the ×, a press anywhe
 first in `__why2Back`, above the theater — a picture opened while watching a screen is what the key is
 about). It is not a dialog, because there is nothing to answer, and it appears in place like everything
 else (see **The window**). The room is the picture's own colours: `lightbox-ambient` is the same `data:` URL
-blurred and dimmed behind it, a static filter rather than a backdrop blur, which is what flickered. The
-header is **who sent it** — face, name, time, then the filename and size — because the lightbox holds the
-line and not only the picture (`Viewed`), and the buttons beside it are the ones the menu already carries:
-zoom, heart (where `reactable`), copy (where `actions.copy`), save, close. Every button in the room puts its
-own `mousedown` out, since a press on the room is the way out.
+blurred and dimmed behind it, a static filter rather than a backdrop blur, which is what flickered.
 
-**It is a gallery of the pane in front.** `gallery` is every line in `pane` with a picture under it, in
-order, and `shown` finds the open one in it by identity or `message_id` — so a heart landing while it is open
-redraws the button, and a line that has left the pane simply has no neighbours. ←/→, the edge arrows (a
-pointer only) and a sideways swipe on a phone (`onFlick*`, unzoomed, `SWIPE_STEP`) all go through
-`stepLightbox`, which puts the zoom back. The swipe writes `translate` onto the picture while the finger is
-down, as the drawers do, and it is **not** `onSwipe*`: those are the drawers', and they already stand down
-while `lightbox` is set.
+**Everything about the picture sits on the picture**, not on the edges of the glass: `lightbox-card` is the
+picture with a strip over it — who sent it, when, its size, and the × — and a strip under it — the filename
+and the buttons the menu already carries: zoom (a pointer only), heart (where `reactable`), copy (where
+`actions.copy`), save. Controls pinned to the corners of a 1600-pixel window were half a screen away from
+a portrait photo in the middle of it. The card is as wide as the picture is drawn, and that is CSS alone:
+the picture's ceiling is said in `vw`/`dvh` (`.lightbox-picture`) rather than in percent, so the card can
+shrink to it, and each strip is `width: 0; min-width: 100%` (`.lightbox-strip`), which fills the card
+without counting towards its width. A picture too small to carry its strips gets a card `320px` wide, and
+sits in the middle of it. The frame clips, so a zoom stays inside the card. The card puts its own
+`mousedown` out, since a press on the room is the way out. The lightbox holds the line and not only the
+picture (`Viewed`), and `shownLine` reads it back out of the pane by `message_id`, so a heart landing
+while it is open redraws the button.
+
+**There is no previous/next.** It was tried and taken out: a pane is full of captions that were never
+loaded, and a gallery that walks only the pictures that happen to be here skips half of what is on screen.
 
 **A picture in it is zoomed**, and the two platforms ask for that the way they each already do. A **click**
 is one step in and the next click is the way back — the cursor is the magnifying glass and then the other
