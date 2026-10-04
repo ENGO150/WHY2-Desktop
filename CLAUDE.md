@@ -1850,7 +1850,8 @@ picture itself: `servers::store_icon` writes each resampled size to `desktop_ico
 `get_server_icon` reads the set back as `data:` URLs. A `save_server` or `remove_server` prunes every file no
 row names. `dial` puts the row's kept icon up as its
 first guess, and the live answer replaces it. `SpaceIcon` takes `src` and draws the picture where there is
-one and the letter where there is not.
+one and the letter where there is not. The switcher's head draws a picture at 40 px rather than the letter's
+26, since a picture is worth the room and the 56 px header has it.
 
 **Setting it is `/server icon [PATH]`** (owner only): `Subcommand::Icon` in `server_command` cuts the file
 with the same `profile.rs::cut_square` an avatar goes through and asks with `ServerIconSave { hash }`, or

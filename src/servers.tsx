@@ -390,9 +390,10 @@ export function ServerSwitcher(
                 title={t("connect.switch")}
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
-                className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
+                className={`flex w-full min-w-0 items-center rounded-lg px-2 text-left transition-colors hover:bg-hover ${icon?.length ? "gap-3 py-1" : "gap-2.5 py-1.5"}`}
             >
-                <SpaceIcon name={name} size={26} src={icon} />
+                {/* A PICTURE IS WORTH THE ROOM */}
+                <SpaceIcon name={name} size={icon?.length ? 40 : 26} src={icon} />
                 <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">{name}</span>
                 <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
