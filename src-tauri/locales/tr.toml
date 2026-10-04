@@ -235,6 +235,7 @@ sharing = "Paylaşılıyor"
 
 [prefs]
 appearance = "Görünüm"
+colors = "Renkler"
 icon = "Sunucu simgesi"
 icon_change = "Simgeyi değiştir"
 general = "Genel"

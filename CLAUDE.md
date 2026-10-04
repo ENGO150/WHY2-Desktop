@@ -2067,6 +2067,12 @@ names no color; the name's press also patches our roster row, which is what ever
 from. The rows were taken out while the server never said the message color — a picker that could only guess
 which swatch was ours — and came back with 2.3.0's `Accept`.
 
+**The same two rows are a `Colors` section in our own settings dialog**, under `Appearance`: `ColorPicker`
+in `profile.tsx` is the button and its swatch menu, written once for both, and the dialog draws it the way
+it draws a device row. Like `Account`, it is not a `client.toml` row and the keyboard's selection walks past
+it — the server holds the colors — so the control keeps ⏎ and space to itself rather than letting them
+activate whatever row is selected.
+
 The **names** are the crate's `colors::COLORS` — that table is the wire, so it is not copied here — and
 `to_color` is what this side adds to it: the spelling somebody typed (`gray`, `dark red`, a bare number)
 turned into a code. The `ANSI` table in `theme.ts` maps code → `var(--ansi-N)`, whose values are in

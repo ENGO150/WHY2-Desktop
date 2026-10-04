@@ -237,6 +237,7 @@ sharing = "Wordt gedeeld"
 
 [prefs]
 appearance = "Uiterlijk"
+colors = "Kleuren"
 icon = "Serverpictogram"
 icon_change = "Pictogram wijzigen"
 general = "Algemeen"

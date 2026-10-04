@@ -239,6 +239,7 @@ sharing = "Zdieľa sa"
 
 [prefs]
 appearance = "Vzhľad"
+colors = "Farby"
 icon = "Ikona servera"
 icon_change = "Zmeniť ikonu"
 general = "Všeobecné"

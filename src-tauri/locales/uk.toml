@@ -239,6 +239,7 @@ sharing = "Демонструється"
 
 [prefs]
 appearance = "Вигляд"
+colors = "Кольори"
 icon = "Значок сервера"
 icon_change = "Змінити значок"
 general = "Загальні"

@@ -235,6 +235,7 @@ sharing = "공유 중"
 
 [prefs]
 appearance = "모양"
+colors = "색상"
 icon = "서버 아이콘"
 icon_change = "아이콘 변경"
 general = "일반"

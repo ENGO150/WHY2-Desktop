@@ -215,7 +215,16 @@ function same(one: ProfileFields, other: ProfileFields): boolean
 const colorName = (choice: VocabularyValue) => choice.value.replace(/_/g, " ");
 
 //ONE COLOR, AND THE MENU OF THE OTHERS
-function ColorRow({ label, colors, current, pick }: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
+export function ColorPicker(
+{
+    label, colors, current, pick, className,
+}: {
+    label?: string;
+    colors: VocabularyValue[];
+    current: number | null;
+    pick: (choice: VocabularyValue) => void;
+    className: string;
+})
 {
     const [open, setOpen] = useState(false);
     const boxRef = useRef<HTMLDivElement>(null);
@@ -246,14 +255,14 @@ function ColorRow({ label, colors, current, pick }: { label: string; colors: Voc
                 type="button"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
-                className="field flex w-full items-center gap-3 text-left"
+                className={className}
             >
-                <span className="flex-1 truncate">{label}</span>
+                {label && <span className="flex-1 truncate">{label}</span>}
                 <span
                     className="h-4 w-4 shrink-0 rounded-full ring-1 ring-border-strong"
                     style={{ backgroundColor: chosen?.color != null ? ANSI_TRUE[chosen.color] : "transparent" }}
                 />
-                <span className="text-[13px] text-muted">{chosen ? colorName(chosen) : t("card.not_set")}</span>
+                <span className={label ? "text-[13px] text-muted" : `min-w-0 flex-1 truncate ${chosen ? "" : "text-muted"}`}>{chosen ? colorName(chosen) : t("card.not_set")}</span>
                 <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`} />
             </button>
 
@@ -275,6 +284,12 @@ function ColorRow({ label, colors, current, pick }: { label: string; colors: Voc
             )}
         </div>
     );
+}
+
+//THE PROFILE EDITOR'S ROW
+function ColorRow(props: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
+{
+    return <ColorPicker {...props} className="field flex w-full items-center gap-3 text-left" />;
 }
 
 //OUR OWN PROFILE, EDITABLE

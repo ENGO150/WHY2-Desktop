@@ -237,6 +237,7 @@ sharing = "In condivisione"
 
 [prefs]
 appearance = "Aspetto"
+colors = "Colori"
 icon = "Icona del server"
 icon_change = "Cambia icona"
 general = "Generale"

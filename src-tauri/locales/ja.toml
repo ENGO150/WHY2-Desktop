@@ -235,6 +235,7 @@ sharing = "共有中"
 
 [prefs]
 appearance = "外観"
+colors = "色"
 icon = "サーバーアイコン"
 icon_change = "アイコンを変更"
 general = "一般"

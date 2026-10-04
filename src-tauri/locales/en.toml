@@ -242,6 +242,7 @@ sharing = "Sharing"
 
 [prefs]
 appearance = "Appearance"
+colors = "Colors"
 icon = "Server icon"
 icon_change = "Change icon"
 general = "General"

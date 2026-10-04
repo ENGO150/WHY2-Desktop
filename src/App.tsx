@@ -4073,6 +4073,9 @@ function App()
             icon={settings?.server && serverAction("icon")
                 ? { name: serverName || "WHY2", src: iconSrc, busy: uploadingIcon, pick: pickIcon, remove: () => send("/server icon") }
                 : null}
+            colors={!settings?.server && colorChoices.length > 0
+                ? { choices: colorChoices, name: ownColors.name, message: ownColors.message, pick: (name, choice) => pickColor(name, choice) }
+                : null}
             close={closeSettings}
         />
     );
@@ -4302,13 +4305,15 @@ function App()
         invoke("save_profile", { profile: { username, avatar: null, ...fields } })
             .catch((error: unknown) => { setPopupMessage(String(error)); throw error; });
 
-    //ASKED ONCE, WHEN THE EDITOR FIRST OPENS
+    //ASKED ONCE, WHEN THE EDITOR OR OUR SETTINGS FIRST OPEN
+    const ownSettings = settings !== null && !settings.server;
+
     useEffect(() =>
     {
-        if (!editing || colorChoices.length > 0) return;
+        if (!(editing || ownSettings) || colorChoices.length > 0) return;
 
         invoke<VocabularyValue[]>("get_vocabulary", { values: "colors", typed: "" }).then(setColorChoices).catch(console.error);
-    }, [editing]);
+    }, [editing, ownSettings]);
 
     //SET A COLOR ON THE SERVER
     const pickColor = (name: boolean, choice: VocabularyValue) =>

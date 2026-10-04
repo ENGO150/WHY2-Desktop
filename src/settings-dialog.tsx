@@ -17,11 +17,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { SettingsBox, SettingsItem, AccountAction, IconSource } from "./types";
+import type { SettingsBox, SettingsItem, AccountAction, IconSource, VocabularyValue } from "./types";
 import { Icon } from "./icons";
 import { Switch, Overlay, PanelHeader, PanelFooter, SpaceIcon } from "./components";
 import { defaultDevice, noChoice, unsavedRows } from "./settings";
 import { THEMES, type Theme } from "./themes";
+import { ColorPicker } from "./profile";
 import { t, tOr } from "./i18n";
 
 //THE SERVER'S PICTURE, AS ITS OWNER SEES IT
@@ -34,11 +35,20 @@ export interface ServerIconBox
     remove: () => void;
 }
 
+//OUR TWO COLORS, AS THE SERVER HOLDS THEM
+export interface ColorsBox
+{
+    choices: VocabularyValue[];
+    name: number | null;
+    message: number | null;
+    pick: (name: boolean, choice: VocabularyValue) => void;
+}
+
 //tui/settings.rs WITH CONTROLS: OURS WRITES THROUGH, THE SERVER'S IS SAVED IN ONE GO
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, narrow,
-    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, icon, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, icon, colors, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -56,6 +66,7 @@ export function SettingsDialog(
     theme: string | null; //OURS ONLY
     pickTheme: (id: string) => void;
     icon: ServerIconBox | null; //THE SERVER'S ONLY, FOR ITS OWNER
+    colors: ColorsBox | null; //OURS ONLY
     close: () => void;
 })
 {
@@ -223,10 +234,10 @@ export function SettingsDialog(
         }
     }
 
-    const section = (label: string | null, children: React.ReactNode, key: string) => (
+    const section = (label: string | null, children: React.ReactNode, key: string, box = "group-box") => (
         <div key={key} id={`settings-${key}`} className="scroll-mt-4 pt-6 first:pt-1">
             {label && <h3 className="mb-2 text-[15px] font-semibold">{label}</h3>}
-            <div className="group-box">{children}</div>
+            <div className={box}>{children}</div>
         </div>
     );
 
@@ -234,6 +245,7 @@ export function SettingsDialog(
     const nav: { key: string; label: string }[] = [];
 
     if (theme !== null) nav.push({ key: "appearance", label: t("prefs.appearance") });
+    if (colors) nav.push({ key: "colors", label: t("prefs.colors") });
     if (icon) nav.push({ key: "icon", label: t("prefs.icon") });
     groups.forEach((group, at) => nav.push({ key: `group-${at}`, label: group.label ?? t("prefs.general") }));
     if (account) nav.push({ key: "account", label: t("prefs.account") });
@@ -353,6 +365,22 @@ export function SettingsDialog(
                         ))}
                     </div>
                 ), "appearance")}
+
+                {/* OUR NAME AND MESSAGE COLORS */}
+                {colors && section(t("prefs.colors"), [true, false].map((name) => (
+                    <div key={String(name)} className={`flex px-4 py-2.5 ${narrow ? "flex-col items-start gap-2" : "items-center gap-6"}`}>
+                        <span className={`min-w-0 text-[14px] ${narrow ? "w-full" : "flex-1"}`}>{name ? t("card.name_color") : t("card.message_color")}</span>
+
+                        <div className={narrow ? "w-full" : "shrink-0"} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); }}>
+                            <ColorPicker
+                                colors={colors.choices}
+                                current={name ? colors.name : colors.message}
+                                pick={(choice) => colors.pick(name, choice)}
+                                className={`${picker} ${narrow ? "w-full" : "w-[220px]"}`}
+                            />
+                        </div>
+                    </div>
+                )), "colors", "group-box overflow-visible")}
 
                 {/* THE SERVER'S PICTURE */}
                 {icon && section(t("prefs.icon"), (

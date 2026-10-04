@@ -235,6 +235,7 @@ sharing = "共享中"
 
 [prefs]
 appearance = "外观"
+colors = "颜色"
 icon = "服务器图标"
 icon_change = "更换图标"
 general = "常规"

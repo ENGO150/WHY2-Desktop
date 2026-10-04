@@ -239,6 +239,7 @@ sharing = "Sdílí se"
 
 [prefs]
 appearance = "Vzhled"
+colors = "Barvy"
 icon = "Ikona serveru"
 icon_change = "Změnit ikonu"
 general = "Obecné"

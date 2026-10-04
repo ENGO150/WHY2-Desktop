@@ -239,6 +239,7 @@ sharing = "Udostępniany"
 
 [prefs]
 appearance = "Wygląd"
+colors = "Kolory"
 icon = "Ikona serwera"
 icon_change = "Zmień ikonę"
 general = "Ogólne"
