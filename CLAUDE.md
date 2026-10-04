@@ -1070,10 +1070,21 @@ is this session's `ClientEvent` sender, kept for the one thing outside the pump 
 The pane draws a picture at a size somebody can read around it, and the **lightbox** is where it is actually
 looked at: the picture on a darkened room, closed by esc, the ×, a press anywhere, or the back gesture (it is
 first in `__why2Back`, above the theater — a picture opened while watching a screen is what the key is
-about). It is not a dialog, because there is nothing to answer. It opens as a picture that **grows into the
-room** rather than as a cut — `lightbox-room` fades the room and `lightbox-open` brings the picture the last
-few percent up into it — and the close button sits a row lower than a header's would, since nothing stands
-above it to separate it from and a × in the very corner of a darkened room is one nobody finds.
+about). It is not a dialog, because there is nothing to answer, and it appears in place like everything
+else (see **The window**). The room is the picture's own colours: `lightbox-ambient` is the same `data:` URL
+blurred and dimmed behind it, a static filter rather than a backdrop blur, which is what flickered. The
+header is **who sent it** — face, name, time, then the filename and size — because the lightbox holds the
+line and not only the picture (`Viewed`), and the buttons beside it are the ones the menu already carries:
+zoom, heart (where `reactable`), copy (where `actions.copy`), save, close. Every button in the room puts its
+own `mousedown` out, since a press on the room is the way out.
+
+**It is a gallery of the pane in front.** `gallery` is every line in `pane` with a picture under it, in
+order, and `shown` finds the open one in it by identity or `message_id` — so a heart landing while it is open
+redraws the button, and a line that has left the pane simply has no neighbours. ←/→, the edge arrows (a
+pointer only) and a sideways swipe on a phone (`onFlick*`, unzoomed, `SWIPE_STEP`) all go through
+`stepLightbox`, which puts the zoom back. The swipe writes `translate` onto the picture while the finger is
+down, as the drawers do, and it is **not** `onSwipe*`: those are the drawers', and they already stand down
+while `lightbox` is set.
 
 **A picture in it is zoomed**, and the two platforms ask for that the way they each already do. A **click**
 is one step in and the next click is the way back — the cursor is the magnifying glass and then the other

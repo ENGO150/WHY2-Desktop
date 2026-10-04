@@ -68,6 +68,7 @@ import { Icon, IconButton } from "./icons";
 import { isKeyFrame, h264Config } from "./video";
 import { PALETTE_ROWS, analyze, entryTyped, formatArg, mentions } from "./palette";
 import { hasMarkup } from "./markup";
+import { sentAt } from "./format";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
 import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
@@ -125,6 +126,9 @@ const TAP_SLOP = 32;
 //PERFECTLY STILL, AND A PAN THAT STARTED AT THE FIRST PIXEL WOULD EAT THE SECOND HALF OF EVERY ZOOM
 const PAN_SLOP = 8;
 
+//HOW FAR A SWIPE GOES BEFORE IT IS THE NEXT PICTURE
+const SWIPE_STEP = 64;
+
 
 //HOW OFTEN THE COMPOSER TELLS THE BRIDGE IT IS STILL BEING WRITTEN IN
 const TYPING_TICK = 1000;
@@ -138,6 +142,13 @@ const CARD_TOGGLE = 500;
 //AND WHERE THE ZOOM IS ANCHORED. A FACTOR IS A NUMBER AND WHAT IS ACTUALLY BEING LOOKED AT IS THE POINT
 //IT GREW OUT OF, WHICH IS WHERE THE CLICK OR THE PINCH LANDED - IN PERCENT OF THE PICTURE, SO IT SURVIVES
 //THE WINDOW BEING RESIZED UNDER IT
+//THE PICTURE BEING LOOKED AT, AND THE LINE IT CAME ON
+interface Viewed
+{
+    image: MessageImage;
+    message: ChatMessage | null;
+}
+
 interface Zoom
 {
     scale: number;
@@ -277,7 +288,7 @@ function App()
 
     //THE PICTURE BEING LOOKED AT, WHILE ONE IS. THE PANE DRAWS EVERY IMAGE SMALL ENOUGH TO READ AROUND -
     //A SHARED SCREENSHOT IS NOT LEGIBLE AT THAT SIZE, AND THIS IS WHERE IT IS ACTUALLY LOOKED AT
-    const [lightbox, setLightbox] = useState<MessageImage | null>(null);
+    const [lightbox, setLightbox] = useState<Viewed | null>(null);
 
     //AND HOW FAR INTO IT SOMEBODY HAS GONE: THE FACTOR, AND THE POINT OF THE PICTURE IT GREW OUT OF - A
     //ZOOM ANCHORED IN THE MIDDLE IS ONE THAT MOVES WHATEVER WAS BEING LOOKED AT OFF THE SCREEN. null IS
@@ -307,6 +318,9 @@ function App()
     //INTO, WHICH ON A PHONE IS A DRAG AND NOT A SECOND ZOOM SOMEWHERE ELSE
     const panRef = useRef<{ x: number; y: number; ox: number; oy: number; live: Zoom } | null>(null);
     const pannedRef = useRef(false);
+
+    //A SWIPE TO THE NEXT PICTURE
+    const flickRef = useRef<{ x: number; y: number; dx: number } | null>(null);
 
     //WHETHER THIS PLATFORM HAS A CLIPBOARD THAT TAKES PIXELS AND A DIALOG TO ASK "WHERE" WITH. A PHONE
     //HAS NEITHER, AND ITS MENU IS THEREFORE THE ONE ITEM
@@ -2138,7 +2152,7 @@ function App()
     //ONE TAP ON A PICTURE OPENS IT, TWO HEART IT
     const tapPicture = (event: React.MouseEvent, image: MessageImage, message: ChatMessage) =>
     {
-        if (!touchPointer || !reactable(message)) return openLightbox(image);
+        if (!touchPointer || !reactable(message)) return openLightbox(image, message);
 
         const id = message.message_id!;
         const now = performance.now();
@@ -2157,7 +2171,7 @@ function App()
         {
             if (pictureTapRef.current?.timer === timer) pictureTapRef.current = null;
 
-            openLightbox(image);
+            openLightbox(image, message);
         }, TAP_AGAIN);
 
         pictureTapRef.current = { at: now, x: event.clientX, y: event.clientY, id, timer };
@@ -2407,10 +2421,10 @@ function App()
     //SENT OUTSIDE THE UPDATER: AN UPDATER MAY RUN TWICE, AND THE SERVER COUNTS WHAT IT IS ASKED FOR
     //THE PICTURE ON A DARKENED ROOM, AND THE ZOOM PUT BACK: WHAT IS OPENED IS THE WHOLE PICTURE, EVERY
     //TIME, WHICHEVER WAY THE LAST ONE WAS LEFT
-    function openLightbox(image: MessageImage)
+    function openLightbox(image: MessageImage, message: ChatMessage | null)
     {
         setZoom(null);
-        setLightbox(image);
+        setLightbox({ image, message });
     }
 
     const closeLightbox = () =>
@@ -2421,6 +2435,28 @@ function App()
 
         setZoom(null);
         setLightbox(null);
+    };
+
+    //EVERY PICTURE IN THIS PANE, IN ORDER
+    const gallery = pane.flatMap((entry) => entry.entry === "message" && entry.message.image?.source ? [entry.message] : []);
+
+    const shown = lightbox ? gallery.findIndex((line) => line === lightbox.message
+        || (lightbox.message?.message_id != null && line.message_id === lightbox.message.message_id)) : -1;
+
+    //THE LINE AS IT STANDS NOW
+    const shownLine = shown >= 0 ? gallery[shown] : lightbox?.message ?? null;
+
+    //THE PICTURE BEFORE OR AFTER THIS ONE
+    const stepLightbox = (by: number) =>
+    {
+        const next = shown >= 0 ? gallery[shown + by] : undefined;
+
+        if (!next?.image) return;
+
+        tapRef.current = null;
+
+        setZoom(null);
+        setLightbox({ image: next.image, message: next });
     };
 
     //A LINE ONTO THE CLIPBOARD, THROUGH A COMMAND OF OURS RATHER THAN THE CLIPBOARD PLUGIN'S OWN IPC -
@@ -3066,6 +3102,16 @@ function App()
 
         const onKey = (event: KeyboardEvent) =>
         {
+            //ARROWS WALK THE PICTURES
+            if (lightbox && (event.key === "ArrowLeft" || event.key === "ArrowRight"))
+            {
+                event.preventDefault();
+
+                stepLightbox(event.key === "ArrowLeft" ? -1 : 1);
+
+                return;
+            }
+
             if (event.key !== "Escape") return;
 
             event.preventDefault();
@@ -3078,7 +3124,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [theater, lightbox, zoom]);
+    }, [theater, lightbox, zoom, shown, gallery.length]);
 
     //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
     //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
@@ -3979,37 +4025,178 @@ function App()
     );
 
     //THE LIGHTBOX'S OWN GESTURES, BOUND ONCE
-    const holdPicture = pictureHold.bind({ image: lightbox!, message: null });
+    const shownImage = shownLine?.image?.source ? shownLine.image : lightbox?.image ?? null;
+    const holdPicture = pictureHold.bind({ image: shownImage!, message: null });
+
+    //WHO SENT IT
+    const shownAuthor = shownLine ? shownLine.username || username : null;
+
+    //A SWIPE SIDEWAYS IS THE NEXT PICTURE, WHILE NOT ZOOMED
+    const onFlickStart = (event: React.TouchEvent) =>
+    {
+        const touch = event.touches[0];
+
+        flickRef.current = event.touches.length === 1 && !zoom && touch && gallery.length > 1
+            ? { x: touch.clientX, y: touch.clientY, dx: 0 }
+            : null;
+    };
+
+    const onFlickMove = (event: React.TouchEvent) =>
+    {
+        const start = flickRef.current;
+        const touch = event.touches[0];
+        const picture = pictureRef.current;
+
+        if (!start || event.touches.length !== 1 || !touch || !picture)
+        {
+            //A SECOND FINGER MAKES IT A PINCH
+            if (start) onFlickEnd(false);
+
+            return;
+        }
+
+        const dx = touch.clientX - start.x;
+
+        if (!pannedRef.current && (Math.abs(dx) < PAN_SLOP || Math.abs(dx) < Math.abs(touch.clientY - start.y))) return;
+
+        pannedRef.current = true;
+
+        //FOLLOWS THE FINGER
+        picture.style.transition = "none";
+        picture.style.translate = `${dx}px 0`;
+
+        flickRef.current = { ...start, dx };
+    };
+
+    function onFlickEnd(step = true)
+    {
+        const start = flickRef.current;
+        const picture = pictureRef.current;
+
+        flickRef.current = null;
+
+        if (!start || !picture) return;
+
+        const next = step && Math.abs(start.dx) >= SWIPE_STEP;
+
+        //THE NEXT ONE STANDS IN PLACE, THIS ONE SLIDES BACK
+        if (next)
+        {
+            picture.style.translate = "";
+            void picture.offsetWidth;
+            picture.style.transition = "";
+
+            stepLightbox(start.dx > 0 ? -1 : 1);
+
+            return;
+        }
+
+        picture.style.transition = "";
+        picture.style.translate = "";
+    }
+
+    //A BUTTON IN THE ROOM
+    const roomButton = (icon: string, label: string, act: () => void, className = "") => (
+        <button
+            type="button"
+            title={label}
+            aria-label={label}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={act}
+            className={`touch-target flex h-9 w-9 shrink-0 items-center justify-center rounded-app text-white/75 transition-colors hover:bg-white/10 hover:text-white ${className}`}
+        >
+            <Icon name={icon} className="h-[18px] w-[18px]" />
+        </button>
+    );
+
+    //AN ARROW ON THE EDGE
+    const edgeButton = (by: number) => shown >= 0 && gallery[shown + by] && (
+        <button
+            type="button"
+            title={t(by < 0 ? "menu.previous_image" : "menu.next_image")}
+            aria-label={t(by < 0 ? "menu.previous_image" : "menu.next_image")}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={() => stepLightbox(by)}
+            className={`absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white/80 ring-1 ring-white/10 transition-colors hover:bg-black/70 hover:text-white ${by < 0 ? "left-4" : "right-4"}`}
+        >
+            <Icon name={by < 0 ? "chevron_left" : "chevron_right"} className="h-5 w-5" />
+        </button>
+    );
+
+    const shownHearted = shownLine?.hearts.includes(username) ?? false;
 
     //A PICTURE WITH THE WINDOW TO ITSELF; A PRESS OUTSIDE PUTS IT AWAY
-    const pictureBox = lightbox?.source && (
+    const pictureBox = shownImage?.source && (
         <div
             role="presentation"
             onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
-            className="fixed inset-0 z-[60] flex flex-col overflow-hidden bg-black/90"
+            className="fixed inset-0 z-[60] flex flex-col overflow-hidden bg-black"
         >
-            <div className="safe-top flex shrink-0 items-center gap-3 px-5 pb-3 pt-5">
-                <Icon name="image" className="h-4 w-4 shrink-0 text-white/50" />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white/70">{lightbox.filename}</span>
-                {lightbox.width > 0 && <span className="hidden shrink-0 font-mono text-[11px] text-white/40 sm:inline">{lightbox.width}×{lightbox.height}</span>}
+            {/* THE PICTURE ITSELF, BLURRED BEHIND IT */}
+            <img src={shownImage.source} alt="" aria-hidden draggable={false} className="lightbox-ambient" />
 
-                <button
-                    type="button"
-                    title={t("window.close")}
-                    aria-label={t("window.close")}
-                    onClick={closeLightbox}
-                    className="touch-target flex h-8 w-8 items-center justify-center rounded-app text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                    <Icon name="close" className="h-[18px] w-[18px]" />
-                </button>
+            <div className="lightbox-bar safe-top relative z-10 flex shrink-0 items-center gap-3 px-4 pb-6 pt-4">
+                {shownAuthor !== null
+                    ? (
+                        <>
+                            <Avatar
+                                name={shownAuthor}
+                                color={messageColor(config, shownLine?.username_color ?? null) ?? colorOf(shownAuthor)}
+                                size={34}
+                                src={people.avatar(shownAuthor)}
+                            />
+
+                            <div className="min-w-0 flex-1 leading-tight">
+                                <div className="flex min-w-0 items-baseline gap-2">
+                                    <span className="truncate text-[14px] font-semibold text-white">{shownAuthor}</span>
+                                    {shownLine?.timestamp != null && <span className="shrink-0 text-[12px] text-white/50">{sentAt(shownLine.timestamp)}</span>}
+                                </div>
+
+                                <div className="mt-0.5 flex min-w-0 gap-2 text-[12px] text-white/50">
+                                    <span className="truncate">{shownImage.filename}</span>
+                                    {shownImage.width > 0 && <span className="hidden shrink-0 font-mono text-[11px] text-white/35 sm:inline">{shownImage.width}×{shownImage.height}</span>}
+                                </div>
+                            </div>
+                        </>
+                    )
+                    : (
+                        <>
+                            <Icon name="image" className="h-4 w-4 shrink-0 text-white/50" />
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-white/75">{shownImage.filename}</span>
+                        </>
+                    )}
+
+                <div className="flex shrink-0 items-center gap-0.5">
+                    {roomButton(zoom ? "zoom_out" : "zoom_in", t(zoom ? "menu.zoom_out" : "menu.zoom_in"),
+                        () => setZoom(zoom ? null : { scale: ZOOM, x: 50, y: 50 }), "max-sm:hidden")}
+
+                    {reactable(shownLine) && roomButton("heart", t(shownHearted ? "menu.unheart" : "menu.heart"),
+                        () => heartMessage(shownLine!.message_id!), shownHearted ? "lightbox-hearted" : "")}
+
+                    {actions.copy && roomButton("copy", t("menu.copy_image"), () => copyPicture(shownImage))}
+                    {roomButton("download", t("menu.save_image"), () => void savePicture(shownImage))}
+
+                    <span className="mx-1 h-5 w-px bg-white/15" />
+
+                    {roomButton("close", t("window.close"), closeLightbox)}
+                </div>
             </div>
 
-            <div className="safe-bottom flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-4">
+            <div
+                onTouchStart={onFlickStart}
+                onTouchMove={onFlickMove}
+                onTouchEnd={() => onFlickEnd()}
+                onTouchCancel={() => onFlickEnd(false)}
+                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 sm:px-20"
+            >
+                {!touchPointer && edgeButton(-1)}
+
                 {/* CLICK OR TWO TAPS ZOOM, A HOLD IS THE MENU, TWO FINGERS PINCH */}
                 <img
                     ref={pictureRef}
-                    src={lightbox.source}
-                    alt={lightbox.filename}
+                    src={shownImage.source}
+                    alt={shownImage.filename}
+                    draggable={false}
                     onContextMenu={holdPicture.onContextMenu}
                     onMouseDown={(event) => event.stopPropagation()}
                     onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
@@ -4049,8 +4236,18 @@ function App()
                     style={zoom
                         ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
                         : undefined}
-                    className={`lightbox-picture max-h-full max-w-full object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+                    className={`lightbox-picture max-h-full max-w-full object-contain ${zoom ? "cursor-zoom-out" : "framed cursor-zoom-in"}`}
                 />
+
+                {!touchPointer && edgeButton(1)}
+            </div>
+
+            <div className="safe-bottom relative z-10 flex h-14 shrink-0 items-center justify-center">
+                {shown >= 0 && gallery.length > 1 && (
+                    <span className="rounded-full bg-black/45 px-3 py-1 font-mono text-[12px] tabular-nums text-white/70 ring-1 ring-white/10">
+                        {shown + 1} / {gallery.length}
+                    </span>
+                )}
             </div>
         </div>
     );

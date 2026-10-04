@@ -335,11 +335,48 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* LIGHTBOX */
 .lightbox-picture
 {
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), translate 180ms cubic-bezier(0.22, 1, 0.36, 1);
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+}
+
+/* UNZOOMED, A PRINT ON THE WALL */
+.lightbox-picture.framed
+{
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 24px 80px rgb(0 0 0 / 0.55);
+}
+
+/* ITS OWN COLOURS, BLURRED INTO THE ROOM */
+.lightbox-ambient
+{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(60px) saturate(1.4);
+    opacity: 0.45;
+    transform: scale(1.2);
+    pointer-events: none;
+}
+
+/* THE HEADER OVER IT */
+.lightbox-bar
+{
+    background: linear-gradient(to bottom, rgb(0 0 0 / 0.6), transparent);
+}
+
+.lightbox-hearted
+{
+    color: var(--heart);
+}
+
+.lightbox-hearted svg
+{
+    fill: currentColor;
 }
 
 /* OUR MENU, NOT THE SYSTEM'S */
