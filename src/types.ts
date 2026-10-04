@@ -17,6 +17,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 
+import type { Locale } from "./i18n";
+
 //THE LOBBY HAS NO NAME - EVERY CHANNEL-KEYED MAP USES THE EMPTY STRING FOR IT
 export const LOBBY = "";
 export type UIState = "server_select" | "username_prompt" | "password_prompt" | "connected";
@@ -30,6 +32,7 @@ export interface StoredServer
     username: string;
     password: string | null;
     name: string | null;
+    icon: string | null; //ITS PICTURE'S HASH, KEPT FOR THE LIST
 }
 
 //WHAT AN /account FORM DOES
@@ -173,6 +176,7 @@ export interface TransferInfo
     upload: boolean;
     image: boolean;
     avatar: boolean;
+    icon: boolean; //THE SERVER'S PICTURE
     done: number;
     outcome: boolean | null; //null WHILE IT RUNS
 }
@@ -232,7 +236,7 @@ export type ClientValueInfo =
     | { kind: "toggle"; value: boolean }
     | { kind: "volume"; value: { percent: number; max: number; step: number } }
     | { kind: "device"; value: { id: string; input: boolean } } //EMPTY ID = WHATEVER THE SYSTEM PICKS
-    | { kind: "choice"; value: { id: string; options: ChoiceOption[] } }; //EMPTY ID = NONE, THE DEFAULT
+    | { kind: "choice"; value: { id: string; options: ChoiceOption[]; none: boolean } }; //EMPTY ID = NONE, WHERE none SAYS THERE IS ONE
 
 //ONE ANSWER A CHOICE ROW OFFERS - THE SERVER TO OPEN ON, AND NOTHING ELSE YET. IT IS THE SHAPE A DEVICE
 //HAS, AND DELIBERATELY SO: THE PICKER IS ONE LIST OF id/label PAIRS AND DOES NOT CARE WHO OPENED IT
@@ -335,7 +339,7 @@ export interface SettingsItem
 export type SettingsRow =
     | { row: "header"; label: string }
     | { row: "item"; item: SettingsItem }
-    | { row: "action"; label: string }; //A BUTTON - THE SERVER ROWS ARE THE ONLY THING THAT NEEDS ONE
+    | { row: "action"; action: "save" | "restart" }; //A BUTTON - THE SERVER ROWS ARE THE ONLY THING THAT NEEDS ONE
 
 //THE DIALOG ITSELF, IN EITHER OF ITS TWO MODES
 export interface SettingsBox
@@ -423,6 +427,9 @@ export type BridgeEvent =
     | { event: "transfer_done"; data: { uid: string; ok: boolean } }
     | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
     | { event: "popup"; data: { text: string } }
+    | { event: "server_icon"; data: { hash: string | null } }
+    | { event: "locale"; data: { locale: Locale } }
+    | { event: "own_colors"; data: { username_color: number | null; message_color: number | null } }
     | { event: "tofu_prompt"; data: TofuPrompt }
     | { event: "users"; data: { users: OnlineUser[]; offline: OfflineUser[] | null } }
     | { event: "user_joined"; data: { user: OnlineUser } }

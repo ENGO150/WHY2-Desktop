@@ -20,13 +20,22 @@ use std::fs;
 
 use serde::{ Serialize, Deserialize };
 
+use std::path::PathBuf;
+
+use base64::prelude::{ Engine, BASE64_STANDARD };
+
 use why2_chat::misc;
+
+use crate::tr;
 
 //THE SERVERS THIS WINDOW KNOWS ABOUT. THE TUI ASKS FOR AN ADDRESS AND AN IDENTITY EVERY TIME IT STARTS,
 //BECAUSE A TERMINAL CLIENT IS RUN AT A SERVER; A WINDOW IS LEFT OPEN, AND THE ONE QUESTION IT SHOULD NOT
 //BE ASKING AGAIN IS THE ONE IT WAS ALREADY ANSWERED. THIS IS OURS AND NOT THE CRATE'S - client.toml IS
 //SHARED WITH THE TERMINAL CLIENT, WHICH HAS NO SERVER LIST AND NO USE FOR ONE
 const SERVERS_FILE: &str = "/desktop_servers.toml";
+
+//THE SERVER ICONS THE LIST DRAWS WHILE OFFLINE
+const ICONS_DIR: &str = "/desktop_icons";
 
 //WHAT IS KEPT PER SERVER, AND NOTHING ELSE: A KEY WRITTEN DOWN THAT NOTHING EVER READS BACK IS A FILE
 //SAYING MORE ABOUT SOMEBODY THAN IT HAS TO, WHICH IS WHAT A last_used HERE WAS. AN OLDER LIST THAT STILL
@@ -48,6 +57,8 @@ pub(crate) struct StoredServer
     pub(crate) password: Option<String>,  //None IS "ASK ME"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,      //WHAT THE SERVER LAST CALLED ITSELF
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) icon: Option<String>,      //ITS PICTURE'S HASH, KEPT IN ICONS_DIR
 }
 
 //THE FILE IS AN ARRAY OF TABLES AND NOT A BARE ARRAY, BECAUSE TOML HAS NO TOP-LEVEL ARRAY TO BE.
@@ -75,6 +86,30 @@ struct ServerFile
 fn path() -> String
 {
     misc::get_why2_dir() + SERVERS_FILE
+}
+
+fn icons() -> PathBuf
+{
+    PathBuf::from(misc::get_why2_dir() + ICONS_DIR)
+}
+
+//A HASH IS 64 HEX CHARACTERS AND NOTHING ELSE
+fn icon_path(hash: &str) -> Option<PathBuf>
+{
+    (hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())).then(|| icons().join(hash))
+}
+
+//DROP THE ICONS NO ROW NAMES
+fn prune(servers: &[StoredServer])
+{
+    let Ok(entries) = fs::read_dir(icons()) else { return };
+
+    for entry in entries.flatten()
+    {
+        let name = entry.file_name();
+
+        if !servers.iter().any(|server| server.icon.as_deref().is_some_and(|icon| name == icon)) { let _ = fs::remove_file(entry.path()); }
+    }
 }
 
 //A LIST NOBODY HAS WRITTEN YET IS AN EMPTY ONE, AND SO IS ONE THAT CAME BACK UNREADABLE: THE WINDOW'S
@@ -145,6 +180,7 @@ pub(crate) fn save_server(server: StoredServer) -> Result<Vec<StoredServer>, Str
     }
 
     store(&file)?;
+    prune(&file.server);
 
     Ok(file.server)
 }
@@ -161,6 +197,7 @@ pub(crate) fn remove_server(id: String) -> Result<Vec<StoredServer>, String>
     if file.auto_connect.as_deref() == Some(id.as_str()) { file.auto_connect = None }
 
     store(&file)?;
+    prune(&file.server);
 
     Ok(file.server)
 }
@@ -199,7 +236,7 @@ pub(crate) fn write_own(key: &str, on: bool) -> Result<(), String>
     match key
     {
         "show_message_ids" => file.show_message_ids = on,
-        _ => return Err(String::from("Unknown setting!")),
+        _ => return Err(tr!("bridge.unknown_setting")),
     }
 
     store(&file)
@@ -232,4 +269,30 @@ pub(crate) fn set_auto_connect(id: String) -> Result<(), String>
     file.auto_connect = file.server.iter().any(|stored| stored.id == id).then_some(id);
 
     store(&file)
+}
+
+//KEEP THE SERVER'S PICTURE, AS THE WINDOW WAS SENT IT
+pub(crate) fn store_icon(hash: &str, source: &str)
+{
+    let Some(path) = icon_path(hash) else { return };
+    let Some((_, payload)) = source.split_once(',') else { return };
+    let Ok(bytes) = BASE64_STANDARD.decode(payload) else { return };
+
+    if fs::create_dir_all(icons()).is_ok() { let _ = fs::write(path, bytes); }
+}
+
+//A KEPT ICON AS A data: URL
+#[tauri::command]
+pub(crate) fn get_server_icon(hash: String) -> Option<String>
+{
+    let bytes = fs::read(icon_path(&hash)?).ok()?;
+
+    let mime = match bytes.as_slice()
+    {
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [b'G', b'I', b'F', ..] => "image/gif",
+        _ => "image/jpeg",
+    };
+
+    Some(format!("data:{mime};base64,{}", BASE64_STANDARD.encode(bytes)))
 }

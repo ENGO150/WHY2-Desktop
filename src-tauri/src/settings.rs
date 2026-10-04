@@ -35,6 +35,8 @@ use why2_chat::network::voice::{ consts as voice_consts, client::{ self as voice
 #[cfg(screen)]
 use why2_chat::network::screen::client::options as screen_options;
 
+use crate::tr;
+use crate::i18n;
 use crate::types::*;
 use crate::state::AppState;
 use crate::servers::{ self, StoredServer };
@@ -48,16 +50,16 @@ use crate::net::send_packet;
 #[cfg(voice)]
 pub(crate) const AUDIO_SETTINGS: &[SettingsKey] =
 &[
-    ("Audio", "Input device",      "input_device",      ClientKind::Device { input: true }),
-    ("Audio", "Output device",     "output_device",     ClientKind::Device { input: false }),
-    ("Audio", "Input volume",      "input_volume",      ClientKind::Volume),
-    ("Audio", "Output volume",     "output_volume",     ClientKind::Volume),
+    ("settings.section.audio", "settings.row.input_device",      "input_device",      ClientKind::Device { input: true }),
+    ("settings.section.audio", "settings.row.output_device",     "output_device",     ClientKind::Device { input: false }),
+    ("settings.section.audio", "settings.row.input_volume",      "input_volume",      ClientKind::Volume),
+    ("settings.section.audio", "settings.row.output_volume",     "output_volume",     ClientKind::Volume),
 
     //THE ATTACHED SHARE'S OWN PLAYBACK, WHICH ONLY A BUILD THAT CAN WATCH ONE HAS
     #[cfg(screen)]
-    ("Audio", "Screen share volume", "screen_volume",   ClientKind::Volume),
-    ("Audio", "Noise suppression", "noise_suppression", ClientKind::Toggle { invert: false }),
-    ("Audio", "Automatic gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
+    ("settings.section.audio", "settings.row.screen_volume",     "screen_volume",     ClientKind::Volume),
+    ("settings.section.audio", "settings.row.noise_suppression", "noise_suppression", ClientKind::Toggle { invert: false }),
+    ("settings.section.audio", "settings.row.automatic_gain",    "automatic_gain",    ClientKind::Toggle { invert: false }),
 ];
 
 #[cfg(not(voice))]
@@ -65,28 +67,31 @@ pub(crate) const AUDIO_SETTINGS: &[SettingsKey] = &[];
 
 pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
 &[
-    ("Interface", "Message colors",  "disable_colors", ClientKind::Toggle { invert: true }),
+    //THE CRATE'S OWN KEY, SO BOTH CLIENTS SPEAK ONE LANGUAGE
+    ("settings.section.interface", "settings.row.language", "language", ClientKind::Language),
+
+    ("settings.section.interface", "settings.row.disable_colors", "disable_colors", ClientKind::Toggle { invert: true }),
 
     //OFF, A POSTED PICTURE GOES UP AS A CAPTION WITH A BUTTON ON IT - THE WAY A REPLAYED ONE DOES -
     //RATHER THAN BEING DECODED AND DRAWN AS IT ARRIVES
-    ("Interface", "Show images automatically", "auto_show_images", ClientKind::Toggle { invert: false }),
+    ("settings.section.interface", "settings.row.auto_show_images", "auto_show_images", ClientKind::Toggle { invert: false }),
 
     //OFF, A DOLLAR SIGN IS A DOLLAR SIGN: NOTHING BETWEEN A PAIR OF THEM IS TAKEN FOR A FORMULA, AND
     //THE LINE IS SHOWN AS IT WAS TYPED. THE CODE MARKUP HAS NO SUCH SWITCH - A FENCED BLOCK IS WHAT THE
     //SENDER MEANT EITHER WAY, WHILE MATH IS A MATTER OF TASTE
-    ("Interface", "Math rendering", "render_math", ClientKind::Toggle { invert: false }),
+    ("settings.section.interface", "settings.row.render_math", "render_math", ClientKind::Toggle { invert: false }),
 
-    ("Interface", "Show client IDs", "show_id",        ClientKind::Toggle { invert: false }),
-    ("Interface", "Show message IDs", "show_message_ids", ClientKind::Own),
-    ("Interface", "Show timestamps", "show_timestamps", ClientKind::Toggle { invert: false }),
+    ("settings.section.interface", "settings.row.show_id",          "show_id",          ClientKind::Toggle { invert: false }),
+    ("settings.section.interface", "settings.row.show_message_ids", "show_message_ids", ClientKind::Own),
+    ("settings.section.interface", "settings.row.show_timestamps",  "show_timestamps",  ClientKind::Toggle { invert: false }),
 ];
 
 //ON, THE IDENTITY STEP TELLS THE SERVER WHICH CLIENT THIS IS - AND EVERY USER LIST THEN SAYS SO. IT IS
 //OFF BY DEFAULT: WHAT SOMEBODY IS RUNNING IS THEIRS TO SHARE
 pub(crate) const PRIVACY_SETTINGS: &[SettingsKey] =
 &[
-    ("Privacy", "Share device", "share_device", ClientKind::Toggle { invert: false }),
-    ("Privacy", "Typing indicator", "typing_indicator", ClientKind::Toggle { invert: false }),
+    ("settings.section.privacy", "settings.row.share_device",     "share_device",     ClientKind::Toggle { invert: false }),
+    ("settings.section.privacy", "settings.row.typing_indicator", "typing_indicator", ClientKind::Toggle { invert: false }),
 ];
 
 //THE ONE ROW IN THE BOX THAT IS NOT client.toml'S. THE WINDOW OPENS ON THE LIST AND DIALS NOTHING UNLESS
@@ -94,7 +99,7 @@ pub(crate) const PRIVACY_SETTINGS: &[SettingsKey] =
 //LEFT AGAIN BY HAND
 pub(crate) const STARTUP_SETTINGS: &[SettingsKey] =
 &[
-    ("Startup", "Connect automatically to", "auto_connect", ClientKind::Choice),
+    ("prefs.section.startup", "prefs.row.auto_connect", "auto_connect", ClientKind::Choice),
 ];
 
 //EVERY ROW THE BOX OFFERS, IN THE ORDER tui/settings.rs OPENS THEM
@@ -108,7 +113,7 @@ pub(crate) fn client_keys() -> impl Iterator<Item = &'static SettingsKey>
 #[cfg(voice)]
 pub(crate) const VOLUME_STEP: u32 = 5;
 
-//ONE ROW OF THE TABLE ABOVE: THE HEADING IT SITS UNDER, THE LABEL, THE KEY, AND WHAT THE KEY TAKES
+//ONE ROW OF THE TABLE ABOVE: THE HEADING'S AND THE LABEL'S LOCALE KEYS, THE KEY, AND WHAT THE KEY TAKES
 
 #[tauri::command]
 pub(crate) fn get_client_config() -> ClientConfig
@@ -135,9 +140,9 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
 {
     client_keys().map(|(section, label, key, kind)| ClientSetting
     {
-        label: label.to_string(),
+        label: i18n::text(label),
         key: key.to_string(),
-        section: section.to_string(),
+        section: i18n::text(section),
         value: match kind
         {
             ClientKind::Toggle { invert } =>
@@ -159,6 +164,14 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
                     label: server_label(&server),
                     id: server.id,
                 }).collect(),
+                none: true,
+            },
+
+            ClientKind::Language => ClientValue::Choice
+            {
+                id: crate::i18n::language(),
+                options: crate::i18n::languages(),
+                none: false,
             },
 
             #[cfg(voice)]
@@ -232,7 +245,7 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
             return Ok(get_client_config());
         },
 
-        _ => return Err(String::from("Unknown setting!")),
+        _ => return Err(tr!("bridge.unknown_setting")),
     };
 
     config::client_write_bool(&key, if invert { !on } else { on });
@@ -249,14 +262,18 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
     Ok(get_client_config())
 }
 
-//POINT A CHOICE ROW SOMEWHERE ELSE. THERE IS ONE OF THEM AND IT IS THE SERVER LIST'S, SO THE WRITE GOES
-//WHERE THE LIST LIVES RATHER THAN INTO client.toml - AN EMPTY ID IS None, WHICH IS OPENING ON THE LIST
+//POINT A CHOICE ROW SOMEWHERE ELSE. THE SERVER LIST'S GOES WHERE THE LIST LIVES - AN EMPTY ID IS None,
+//WHICH IS OPENING ON THE LIST - AND THE LANGUAGE INTO client.toml, WHERE THE TUI READS IT TOO
 #[tauri::command]
-pub(crate) fn set_client_choice(key: String, id: String) -> Result<(), String>
+pub(crate) fn set_client_choice(key: String, id: String, app: AppHandle) -> Result<(), String>
 {
-    let Some(ClientKind::Choice) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+    match client_kind(&key)
+    {
+        Some(ClientKind::Choice) => servers::set_auto_connect(id),
+        Some(ClientKind::Language) => i18n::set_language(&app, &id),
 
-    servers::set_auto_connect(id)
+        _ => Err(tr!("bridge.unknown_setting")),
+    }
 }
 
 //SLIDE ONE VOLUME. THE STORED VALUE COMES BACK BECAUSE THE CEILING IS THE VOICE CLIENT'S, NOT THE BOX'S -
@@ -266,11 +283,11 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
 {
     //THERE IS NO VOLUME TO SLIDE IN A BUILD WITH NO STREAMS TO SLIDE IT ON, AND NO ROW THAT ASKS
     #[cfg(not(voice))]
-    { let _ = (key, percent, app); return Err(String::from("Voice is not available on this platform.")) }
+    { let _ = (key, percent, app); return Err(tr!("bridge.no_voice")) }
 
     #[cfg(voice)]
     {
-    let Some(ClientKind::Volume) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+    let Some(ClientKind::Volume) = client_kind(&key) else { return Err(tr!("bridge.unknown_setting")) };
 
     let percent = voice_options::clamp_volume(percent);
 
@@ -300,11 +317,11 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
 pub(crate) fn set_client_device(key: String, id: String) -> Result<(), String>
 {
     #[cfg(not(voice))]
-    { let _ = (key, id); return Err(String::from("Voice is not available on this platform.")) }
+    { let _ = (key, id); return Err(tr!("bridge.no_voice")) }
 
     #[cfg(voice)]
     {
-        let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(String::from("Unknown setting!")) };
+        let Some(ClientKind::Device { .. }) = client_kind(&key) else { return Err(tr!("bridge.unknown_setting")) };
 
         config::client_write(&key, &id);
         voice_options::mark_devices_changed();
@@ -322,7 +339,7 @@ pub(crate) fn set_client_device(key: String, id: String) -> Result<(), String>
 pub(crate) fn set_voice_speaker(on: bool, app: AppHandle) -> Result<(), String>
 {
     #[cfg(not(target_os = "android"))]
-    { let _ = (on, app); return Err(String::from("There is nothing to route on this platform.")) }
+    { let _ = (on, app); return Err(tr!("bridge.no_route")) }
 
     #[cfg(target_os = "android")]
     {
@@ -341,7 +358,7 @@ pub(crate) async fn save_server_settings(settings: Vec<SettingRow>, app: AppHand
 {
     if settings.is_empty() { return Ok(()) }
 
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected!")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     //A KEY THE SERVER ONLY READS AT STARTUP IS STORED LIKE ANY OTHER - IT JUST WILL NOT DO ANYTHING YET
     let restart = settings.iter().filter(|row| row.restart).map(|row| row.key.clone()).collect::<Vec<String>>();
@@ -367,7 +384,7 @@ pub(crate) async fn save_server_settings(settings: Vec<SettingRow>, app: AppHand
     //STORED IS NOT THE SAME AS IN USE FOR THESE - SAY SO ONCE, WHERE THE USER READS THINGS
     if !restart.is_empty()
     {
-        say(&app, ChatMessage::notice(format!("{} takes effect when the server is restarted.", restart.join(", "))));
+        say(&app, ChatMessage::notice(tr!("settings.restart_note", keys = restart.join(", "))));
     }
 
     Ok(())
@@ -379,11 +396,11 @@ pub(crate) async fn save_server_settings(settings: Vec<SettingRow>, app: AppHand
 #[tauri::command]
 pub(crate) async fn restart_server(app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected!")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     send_packet(&state, &write_stream, PacketCode::ServerRestart).await;
 
-    say(&app, ChatMessage::notice("Restarting the server..."));
+    say(&app, ChatMessage::notice(tr!("settings.restarting")));
 
     Ok(())
 }

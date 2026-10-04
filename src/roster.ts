@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import type { OnlineUser, OfflineUser } from "./types";
+import { tOr } from "./i18n";
 
 //HIGHEST ROLE FIRST, US FIRST IN OURS, THE REST BY ID (tui/state.rs::sort_online)
 export function sortRoster(users: OnlineUser[], username: string): OnlineUser[]
@@ -44,7 +45,7 @@ export function rosterSections(users: OnlineUser[]): OnlineUser[][]
 //owner -> Owners (tui/draw.rs::section_label)
 export function sectionLabel(role: string): string
 {
-    return `${role.charAt(0).toUpperCase()}${role.slice(1)}s`;
+    return tOr(`sidebar.roles.${role}`, `${role.charAt(0).toUpperCase()}${role.slice(1)}s`);
 }
 
 //AND THE OTHERS BY NAME, WHICH IS THE ONLY ORDER A LIST OF PEOPLE WITH NO IDS HAS (THE TUI KEEPS THEM

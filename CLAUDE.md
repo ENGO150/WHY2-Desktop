@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.2.7", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.3.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.2.7", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.3.0", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -133,15 +133,16 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), `picture.rs` (a decoded
 image on its way to the webview, and the hash it is asked for by), `profile.rs` (the quiet profile queue,
 `save_profile`, `set_avatar` — see **Profiles and avatars**), `tray.rs` (where the window goes when it
-is closed — see **The tray**), plus `settings.rs`, `palette.rs`,
-`color.rs` and `servers.rs` for the four things that are their own vocabulary.
+is closed — see **The tray**), `i18n.rs` (the window's own words and the `tr!` that reads them — see
+**Languages**), plus `settings.rs`, `palette.rs`, `color.rs` and `servers.rs` for the four things that are
+their own vocabulary. `src-tauri/locales/` is the window's locales, one file per language.
 
 **`src/`** — `App.tsx` still owns all the state, every effect and every handler, and that is deliberate: the
 event listener, the channel routing and the palette all read each other, and prop-drilling them apart would
 buy nothing. What moved out is what does not need the state: `types.ts` (the mirror of `UiEvent`, and
 `LOBBY`), `theme.ts` (the two ANSI tables), `format.ts`, `icons.tsx`, `components.tsx` (`Avatar`, `Switch`,
-`SectionLabel`, and the shells every window and menu is drawn in: `Overlay`, `PanelHeader`, `PanelFooter`,
-`MenuBox`), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
+`SectionLabel`, `SpaceIcon`, and the shells every window and menu is drawn in: `Overlay`, `PanelHeader`,
+`PanelFooter`, `MenuBox`), `i18n.ts` (`t`/`tn`, the page's half of **Languages**), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `pictures.ts` (which caption an arriving
 picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
 `narrow.ts` — and the views that take props
@@ -281,8 +282,8 @@ shared with the terminal client, which has no list and no use for one. A file th
 unreadable is an empty list, since the window's answer to all three is the same screen that asks for the first
 server.
 
-A row holds an address, a username, an optional password, the name the server last called itself, and an
-`id` — and **nothing else**. The `id` is the window's own and is the row's identity: `save_server` and
+A row holds an address, a username, an optional password, the name the server last called itself, the hash
+of its icon (see **Server icons**), and an `id` — and **nothing else**. The `id` is the window's own and is the row's identity: `save_server` and
 `remove_server` both match on it, the switcher keys on it, and it is what says which row is the one we are
 standing in, because the same address twice is two accounts on one server rather than one row written down
 twice. There is no `last_used` any more: the program opens on the list and dials nothing, so the timestamp
@@ -747,7 +748,8 @@ shortcut are all that same event, so there is one answer and not three — nothi
 and `core:window:allow-close` still means what it did.
 
 The menu is **Open WHY2** and **Quit WHY2**, which are the only two things to do with a program that is not
-on screen. A left click opens the window without the menu and a right click opens the menu, as every other
+on screen. It is built by `menu()` in the window's language, and `relabel` builds it again and hands it to
+the icon when the language changes (see **Languages**). A left click opens the window without the menu and a right click opens the menu, as every other
 icon in the bar does — **except on Linux**, where the indicator reports no clicks to us at all
 (`TrayIconEvent` is documented as unsupported there) and the menu is the whole of the interface. That is why
 `Open` is an item and not only a gesture. Opening is `show` + `unminimize` + `set_focus`, since hidden and
@@ -851,7 +853,8 @@ header gear sends `/server settings` (drawn only when `get_commands` says our ro
 gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
 and its headset `/voice`; the monitor button opens the Screens window, whose rows send `/screen <name>`, `/attach <id>` and
 `/deattach`;
-the microphone button sends `/mute`; the composer's two upload buttons are `/upload` and `/image`
+the microphone button sends `/mute`; the server settings' icon buttons send `/server icon <path>` and a
+bare `/server icon` (see **Server icons**); the composer's two upload buttons are `/upload` and `/image`
 by way of `upload_file_from_path`, which is the picker's answer put back on that same path; a row of the file list sends
 `/download <user_id> <file_id>`, and a row of the voice roster sends `/mute <id>` — or `/mute` on our own
 row, the one the command takes no ID for. Prefer extending the command path over adding a
@@ -921,12 +924,19 @@ whether we show that anybody else is.
 by the next, and is dead while there are unsaved rows in the box.
 
 The `Startup` row is the fourth kind, and it is the one row in the box whose answer is not in a config file
-at all: `ClientKind::Choice` carries the answers **with** the value (`ClientValue::Choice { id, options }`)
-rather than having them enumerated beside it the way the devices are, because that list is the server list
-and is read off the disk in the same breath. It opens the same picker a device row does — one list of
-`id`/`label` pairs, which is why `setPicked` is one function taking the row's own kind and writing through
-`set_client_device` or `set_client_choice` accordingly — and ←→ cycles it, `None` being its first entry and
-not a special case.
+at all: `ClientKind::Choice` carries the answers **with** the value (`ClientValue::Choice { id, options,
+none }`) rather than having them enumerated beside it the way the devices are, because that list is the
+server list and is read off the disk in the same breath. It opens the same picker a device row does — one
+list of `id`/`label` pairs, which is why `setPicked` is one function taking the row's own kind and writing
+through `set_client_device` or `set_client_choice` accordingly — and ←→ cycles it, `None` being its first
+entry and not a special case. **`Language`** (`Interface`, first) is the same shape with `none: false`
+(`ClientKind::Language`): the answers are `i18n::languages()` named by their own `meta.name`, and
+`set_client_choice` sends it to `i18n::set_language` instead (see **Languages**).
+
+The table in `settings.rs` holds **locale keys**, not labels — `settings.row.*`/`settings.section.*` are the
+crate's own, so a row reads exactly as the TUI's does, and `Startup` is ours (`prefs.*`). `client_settings`
+translates them as it builds the rows, which is why a language switch re-sends them. The `Save` and `Restart
+server` buttons are an `action` row (`save`/`restart`) and get their words where they are drawn.
 
 The `Audio` rows above them are the third kind. A **volume** carries the range it lives in along with it
 (`ClientValue::Volume { percent, max, step }`), because the ceiling is `voice_options::VOLUME_MAX` and not a
@@ -1376,7 +1386,11 @@ this app that speaks JNI:
   say that the icon beside it does not. `hold_session` starts it naming the address, because a socket
   exists a handshake before anybody has said what the server is called, and `name_session` (off
   `ClientEvent::Connected`) redraws it by starting the service again on the same id — the same move the
-  call coming and going makes.
+  call coming and going makes. **The words are the bridge's**: `service()` hands `SessionService.start` both
+  lines (`android.connected_to` and `android.in_call_on`, so a refused microphone still has one to fall back
+  to) and the channel's name, and `Notifier.post` gets its channel name the same way — both create their
+  channel on every post, which only renames it, and `relabel()` redraws a standing notification when the
+  language changes (see **Languages**).
   **A swipe on it puts it back.** From 14 an ongoing foreground-service notification is dismissible —
   `setOngoing` is only honoured below that — and what a swipe takes away is the one visible sign that the
   session is still up, the service itself being untouched by it. So the notification carries a
@@ -1806,6 +1820,40 @@ Setting one is the TUI's `Upload::Avatar`: `open_upload` (the same checks and, o
 transfer row (`Uploading avatar`), the crate deletes the temp file behind it, and the `Profile { saved }`
 the server sends when it lands is what the editor and every face redraw from.
 
+### Server icons
+
+2.3.0 gave a server a picture of its own — an avatar the server owns, cut by the same `make_avatar` and held
+to the same `MAX_AVATAR_SIZE`, stored in `server_images/` like any picture. Two things about it are this
+app's to decide, and the crate's CLAUDE.md says the first out loud: **it is asked for, not pushed**, and
+`client::listen_server` deliberately does not ask, so that this app (which asks for itself) is not asked
+twice. So the `Authenticated` arm sends `ServerIconRequest` through `send_packet`, and `ServerIcon(hash,
+save)` comes back — the answer to that, or anybody's change since (`save` is ours, and is the only one that
+says anything in the pane: `Server icon set.`/`removed.`, the TUI's lines).
+
+**It is fetched exactly the way an avatar is**: the hash goes in `AppState::server_icon`, through
+`client::image::fetch_image` — the cache first, then the same two-at-a-time queue a caption joins — and comes
+back as the ordinary `image_data` event. `UiEvent::ServerIcon` tells the window the hash; `iconHashRef` is
+what says an arriving picture is the server's, and `icons` keeps its `data:` URL by hash.
+
+**The second is that a list draws it offline.** The switcher and both server lists are rows of servers that
+are mostly *not* connected, and the crate's cache is scoped to the server we are on (its fingerprint is a
+session global), so it cannot answer for them. So the row keeps the hash (`icon` in
+`desktop_servers.toml`, written by the `server_icon` handler the way `name` is) and the bridge keeps the
+picture itself: when `ImageData` arrives for the current icon, `servers::store_icon` writes the bytes the
+window was sent to `desktop_icons/<hash>`, and `get_server_icon` reads one back as a `data:` URL. A
+`save_server` or `remove_server` prunes every file no row names. `dial` puts the row's kept icon up as its
+first guess, and the live answer replaces it. `SpaceIcon` takes `src` and draws the picture where there is
+one and the letter where there is not.
+
+**Setting it is `/server icon [PATH]`** (owner only): `Subcommand::Icon` in `server_command` cuts the file
+with the same `profile.rs::cut_square` an avatar goes through and asks with `ServerIconSave { hash }`, or
+sends `None` for a bare `/server icon`. The upload behind it is an ordinary transfer whose file is a cut temp
+like an avatar's, so `AppState::icon_cut` remembers its name and the transfer row says `Server icon`. Because
+`icon` is the one server action whose parameter is optional, the "needs a parameter" check is now
+`sub.args.iter().any(|arg| arg.required)`, as the TUI's is. The window's door to it is a section at the top of
+the **server** settings dialog (`ServerIconBox`), drawn where `get_commands` lists the action: the picture,
+`Change icon` (the image picker, then that same command) and `Remove`.
+
 ### Message IDs
 
 2.2.3 gave every message a server-assigned id (`message_id`, not the sender's session `id`) — one counter for
@@ -1960,11 +2008,22 @@ The protocol carries 16 ANSI color codes, and **the server is what holds them** 
 `server_users.toml` beside the role, so they follow the account rather than the machine it was typed on.
 `/ucolor` and `/color` are therefore one packet and nothing else: `color_handler` in `color.rs` checks the
 name (a color no code can carry is refused here rather than after a round trip) and sends
-`PacketCode::Colors { username, color }`, and the same packet coming back is `ClientEvent::Colors` — the
-`Color set successfully.` popup. Nothing is written down and nothing is read back; a message goes out as
+`PacketCode::ColorRequest { username, color }`, and the server's `Color` coming back is
+`ClientEvent::Colors(None)` — the `Color set successfully.` popup. Since 2.3.0 `Accept` also carries our own
+pair, which arrives as `Colors(Some(..))` straight after `Authenticated` and goes on to the window as
+`UiEvent::OwnColors`. Nothing is written down and nothing is read back; a message goes out as
 `PacketCode::MessageRequest`, which carries the text alone, and the colors on the line that comes back are
 the server's own. Nothing already in the pane changes color for a `/color`, each line keeping the colors it
 was said in.
+
+**Both are also picked in the profile editor**, as two rows (`Name color`, `Message color`, `ColorRow`) that
+show the color held and open a menu of swatches when pressed, drawn from `get_vocabulary("colors")` —
+`offered_colors`' order, so the bright half sits over the dark one — and a press on a swatch sends the same
+`/ucolor` or `/color` typing it would, at once, like the avatar. Which swatch is marked is **what the server
+said it holds** (`ownColors`, off `OwnColors` at login), moved on the press since the `Color` that answers it
+names no color; the name's press also patches our roster row, which is what every line of ours is painted
+from. The rows were taken out while the server never said the message color — a picker that could only guess
+which swatch was ours — and came back with 2.3.0's `Accept`.
 
 The **names** are the crate's `colors::COLORS` — that table is the wire, so it is not copied here — and
 `to_color` is what this side adds to it: the spelling somebody typed (`gray`, `dark red`, a bare number)
@@ -1982,6 +2041,48 @@ makes no exception for the person reading, and neither does `renderChat`. The ac
 where there is no color to use (nobody picked one, or `disable_colors` is on), which is what still says
 "this one is you"; painting our own name accent regardless made `/ucolor` a command with no visible effect
 in the window that ran it.
+
+### Languages
+
+2.3.0 moved every word the TUI shows into `chat/locales/<language>.toml` and gave `client.toml` a
+`language` key. **The window follows the same key**, so the two clients speak one language, and its text
+comes from two places:
+
+- **The crate's locale**, for everything the TUI also says — every line the bridge puts in the pane, the
+  settings rows, the TOFU challenge word, the login hints, the account form, the typing line, the hearts
+  block. Using its key and not a copy of its sentence is what keeps the two clients word for word in every
+  language, which **The event bridge** asks of them in English.
+- **`src-tauri/locales/<code>.toml`**, for what only the window has: buttons, menus, dialogs, the tray, the
+  Android notifications. Every table in it is one the crate's file does not have (`bridge`, `android`,
+  `tray`, `window`, `connect`, `trust`, `acct`, `chat`, `menu`, `card`, `members`, `side`, `files`,
+  `screens`, `prefs`, `themes`), so a key is unambiguous about which file it lives in. All but `en` are
+  machine-translated; a translation can be overridden from `<config dir>/locales/desktop/<code>.toml`, a
+  directory the crate's own `languages()` does not list.
+
+On the Rust side **`tr!`** (and **`trn!`** for a plural) is the crate's `t!` with the window's file in
+front: `i18n::text` looks in ours (the active language, then English), then the crate's `i18n::get`, then
+answers the key. `{name}` is filled by the crate's own `i18n::format`.
+
+**The webview cannot read the crate's locale**, which is compiled into the crate and has no way to list
+its keys, so `get_locale` hands it one flat map: ours merged over the crate's keys in **`CRATE_KEYS`** (and
+the plural forms of `CRATE_PLURALS`), each resolved through `i18n::get`. **A crate key the page reads has to
+be in that list** — one that is not shows as the key itself, which is loud on purpose. `main.tsx` waits for
+the map before the first render (the boot mark is up anyway), and `i18n.ts`'s `t`, `tn` (the crate's four
+plural rules, written again) and `around` (the text either side of a placeholder, for a name drawn bold
+inside a sentence) read it from a module-level table, so the render functions outside React need no props.
+
+**A switch is live**: `set_language` writes `client.toml`, switches the crate (`i18n::set_language`) and
+ours, rebuilds the tray menu and the Android notification, and emits `UiEvent::Locale` with the new map and
+`ClientSettings` with the rows relabelled. The window re-renders from the first and re-asks `get_commands`
+(the palette's descriptions and argument names are the crate's keys, resolved there). **Lines already in the
+pane keep the language they were written in**, as they do in the TUI.
+
+What is **not** translated is what the crate does not translate either — command triggers, role names
+(`Make owner?`, the role under our name), color names, `server.toml`'s keys and comments — and `lobby`,
+which is a channel's name. Day dividers and the full-date tooltips go through `Intl` with the language code;
+the clock beside a name stays `HH:MM`, which is `time.today` in every crate locale. Block titles drop the crate's trailing colon (a card has a
+heading, not a line leading into one), and the typing line drops its ellipsis, since the dots beside it are
+drawn.
 
 ### Adding a Tauri plugin
 

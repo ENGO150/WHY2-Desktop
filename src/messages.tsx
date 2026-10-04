@@ -31,6 +31,7 @@ import hljs from "highlight.js/lib/common";
 import katex from "katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { HeldMenu } from "./servers";
+import { t, tn, language } from "./i18n";
 
 //SCREENS ABOVE AND BELOW THE VIEW WHOSE PICTURES AND HISTORY ARE LOADED (tui/consts.rs)
 export const PRELOAD_SCREENS = 1;
@@ -98,14 +99,14 @@ function ReactItems({ message, heart, reply, hearted, close }: {
             {heart && (
                 <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={MENU_ITEM}>
                     <Icon name="heart" className={`h-[18px] w-[18px] ${hearted ? "fill-current text-heart" : "text-muted"}`} />
-                    {hearted ? "Remove heart" : "Heart"}
+                    {hearted ? t("menu.unheart") : t("menu.heart")}
                 </button>
             )}
 
             {reply && (
                 <button type="button" onClick={() => { close(); reply(message); }} className={MENU_ITEM}>
                     <Icon name="reply" className="h-4 w-4 text-muted" />
-                    Reply
+                    {t("menu.reply")}
                 </button>
             )}
         </>
@@ -135,13 +136,13 @@ export function MessageMenu(
 
             <button type="button" onClick={() => { close(); copy(message.text); }} className={MENU_ITEM}>
                 <Icon name="copy" className="h-4 w-4 text-muted" />
-                Copy text
+                {t("menu.copy_text")}
             </button>
 
             {edit && (
                 <button type="button" onClick={() => { close(); edit(message); }} className={MENU_ITEM}>
                     <Icon name="pencil" className="h-4 w-4 text-muted" />
-                    Edit
+                    {t("menu.edit")}
                 </button>
             )}
 
@@ -151,7 +152,7 @@ export function MessageMenu(
 
                     <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${MENU_ITEM} text-error`}>
                         <Icon name="trash" className="h-4 w-4" />
-                        Delete message
+                        {t("menu.delete_message")}
                     </button>
                 </>
             )}
@@ -181,7 +182,7 @@ export function HeartsMenu(
             title={(
                 <span className="flex items-center gap-2">
                     <Icon name="heart" className="h-3.5 w-3.5 fill-current text-heart" />
-                    {message.hearts.length === 1 ? "1 heart" : `${message.hearts.length} hearts`}
+                    {tn("menu.hearts", message.hearts.length)}
                 </span>
             )}
         >
@@ -190,7 +191,7 @@ export function HeartsMenu(
                     <button key={name} type="button" onClick={() => { close(); people.open(name, null); }} className={MENU_ITEM}>
                         <Avatar name={name} color={color(name)} size={20} src={people.avatar(name)} />
                         <span className="min-w-0 flex-1 truncate" style={{ color: color(name) }}>{name}</span>
-                        {name === username && <span className="text-[12px] text-faint">You</span>}
+                        {name === username && <span className="text-[12px] text-faint">{t("menu.you")}</span>}
                     </button>
                 ))}
             </div>
@@ -201,7 +202,7 @@ export function HeartsMenu(
 
                     <button type="button" onClick={() => { close(); heart(message.message_id!); }} className={MENU_ITEM}>
                         <Icon name="heart" className={`h-[18px] w-[18px] ${hearted ? "fill-current text-heart" : "text-muted"}`} />
-                        {hearted ? "Remove heart" : "Heart"}
+                        {hearted ? t("menu.unheart") : t("menu.heart")}
                     </button>
                 </>
             )}
@@ -233,13 +234,13 @@ export function PictureMenu(
             {copy && (
                 <button type="button" onClick={() => { close(); copy(image); }} className={MENU_ITEM}>
                     <Icon name="copy" className="h-4 w-4 text-muted" />
-                    Copy image
+                    {t("menu.copy_image")}
                 </button>
             )}
 
             <button type="button" onClick={() => { close(); save(image); }} className={MENU_ITEM}>
                 <Icon name="download" className="h-4 w-4 text-muted" />
-                Save image
+                {t("menu.save_image")}
             </button>
 
             {remove && message?.message_id != null && (
@@ -248,7 +249,7 @@ export function PictureMenu(
 
                     <button type="button" onClick={() => { close(); remove(message.message_id!); }} className={`${MENU_ITEM} text-error`}>
                         <Icon name="trash" className="h-4 w-4" />
-                        Delete image
+                        {t("menu.delete_image")}
                     </button>
                 </>
             )}
@@ -530,10 +531,10 @@ export function renderDay(timestamp: number, key: string)
     const yesterday = new Date(today.getTime() - 86400000);
 
     const label = date.toDateString() === today.toDateString()
-        ? "Today"
+        ? t("chat.today")
         : date.toDateString() === yesterday.toDateString()
-            ? "Yesterday"
-            : date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+            ? t("chat.yesterday")
+            : date.toLocaleDateString(language(), { weekday: "long", day: "numeric", month: "long", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" });
 
     return <div key={key} className="day">{label}</div>;
 }
@@ -586,13 +587,13 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 {
     if (!transfer) return null;
 
-    const { upload, image, avatar, filename, done, total, outcome } = transfer;
+    const { upload, image, avatar, icon, filename, done, total, outcome } = transfer;
 
     const percent = total === 0 ? 100 : Math.floor((Math.min(done, total) * 100) / total);
 
     const state = outcome === null
-        ? `${upload ? "Uploading" : "Downloading"} · ${percent}% of ${size(total)}`
-        : outcome ? `${upload ? "Uploaded" : "Downloaded"} · ${size(total)}` : "Failed";
+        ? t(upload ? "chat.transfer.uploading" : "chat.transfer.downloading", { percent, size: size(total) })
+        : outcome ? t(upload ? "chat.transfer.uploaded" : "chat.transfer.downloaded", { size: size(total) }) : t("chat.transfer.failed");
 
     return (
         <div key={key} className="note">
@@ -602,10 +603,10 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 
             <div className="my-1 w-full max-w-[380px] rounded-lg border border-border px-3 py-2.5">
                 <div className="flex items-center gap-3">
-                    <Icon name={image || avatar ? "image" : "file"} className="h-5 w-5 shrink-0 text-muted" />
+                    <Icon name={image || avatar || icon ? "image" : "file"} className="h-5 w-5 shrink-0 text-muted" />
 
                     <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14px] text-text">{avatar ? "Profile picture" : filename}</span>
+                        <span className="block truncate text-[14px] text-text">{avatar ? t("chat.transfer.avatar") : icon ? t("chat.transfer.icon") : filename}</span>
                         <span className={`block text-[12px] ${outcome === false ? "text-error" : "text-faint"}`}>{state}</span>
                     </span>
                 </div>
@@ -691,11 +692,11 @@ function Caption({ image, status, pictures }: { image: MessageImage; status: Pic
                 : <Icon name="image" className="h-4 w-4 shrink-0 text-muted" />}
 
             <span className="min-w-0 truncate">{image.filename}</span>
-            {status === "gone" && <span className="shrink-0 text-[12.5px] text-error">unavailable</span>}
+            {status === "gone" && <span className="shrink-0 text-[12.5px] text-error">{t("chat.unavailable")}</span>}
 
             {!loading && image.hash && (
                 <button type="button" onClick={() => pictures.show(image.hash!)} className="shrink-0 text-[13px] font-medium text-accent hover:underline">
-                    {status === "gone" ? "Retry" : "Show"}
+                    {status === "gone" ? t("chat.retry") : t("chat.show")}
                 </button>
             )}
         </div>
@@ -741,7 +742,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
         event.stopPropagation();
     };
 
-    const full = time !== null ? new Date(time * 1000).toLocaleString() : undefined;
+    const full = time !== null ? new Date(time * 1000).toLocaleString(language()) : undefined;
 
     return (
         <div
@@ -758,7 +759,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     : (
                         <button
                             type="button"
-                            aria-label={`${author}'s profile`}
+                            aria-label={t("card.of", { username: author })}
                             onClick={(event) => people.open(author, event.currentTarget)}
                             className="mt-0.5 block rounded-full transition hover:opacity-85"
                         >
@@ -780,7 +781,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         </button>
 
                         {config.show_id && message.id !== null && <span className="text-[12px] text-faint">{message.id}</span>}
-                        {whisper && <span className="text-[12px] text-accent">private</span>}
+                        {whisper && <span className="text-[12px] text-accent">{t("chat.private")}</span>}
                         {time !== null && <span className="shrink-0 text-[12px] text-faint" title={full}>{sentAt(time, true)}</span>}
                     </div>
                 )}
@@ -797,7 +798,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
 
                     {(messageId || message.edited) && (
                         <span className="shrink-0 whitespace-nowrap text-[11.5px] leading-6 text-faint">
-                            {message.edited && "edited"}
+                            {message.edited && t("message.edited")}
                             {message.edited && messageId && " · "}
                             {messageId}
                         </span>
@@ -825,11 +826,11 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
             {/* ON HOVER; A HOLD ON A PHONE */}
             {(copyable || reacts) && (
                 <div className="row-action absolute -top-3.5 right-3 z-10 flex rounded-lg border border-border-strong bg-overlay p-0.5 text-muted shadow-[0_6px_18px_-6px_rgba(0,0,0,0.4)]">
-                    {reacts && rowButton(hearted ? "Remove heart" : "Heart", "heart", () => lines.heart(message.message_id!),
+                    {reacts && rowButton(hearted ? t("menu.unheart") : t("menu.heart"), "heart", () => lines.heart(message.message_id!),
                         hearted ? "fill-current text-heart" : "")}
-                    {reacts && rowButton("Reply", "reply", () => lines.reply(message))}
-                    {lines.edits(message) && rowButton("Edit", "pencil", () => lines.edit(message))}
-                    {copyable && rowButton("Copy", "copy", () => lines.copy(message.text))}
+                    {reacts && rowButton(t("menu.reply"), "reply", () => lines.reply(message))}
+                    {lines.edits(message) && rowButton(t("menu.edit"), "pencil", () => lines.edit(message))}
+                    {copyable && rowButton(t("menu.copy"), "copy", () => lines.copy(message.text))}
                 </div>
             )}
         </div>
@@ -872,7 +873,7 @@ function rowButton(label: string, icon: string, onClick: () => void, tone = "")
 //THE LINE A REPLY ANSWERS, ONE ROW
 function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
 {
-    const text = target?.image ? "Picture" : target?.text.split("\n")[0] ?? `Message #${reply}`;
+    const text = target?.image ? t("chat.picture") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: reply });
 
     return (
         <button

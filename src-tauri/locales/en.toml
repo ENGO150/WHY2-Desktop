@@ -1,0 +1,273 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# The window's own words. Everything the terminal client also says is in why2-chat's locale and is
+# read from there; this file is only what the window has and the TUI does not.
+#
+# To translate: copy this file to <config dir>/locales/desktop/<language>.toml, beside the crate's
+# own <language>.toml, and translate the values. {name} is filled in by the program, a table of
+# one/few/many/other is a plural, and [meta] plurals picks the rule exactly as the crate's does.
+
+[meta]
+plurals = "one-other"
+
+[bridge]
+login_ok = "Login successful. Type / for commands."
+identity_rejected = "Server identity rejected."
+invalid_usage = "Invalid usage!"
+invalid_command = "Invalid command!"
+invalid_action = "Invalid action!"
+invalid_role = "Invalid role!"
+invalid_image = "Invalid image."
+not_connected = "Not connected."
+unknown_setting = "Unknown setting!"
+unknown_language = "Unknown language!"
+no_voice = "Voice is not available on this platform."
+no_route = "There is nothing to route on this platform."
+usage = "Usage: {usage}"
+unavailable = "{command} is not available in the desktop app."
+clipboard_refused = "The clipboard refused the text."
+screen_decode = "Cannot decode the screen share: {error}."
+nothing_to_answer = "Nothing to answer."
+session_gone = "The session is already gone."
+no_picture_clipboard = "This system has no picture clipboard."
+not_a_picture = "That is not a picture."
+picture_undecodable = "The picture could not be decoded."
+picture_copy_failed = "Copying the picture failed."
+nowhere_to_save = "Nowhere to save it."
+picture_save_failed = "Saving the picture failed."
+
+[android]
+channel_session = "Session"
+channel_messages = "Messages"
+connected = "Connected"
+connected_to = "Connected to {server}"
+in_call = "In a voice call"
+in_call_on = "In a voice call on {server}"
+mic_dialog = "Android would not open the microphone dialog. Allow the microphone for WHY2 in Android's app settings."
+mic_unreachable = "WHY2 could not reach Android to ask for the microphone. Allow the microphone for WHY2 in Android's app settings."
+mic_refused = "The microphone was refused. Allow it for WHY2 in Android's app settings."
+mic_needed = "The call needs the microphone."
+save_refused = "Android would not save the picture."
+unreachable = "WHY2 could not reach Android."
+
+[tray]
+open = "Open WHY2"
+quit = "Quit WHY2"
+
+[window]
+minimize = "Minimize"
+maximize = "Maximize"
+restore = "Restore"
+close = "Close"
+
+[connect]
+add = "Add server"
+connect = "Connect"
+back = "Back"
+continue = "Continue"
+create_account = "Create account"
+create_password = "Create a password"
+other_servers = "Other servers"
+password_optional = "Password (optional)"
+switch = "Switch server"
+
+[trust]
+unknown = "Trust this server?"
+changed = "Server key changed"
+type_to_replace = "Type \"{word}\" to replace the key"
+cancel = "Cancel"
+replace = "Replace key"
+trust = "Trust"
+
+[acct]
+delete_warning = "This cannot be undone. Press again to confirm."
+delete_for_good = "Delete for good"
+send_failed = "Could not send the request."
+
+[chat]
+today = "Today"
+yesterday = "Yesterday"
+private = "private"
+show = "Show"
+retry = "Retry"
+unavailable = "unavailable"
+picture = "Picture"
+message_number = "Message #{id}"
+copied = "Message copied."
+copy_failed = "The message could not be copied."
+image_copied = "Image copied."
+image_saved = "Image saved"
+saved_to = "Saved to {path}"
+images = "Images"
+online = "online"
+offline = "offline"
+join_call = "Join call"
+leave_call = "Leave call"
+members = "Members"
+back = "Back to the conversation (esc)"
+screen_of = "{username}'s screen"
+decode_webview = "The window is decoding the H.264 stream itself"
+decode_bridge = "This webview has no H.264 decoder, so the frames are decoded for it and sent on as pictures"
+stop_watching = "Stop watching"
+editing = "Editing"
+cancel_edit = "Cancel edit"
+cancel_reply = "Cancel reply"
+placeholder = "Message {target}"
+attach = "Attach a file"
+send_picture = "Send a picture"
+send = "Send"
+
+[chat.online_count]
+one = "{count} online"
+other = "{count} online"
+
+[chat.transfer]
+uploading = "Uploading · {percent}% of {size}"
+downloading = "Downloading · {percent}% of {size}"
+uploaded = "Uploaded · {size}"
+downloaded = "Downloaded · {size}"
+failed = "Failed"
+avatar = "Profile picture"
+icon = "Server icon"
+
+[menu]
+heart = "Heart"
+unheart = "Remove heart"
+reply = "Reply"
+copy = "Copy"
+copy_text = "Copy text"
+edit = "Edit"
+delete_message = "Delete message"
+you = "You"
+copy_image = "Copy image"
+save_image = "Save image"
+delete_image = "Delete image"
+remove_server = "Remove server"
+view_profile = "View profile"
+send_message = "Send message"
+kick = "Kick"
+kick_confirm = "Press again to kick"
+ban = "Ban"
+ban_confirm = "Press again to ban"
+banip = "Ban IP"
+banip_confirm = "Press again to ban IP"
+set_role = "Set role"
+make_role = "Make {role}?"
+
+[menu.hearts]
+one = "{count} heart"
+other = "{count} hearts"
+
+[card]
+of = "{username}'s profile"
+you = "you"
+loading = "Loading…"
+message = "Message"
+edit = "Edit profile"
+change_picture = "Change picture"
+uploading = "Uploading…"
+remove = "Remove"
+bad_website = "Starts with http:// or https://"
+about = "About you"
+saving = "Saving…"
+name_color = "Name color"
+message_color = "Message color"
+not_set = "Not set"
+
+[members]
+in_channel = "{username} in #{channel}"
+
+[side]
+new_channel = "New channel"
+channel_name = "Channel name"
+direct = "Direct messages"
+close_direct = "Close the conversation"
+earpiece = "Play through the earpiece"
+speaker = "Play through the speaker"
+mute = "Mute"
+unmute = "Unmute"
+join = "Join"
+leave = "Leave"
+share_other = "Share a different screen"
+sharing = "Sharing screen"
+sharing_monitor = "Sharing {monitor}"
+mic_mute = "Mute microphone"
+mic_unmute = "Unmute microphone"
+disconnect = "Disconnect"
+
+[files]
+title = "Files"
+refresh = "Refresh"
+search = "Search"
+no_results = "No results"
+none = "No files"
+download = "Download {name}"
+
+[files.kind]
+image = "Image"
+audio = "Audio"
+video = "Video"
+archive = "Archive"
+code = "Code"
+document = "Document"
+file = "File"
+extension = "{extension} file"
+
+[screens]
+title = "Screens"
+live = "Live"
+nobody = "Nobody is sharing"
+you = "{username} (you)"
+stop = "Stop"
+watch = "Watch"
+share = "Share"
+no_monitors = "No screens found"
+sharing = "Sharing"
+
+[prefs]
+appearance = "Appearance"
+icon = "Server icon"
+icon_change = "Change icon"
+general = "General"
+account = "Account"
+server = "Server"
+unsaved = "Unsaved changes"
+edited = "Edited"
+restart_badge = "Restart"
+restart_warning = "Everybody will be disconnected."
+restart_now = "Restart now"
+none = "None"
+
+[prefs.section]
+startup = "Startup"
+
+[prefs.row]
+auto_connect = "Connect automatically to"
+
+[themes]
+why2 = "Black"
+dark = "Dark"
+midnight = "Midnight"
+forest = "Forest"
+plum = "Plum"
+mocha = "Mocha"
+light = "Light"
+paper = "Paper"
+sky = "Sky"
+mint = "Mint"
+rose = "Rose"
+lavender = "Lavender"

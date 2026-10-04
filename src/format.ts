@@ -17,6 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import type { BlockRow } from "./types";
+import { t } from "./i18n";
 
 //THE FINGERPRINT IS 64 HEX CHARS - GROUPED IN EIGHTS AND BROKEN INTO ROWS SO IT CAN ACTUALLY BE
 //COMPARED AGAINST WHAT THE OPERATOR PUBLISHED
@@ -65,12 +66,12 @@ export function branches(rows: BlockRow[]): string[]
 //THING THERE IS TO GO ON - AND AN UNKNOWN ONE STILL NAMES ITSELF RATHER THAN SAYING NOTHING
 export const FILE_KINDS: [string, string, string[]][] =
 [
-    ["image", "Image", ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif", "tiff"]],
-    ["music", "Audio", ["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac", "wma"]],
-    ["video", "Video", ["mp4", "mkv", "webm", "mov", "avi", "wmv", "m4v"]],
-    ["archive", "Archive", ["zip", "tar", "gz", "xz", "bz2", "7z", "rar", "zst"]],
-    ["code", "Code", ["rs", "ts", "tsx", "js", "jsx", "py", "c", "h", "cpp", "hpp", "go", "java", "sh", "toml", "json", "yaml", "yml", "html", "css"]],
-    ["file", "Document", ["txt", "md", "pdf", "doc", "docx", "odt", "rtf", "log"]],
+    ["image", "image", ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif", "tiff"]],
+    ["music", "audio", ["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac", "wma"]],
+    ["video", "video", ["mp4", "mkv", "webm", "mov", "avi", "wmv", "m4v"]],
+    ["archive", "archive", ["zip", "tar", "gz", "xz", "bz2", "7z", "rar", "zst"]],
+    ["code", "code", ["rs", "ts", "tsx", "js", "jsx", "py", "c", "h", "cpp", "hpp", "go", "java", "sh", "toml", "json", "yaml", "yml", "html", "css"]],
+    ["file", "document", ["txt", "md", "pdf", "doc", "docx", "odt", "rtf", "log"]],
 ];
 
 export function fileKind(name: string): { icon: string; label: string }
@@ -79,9 +80,9 @@ export function fileKind(name: string): { icon: string; label: string }
     const extension = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 
     const found = FILE_KINDS.find(([, , extensions]) => extensions.includes(extension));
-    if (found) return { icon: found[0], label: found[1] };
+    if (found) return { icon: found[0], label: t(`files.kind.${found[1]}`) };
 
-    return { icon: "file", label: extension ? `${extension.toUpperCase()} file` : "File" };
+    return { icon: "file", label: extension ? t("files.kind.extension", { extension: extension.toUpperCase() }) : t("files.kind.file") };
 }
 
 //A LINE IS TEXT WITH LINKS IN IT, AND THIS IS WHERE THEY ARE. THE PROTOCOL CARRIES NO MARKUP, SO THE

@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use std::
 {
     io::Read,
+    path::PathBuf,
     time::Duration,
     sync::atomic::Ordering,
 };
@@ -40,6 +41,7 @@ use why2_chat::
     },
 };
 
+use crate::tr;
 use crate::types::ProfileInfo;
 use crate::state::AppState;
 use crate::net::send_packet;
@@ -107,10 +109,10 @@ pub(crate) async fn save_profile(profile: ProfileInfo, state: State<'_, AppState
     //REFUSED HERE, NOT AFTER THE SERVER SAW IT
     if !website.is_empty() && !misc::is_web_url(website)
     {
-        return Err(String::from("A website has to start with http:// or https://"));
+        return Err(tr!("profile.bad_website"));
     }
 
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     send_packet(&state, &write_stream, PacketCode::ProfileSave
     {
@@ -127,47 +129,51 @@ pub(crate) async fn save_profile(profile: ProfileInfo, state: State<'_, AppState
     Ok(())
 }
 
-//SET OUR PICTURE, OR DROP IT (tui/../client/mod.rs::upload WITH Upload::Avatar)
-#[tauri::command]
-pub(crate) async fn set_avatar(path: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+//CUT A PICTURE TO ITS SQUARE AND PARK IT FOR THE UPLOAD (tui/../client/mod.rs::cut_avatar)
+pub(crate) async fn cut_square(app: &AppHandle, path: &str) -> Result<([u8; 32], PathBuf), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let (mut file, _) = open_upload(app, path, true).await?;
 
-    let Some(path) = path else
-    {
-        send_packet(&state, &write_stream, PacketCode::AvatarRequest { hash: None }).await;
-        return Ok(())
-    };
-
-    let (mut file, _) = open_upload(&app, &path, true).await?;
-
-    //CUT TO ITS SQUARE (BLOCKING I/O + CPU)
+    //BLOCKING I/O + CPU
     let (hash, cut) = task::spawn_blocking(move ||
     {
         let mut data = Vec::new();
-        file.read_to_end(&mut data).map_err(|_| String::from("Reading the file failed!"))?;
+        file.read_to_end(&mut data).map_err(|_| tr!("upload.read_failed"))?;
 
-        let (avatar, extension) = client_image::make_avatar(&data)
-            .ok_or_else(|| String::from("That image could not be read!"))?;
+        let (avatar, extension) = client_image::make_avatar(&data).ok_or_else(|| tr!("upload.unreadable_image"))?;
 
         if avatar.len() > consts::MAX_AVATAR_SIZE
         {
-            return Err(format!("Avatar is too large even cut down! (limit is {}MB)",
-                consts::MAX_AVATAR_SIZE / consts::MEGABYTE));
+            return Err(tr!("upload.avatar_too_large", limit = consts::MAX_AVATAR_SIZE / consts::MEGABYTE));
         }
 
         let hash: [u8; 32] = Sha256::digest(&avatar).into();
         let cut = misc::avatar_temp(&hash, extension);
 
-        std::fs::write(&cut, &avatar).map_err(|_| String::from("Writing the cut avatar failed!"))?;
+        std::fs::write(&cut, &avatar).map_err(|_| tr!("upload.avatar_write_failed"))?;
 
         Ok((hash, cut))
-    }).await.map_err(|_| String::from("Reading the file failed!"))??;
+    }).await.map_err(|_| tr!("upload.read_failed"))??;
 
     //THE UPLOAD TASK LOOKS THE PATH UP BY HASH
-    client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, cut);
+    client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, cut.clone());
 
-    send_packet(&state, &write_stream, PacketCode::AvatarRequest { hash: Some(hash) }).await;
+    Ok((hash, cut))
+}
+
+//SET OUR PICTURE, OR DROP IT (tui/../client/mod.rs::upload WITH Upload::Avatar)
+#[tauri::command]
+pub(crate) async fn set_avatar(path: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
+
+    let hash = match path
+    {
+        Some(path) => Some(cut_square(&app, &path).await?.0),
+        None => None,
+    };
+
+    send_packet(&state, &write_stream, PacketCode::AvatarRequest { hash }).await;
 
     Ok(())
 }

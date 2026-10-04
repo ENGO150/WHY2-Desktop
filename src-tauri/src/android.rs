@@ -49,6 +49,7 @@ use why2_chat::
     network::voice::client::options as voice_options,
 };
 
+use crate::tr;
 use crate::types::ChatMessage;
 use crate::emit::say;
 
@@ -266,7 +267,7 @@ pub(crate) fn save_picture(filename: &str, mime: &str, bytes: &[u8]) -> Result<S
         //EMPTY IS ANDROID REFUSING THE WRITE, WHICH IS THE ONE WAY THIS FAILS THAT IS NOT A BUG HERE -
         //A FULL DISK, A MEDIA STORE THAT WOULD NOT TAKE THE ROW
         Ok(saved) if !saved.is_empty() => Ok(saved),
-        Ok(_) => Err(String::from("Android would not save the picture.")),
+        Ok(_) => Err(tr!("android.save_refused")),
 
         //AND THE CALL ITSELF THROWING, WHICH ImageStore.save CATCHES EVERY Exception OF - SO WHAT IS LEFT
         //IS AN Error (A MISSING METHOD ON A CLASS THAT SURVIVED, MEMORY) OR A THREAD THAT WOULD NOT ATTACH
@@ -294,11 +295,12 @@ pub(crate) fn notify(key: &str, title: &str, text: &str)
         let key = env.new_string(key)?;
         let title = env.new_string(title)?;
         let text = env.new_string(text)?;
+        let label = env.new_string(tr!("android.channel_messages"))?;
 
         env.call_static_method(&**class, JNIString::new("post"),
-            jni_sig!("(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
+            jni_sig!("(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
             &[JValue::Object(&**application), JValue::Object(&key), JValue::Object(&title),
-              JValue::Object(&text)])?.z()
+              JValue::Object(&text), JValue::Object(&label)])?.z()
     });
 
     //FALSE IS ANDROID REFUSING IT, WHICH SINCE 13 IS ORDINARILY POST_NOTIFICATIONS NEVER HAVING BEEN
@@ -354,7 +356,7 @@ fn unreachable(what: &str) -> String
 {
     warn(&format!("the Java side could not be reached - {what}"));
 
-    String::from("WHY2 could not reach Android.")
+    tr!("android.unreachable")
 }
 
 //WHETHER THE PERMISSION IS THERE, ASKED OF THE APPLICATION AND NOT OF THE ACTIVITY. checkSelfPermission IS
@@ -421,7 +423,7 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
         {
             warn("no activity to ask for the microphone from");
 
-            say(app, ChatMessage::error("Android would not open the microphone dialog. Allow the microphone for WHY2 in Android's app settings."));
+            say(app, ChatMessage::error(tr!("android.mic_dialog")));
 
             return false;
         },
@@ -430,7 +432,7 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
         {
             warn(&format!("{ACTIVITY} could not be reached - the microphone cannot be asked for"));
 
-            say(app, ChatMessage::error("WHY2 could not reach Android to ask for the microphone. Allow the microphone for WHY2 in Android's app settings."));
+            say(app, ChatMessage::error(tr!("android.mic_unreachable")));
 
             return false;
         },
@@ -448,13 +450,13 @@ pub(crate) async fn ensure_microphone(app: &AppHandle) -> bool
         //REFUSAL IS WATCHED FOR AS WELL, RATHER THAN SPENDING THE WHOLE MINUTE ON A DIALOG NOBODY SAW
         if ask("microphoneDenied") == Some(true)
         {
-            say(app, ChatMessage::error("The microphone was refused. Allow it for WHY2 in Android's app settings."));
+            say(app, ChatMessage::error(tr!("android.mic_refused")));
 
             return false;
         }
     }
 
-    say(app, ChatMessage::error("The call needs the microphone."));
+    say(app, ChatMessage::error(tr!("android.mic_needed")));
 
     false
 }
@@ -481,11 +483,21 @@ fn service(method: &str, call: Option<bool>) -> Option<bool>
                 //THE NAME IS COPIED OUT FROM UNDER THE LOCK FIRST: NOTHING HOLDS A MUTEX ACROSS A CALL
                 //INTO JAVA, WHICH CAN BLOCK ON WHATEVER ANDROID FEELS LIKE
                 let name = SERVER_NAME.lock().unwrap().clone();
-                let server = env.new_string(&name)?;
+
+                //BOTH LINES, SO A REFUSED MICROPHONE STILL HAS ONE TO SAY
+                let (held, calling) = match name.is_empty()
+                {
+                    true => (tr!("android.connected"), tr!("android.in_call")),
+                    false => (tr!("android.connected_to", server = &name), tr!("android.in_call_on", server = &name)),
+                };
+
+                let held = env.new_string(&held)?;
+                let calling = env.new_string(&calling)?;
+                let label = env.new_string(tr!("android.channel_session"))?;
 
                 env.call_static_method(&**class, JNIString::new(method),
-                    jni_sig!("(Landroid/content/Context;ZLjava/lang/String;)Z"),
-                    &[context, JValue::Bool(call.into()), JValue::Object(&server)])?.z()
+                    jni_sig!("(Landroid/content/Context;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"),
+                    &[context, JValue::Bool(call.into()), JValue::Object(&held), JValue::Object(&calling), JValue::Object(&label)])?.z()
             },
 
             None => env.call_static_method(&**class, JNIString::new(method),
@@ -542,6 +554,14 @@ pub(crate) fn name_session(server: &str)
         *held = server.to_owned();
     }
 
+    if HELD.load(Ordering::Relaxed) == DOWN { return }
+
+    service("start", Some(CALL.load(Ordering::Relaxed)));
+}
+
+//THE SAME LINE IN ANOTHER LANGUAGE
+pub(crate) fn relabel()
+{
     if HELD.load(Ordering::Relaxed) == DOWN { return }
 
     service("start", Some(CALL.load(Ordering::Relaxed)));

@@ -33,6 +33,7 @@ use why2_chat::
     command::{ self, Command, ArgValues },
 };
 
+use crate::i18n;
 use crate::types::*;
 use crate::state::AppState;
 use crate::color::offered_colors;
@@ -44,8 +45,8 @@ pub(crate) fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandA
 {
     args.iter().map(|arg| CommandArgInfo
     {
-        name: arg.name.to_string(),
-        description: arg.description.to_string(),
+        name: i18n::text(arg.name),
+        description: i18n::text(arg.description),
         required: arg.required,
         values: match arg.values
         {
@@ -76,13 +77,13 @@ pub(crate) fn get_commands(state: State<'_, AppState>) -> Vec<CommandInfo> //THE
         {
             name: info.triggers[0].to_lowercase(),
             triggers: info.triggers.iter().map(|trigger| trigger.to_lowercase()).collect(),
-            description: info.description.to_string(),
+            description: i18n::text(info.description),
             args: command_args(info.args),
             subcommands: info.actions(role).map(|sub| SubcommandInfo
             {
                 name: sub.triggers[0].to_lowercase(),
                 triggers: sub.triggers.iter().map(|trigger| trigger.to_lowercase()).collect(),
-                description: sub.description.to_string(),
+                description: i18n::text(sub.description),
                 args: command_args(sub.args),
             }).collect(),
         })

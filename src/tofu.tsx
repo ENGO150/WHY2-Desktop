@@ -19,9 +19,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import type { TofuPrompt } from "./types";
 import { Icon } from "./icons";
 import { fingerprint } from "./format";
+import { t } from "./i18n";
 
-//WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS
-export const CHALLENGE = "yes";
+//WHAT REPLACING A PINNED KEY HAS TO BE TYPED OUT AS, IN THE TUI'S WORD
+export const challenge = () => t("tofu.challenge");
 
 //THE IDENTITY CHECK: A BUTTON FOR A FIRST CONTACT, TYPED OUT FOR A CHANGED KEY
 export function TofuDialog(
@@ -42,7 +43,7 @@ export function TofuDialog(
                         <Icon name={tofu.mismatch ? "alert" : "lock"} className="h-6 w-6" />
                     </span>
 
-                    <h2 className="mt-4 text-[17px] font-semibold">{tofu.mismatch ? "Server key changed" : "Trust this server?"}</h2>
+                    <h2 className="mt-4 text-[17px] font-semibold">{tofu.mismatch ? t("trust.changed") : t("trust.unknown")}</h2>
                     <div className="mt-1 break-all text-[14px] text-muted">{tofu.host}</div>
                 </div>
 
@@ -56,8 +57,8 @@ export function TofuDialog(
                     <input
                         id="tofu-input"
                         type="text"
-                        aria-label={`Type ${CHALLENGE} to replace the key`}
-                        placeholder={`Type "${CHALLENGE}" to replace the key`}
+                        aria-label={t("trust.type_to_replace", { word: challenge() })}
+                        placeholder={t("trust.type_to_replace", { word: challenge() })}
                         value={typed}
                         onChange={(event) => setTyped(event.currentTarget.value.toLowerCase())}
                         onKeyDown={(event) => { if (event.key === "Enter") answer(true); }}
@@ -68,15 +69,15 @@ export function TofuDialog(
                 )}
 
                 <div className="mt-5 flex gap-2">
-                    <button type="button" onClick={() => answer(false)} className="btn flex-1 py-2.5">Cancel</button>
+                    <button type="button" onClick={() => answer(false)} className="btn flex-1 py-2.5">{t("trust.cancel")}</button>
 
                     <button
                         type="button"
                         onClick={() => answer(true)}
-                        disabled={tofu.mismatch && typed !== CHALLENGE}
+                        disabled={tofu.mismatch && typed !== challenge()}
                         className={`btn flex-1 py-2.5 ${tofu.mismatch ? "btn-danger armed" : "btn-accent"}`}
                     >
-                        {tofu.mismatch ? "Replace key" : "Trust"}
+                        {tofu.mismatch ? t("trust.replace") : t("trust.trust")}
                     </button>
                 </div>
             </div>

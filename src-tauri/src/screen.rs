@@ -32,6 +32,8 @@ use openh264::{ decoder::Decoder, formats::YUVSource };
 #[cfg(screen)]
 use jpeg_encoder::{ Encoder as JpegEncoder, ColorType, SamplingFactor };
 
+#[cfg(screen)]
+use crate::tr;
 use crate::state::AppState;
 
 #[cfg(screen)]
@@ -172,7 +174,7 @@ pub(crate) fn screen_frames(app: &AppHandle, mut frames: mpsc::UnboundedReceiver
 
                 Err(error) =>
                 {
-                    if !said { say(app, ChatMessage::error(format!("Cannot decode the screen share: {error}."))) }
+                    if !said { say(app, ChatMessage::error(tr!("bridge.screen_decode", error))) }
 
                     said = true;
                     continue;

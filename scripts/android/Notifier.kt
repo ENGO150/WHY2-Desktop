@@ -44,15 +44,16 @@ class Notifier {
     const val TARGET = "why2.target"
 
     @JvmStatic
-    fun post(context: Context, key: String, title: String, text: String): Boolean =
+    fun post(context: Context, key: String, title: String, text: String, label: String): Boolean =
       try {
         val manager = context.getSystemService(NotificationManager::class.java)
 
         // HIGH, BECAUSE THIS IS THE ONE THING HERE THAT IS ACTUALLY NEWS - A MESSAGE THAT ARRIVES
         // SILENTLY IN THE SHADE IS A MESSAGE FOUND TOMORROW
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.getNotificationChannel(CHANNEL) == null) {
+        // CREATED AGAIN EVERY TIME, WHICH ONLY RENAMES IT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
           manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(CHANNEL, label.ifEmpty { "Messages" }, NotificationManager.IMPORTANCE_HIGH)
           )
         }
 

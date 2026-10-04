@@ -1,0 +1,270 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "one-few-many"
+
+[bridge]
+login_ok = "Вхід виконано. Введіть / для списку команд."
+identity_rejected = "Ідентичність сервера відхилено."
+invalid_usage = "Неправильне використання!"
+invalid_command = "Неправильна команда!"
+invalid_action = "Неправильна дія!"
+invalid_role = "Неправильна роль!"
+invalid_image = "Неправильне зображення."
+not_connected = "Немає з'єднання."
+unknown_setting = "Невідоме налаштування!"
+unknown_language = "Невідома мова!"
+no_voice = "Голос недоступний на цій платформі."
+no_route = "На цій платформі нічого перенаправляти."
+usage = "Використання: {usage}"
+unavailable = "{command} недоступна в настільному застосунку."
+clipboard_refused = "Буфер обміну відхилив текст."
+screen_decode = "Не вдається декодувати демонстрацію екрана: {error}."
+nothing_to_answer = "Немає на що відповідати."
+session_gone = "Сеанс уже завершено."
+no_picture_clipboard = "У цій системі немає буфера обміну для зображень."
+not_a_picture = "Це не зображення."
+picture_undecodable = "Не вдалося декодувати зображення."
+picture_copy_failed = "Не вдалося скопіювати зображення."
+nowhere_to_save = "Немає куди зберегти."
+picture_save_failed = "Не вдалося зберегти зображення."
+
+[android]
+channel_session = "Сеанс"
+channel_messages = "Повідомлення"
+connected = "Під'єднано"
+connected_to = "Під'єднано до {server}"
+in_call = "У голосовому дзвінку"
+in_call_on = "У голосовому дзвінку на {server}"
+mic_dialog = "Android не відкрив діалог мікрофона. Дозвольте мікрофон для WHY2 у налаштуваннях застосунку Android."
+mic_unreachable = "WHY2 не вдалося звернутися до Android по мікрофон. Дозвольте мікрофон для WHY2 у налаштуваннях застосунку Android."
+mic_refused = "Доступ до мікрофона відхилено. Дозвольте його для WHY2 у налаштуваннях застосунку Android."
+mic_needed = "Для дзвінка потрібен мікрофон."
+save_refused = "Android не зберіг зображення."
+unreachable = "WHY2 не вдалося зв'язатися з Android."
+
+[tray]
+open = "Відкрити WHY2"
+quit = "Вийти з WHY2"
+
+[window]
+minimize = "Згорнути"
+maximize = "Розгорнути"
+restore = "Відновити"
+close = "Закрити"
+
+[connect]
+add = "Додати сервер"
+connect = "Під'єднатися"
+back = "Назад"
+continue = "Продовжити"
+create_account = "Створити обліковий запис"
+create_password = "Придумайте пароль"
+other_servers = "Інші сервери"
+password_optional = "Пароль (необов'язково)"
+switch = "Змінити сервер"
+
+[trust]
+unknown = "Довіряти цьому серверу?"
+changed = "Ключ сервера змінився"
+type_to_replace = "Введіть «{word}», щоб замінити ключ"
+cancel = "Скасувати"
+replace = "Замінити ключ"
+trust = "Довіряти"
+
+[acct]
+delete_warning = "Цю дію не можна скасувати. Натисніть ще раз для підтвердження."
+delete_for_good = "Видалити назавжди"
+send_failed = "Не вдалося надіслати запит."
+
+[chat]
+today = "Сьогодні"
+yesterday = "Учора"
+private = "особисте"
+show = "Показати"
+retry = "Повторити"
+unavailable = "недоступно"
+picture = "Зображення"
+message_number = "Повідомлення #{id}"
+copied = "Повідомлення скопійовано."
+copy_failed = "Не вдалося скопіювати повідомлення."
+image_copied = "Зображення скопійовано."
+image_saved = "Зображення збережено"
+saved_to = "Збережено в {path}"
+images = "Зображення"
+online = "у мережі"
+offline = "не в мережі"
+join_call = "Приєднатися до дзвінка"
+leave_call = "Покинути дзвінок"
+members = "Учасники"
+back = "Назад до розмови (Esc)"
+screen_of = "Екран користувача {username}"
+decode_webview = "Вікно саме декодує потік H.264"
+decode_bridge = "У цьому webview немає декодера H.264, тому кадри декодуються за нього й надсилаються як зображення"
+stop_watching = "Припинити перегляд"
+editing = "Редагування"
+cancel_edit = "Скасувати редагування"
+cancel_reply = "Скасувати відповідь"
+placeholder = "Повідомлення для {target}"
+attach = "Прикріпити файл"
+send_picture = "Надіслати зображення"
+send = "Надіслати"
+
+[chat.online_count]
+one = "{count} у мережі"
+few = "{count} у мережі"
+many = "{count} у мережі"
+
+[chat.transfer]
+uploading = "Вивантаження · {percent}% з {size}"
+downloading = "Завантаження · {percent}% з {size}"
+uploaded = "Вивантажено · {size}"
+downloaded = "Завантажено · {size}"
+failed = "Помилка"
+avatar = "Фото профілю"
+icon = "Значок сервера"
+
+[menu]
+heart = "Сердечко"
+unheart = "Прибрати сердечко"
+reply = "Відповісти"
+copy = "Копіювати"
+copy_text = "Копіювати текст"
+edit = "Редагувати"
+delete_message = "Видалити повідомлення"
+you = "Ви"
+copy_image = "Копіювати зображення"
+save_image = "Зберегти зображення"
+delete_image = "Видалити зображення"
+remove_server = "Видалити сервер"
+view_profile = "Переглянути профіль"
+send_message = "Написати повідомлення"
+kick = "Вигнати"
+kick_confirm = "Натисніть ще раз, щоб вигнати"
+ban = "Забанити"
+ban_confirm = "Натисніть ще раз, щоб забанити"
+banip = "Забанити IP"
+banip_confirm = "Натисніть ще раз, щоб забанити IP"
+set_role = "Призначити роль"
+make_role = "Зробити {role}?"
+
+[menu.hearts]
+one = "{count} сердечко"
+few = "{count} сердечка"
+many = "{count} сердечок"
+
+[card]
+of = "Профіль {username}"
+you = "ви"
+loading = "Завантаження…"
+message = "Написати"
+edit = "Редагувати профіль"
+change_picture = "Змінити фото"
+uploading = "Вивантаження…"
+remove = "Видалити"
+bad_website = "Починається з http:// або https://"
+about = "Про себе"
+saving = "Збереження…"
+name_color = "Колір імені"
+message_color = "Колір повідомлень"
+not_set = "Не задано"
+
+[members]
+in_channel = "{username} у #{channel}"
+
+[side]
+new_channel = "Новий канал"
+channel_name = "Назва каналу"
+direct = "Особисті повідомлення"
+close_direct = "Закрити розмову"
+earpiece = "Відтворювати через розмовний динамік"
+speaker = "Відтворювати через гучномовець"
+mute = "Вимкнути звук"
+unmute = "Увімкнути звук"
+join = "Приєднатися"
+leave = "Вийти"
+share_other = "Показати інший екран"
+sharing = "Демонстрація екрана"
+sharing_monitor = "Демонстрація {monitor}"
+mic_mute = "Вимкнути мікрофон"
+mic_unmute = "Увімкнути мікрофон"
+disconnect = "Від'єднатися"
+
+[files]
+title = "Файли"
+refresh = "Оновити"
+search = "Пошук"
+no_results = "Нічого не знайдено"
+none = "Немає файлів"
+download = "Завантажити {name}"
+
+[files.kind]
+image = "Зображення"
+audio = "Аудіо"
+video = "Відео"
+archive = "Архів"
+code = "Код"
+document = "Документ"
+file = "Файл"
+extension = "Файл {extension}"
+
+[screens]
+title = "Екрани"
+live = "Наживо"
+nobody = "Ніхто не демонструє екран"
+you = "{username} (ви)"
+stop = "Зупинити"
+watch = "Дивитися"
+share = "Показати"
+no_monitors = "Екранів не знайдено"
+sharing = "Демонструється"
+
+[prefs]
+appearance = "Вигляд"
+icon = "Значок сервера"
+icon_change = "Змінити значок"
+general = "Загальні"
+account = "Обліковий запис"
+server = "Сервер"
+unsaved = "Незбережені зміни"
+edited = "Змінено"
+restart_badge = "Перезапуск"
+restart_warning = "Усіх буде від'єднано."
+restart_now = "Перезапустити зараз"
+none = "Немає"
+
+[prefs.section]
+startup = "Запуск"
+
+[prefs.row]
+auto_connect = "Автоматично під'єднуватися до"
+
+[themes]
+why2 = "Чорна"
+dark = "Темна"
+midnight = "Північ"
+forest = "Ліс"
+plum = "Слива"
+mocha = "Мокко"
+light = "Світла"
+paper = "Папір"
+sky = "Небо"
+mint = "М'ята"
+rose = "Троянда"
+lavender = "Лаванда"

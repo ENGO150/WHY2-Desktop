@@ -160,6 +160,7 @@ pub(crate) struct TransferInfo
     pub(crate) upload: bool,
     pub(crate) image: bool,
     pub(crate) avatar: bool,
+    pub(crate) icon: bool, //THE SERVER'S PICTURE
 }
 
 #[derive(Serialize, Clone)]
@@ -342,7 +343,8 @@ pub(crate) enum PictureState
 pub(crate) enum ClientKind
 {
     Toggle { invert: bool }, //invert IS FOR A KEY PHRASED AS A NEGATIVE - disable_colors
-    Choice,                  //ONE OF A LIST THE BRIDGE BUILDS - THE SERVER TO OPEN ON, AND NOTHING ELSE YET
+    Choice,                  //ONE OF A LIST THE BRIDGE BUILDS - THE SERVER TO OPEN ON
+    Language,                //THE CRATE'S language KEY
     Own,                     //A TOGGLE KEPT IN OUR OWN FILE
     #[cfg(voice)] Volume,
     #[cfg(voice)] Device { input: bool },
@@ -358,7 +360,7 @@ pub(crate) enum ClientValue
 
     //THE ANSWERS COME WITH THE ROW RATHER THAN BEING ENUMERATED BESIDE IT THE WAY THE DEVICES ARE: THIS
     //LIST IS THE SERVER LIST, WHICH IS OURS AND IS READ OFF THE DISK IN THE SAME BREATH AS THE VALUE
-    Choice { id: String, options: Vec<ChoiceOption> }, //EMPTY ID = NONE, THE DEFAULT
+    Choice { id: String, options: Vec<ChoiceOption>, none: bool }, //EMPTY ID = NONE, WHERE none SAYS THERE IS ONE
 
     #[cfg(voice)] Volume { percent: u32, max: u32, step: u32 },
     #[cfg(voice)] Device { id: String, input: bool }, //EMPTY ID = WHATEVER THE SYSTEM PICKS
@@ -415,6 +417,9 @@ pub(crate) enum UiEvent
     TransferDone { uid: String, ok: bool },                       //AND ENDED
     ImageData { hash: String, image: Option<MessageImage> },      //A CAPTION'S PICTURE, ASKED FOR (None = IT IS GONE)
     Popup { text: String },                                       //A TOAST, GONE IN A MOMENT
+    Locale { locale: crate::i18n::LocaleInfo },                   //THE LANGUAGE CHANGED
+    OwnColors { username_color: Option<u8>, message_color: Option<u8> }, //WHAT THE SERVER HOLDS FOR US
+    ServerIcon { hash: Option<String> },                          //THE SERVER'S PICTURE, BY HASH
     TofuPrompt                                                    //THE SESSION IS PARKED ON THIS ANSWER
     {
         host: String,

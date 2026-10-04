@@ -21,6 +21,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { StoredServer } from "./types";
 import { Icon } from "./icons";
 import { SpaceIcon, Overlay, PanelHeader, MenuBox, MENU_ITEM, MENU_WIDTH } from "./components";
+import { t } from "./i18n";
 
 export { MENU_WIDTH };
 
@@ -50,10 +51,10 @@ export function AddServerFields(
                 id="login-input"
                 ref={inputRef}
                 type="text"
-                aria-label="Server address"
+                aria-label={t("login.label.address")}
                 value={form.address}
                 onChange={(event) => setForm({ ...form, address: event.currentTarget.value })}
-                placeholder="Server address"
+                placeholder={t("login.label.address")}
                 className="field"
                 disabled={connecting}
                 autoFocus={autoFocus}
@@ -63,10 +64,10 @@ export function AddServerFields(
             <input
                 id="login-username"
                 type="text"
-                aria-label="Username"
+                aria-label={t("login.label.username")}
                 value={form.username}
                 onChange={(event) => setForm({ ...form, username: event.currentTarget.value })}
-                placeholder="Username"
+                placeholder={t("login.label.username")}
                 className="field"
                 disabled={connecting}
                 spellCheck={false}
@@ -75,10 +76,10 @@ export function AddServerFields(
             <input
                 id="login-password"
                 type="password"
-                aria-label="Password"
+                aria-label={t("login.label.password")}
                 value={form.password}
                 onChange={(event) => setForm({ ...form, password: event.currentTarget.value })}
-                placeholder="Password (optional)"
+                placeholder={t("connect.password_optional")}
                 className="field"
                 disabled={connecting}
             />
@@ -102,20 +103,20 @@ export function AddServerDialog(
 })
 {
     return (
-        <Overlay narrow={narrow} width={420} label="Add server" cardRef={cardRef} close={close}>
-            <PanelHeader title="Add server" close={close} />
+        <Overlay narrow={narrow} width={420} label={t("connect.add")} cardRef={cardRef} close={close}>
+            <PanelHeader title={t("connect.add")} close={close} />
 
             <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-3">
                 <AddServerFields form={form} setForm={setForm} connecting={connecting} autoFocus={!narrow} />
 
                 {(connecting || errorMsg) && (
                     <div className={`mt-3 text-[13px] ${connecting ? "text-muted" : "text-error"}`}>
-                        {connecting ? "Connecting…" : errorMsg}
+                        {connecting ? t("login.connecting") : errorMsg}
                     </div>
                 )}
 
                 <button type="submit" disabled={connecting || !form.address} className="btn btn-accent mt-5 w-full py-2.5">
-                    Connect
+                    {t("connect.connect")}
                 </button>
             </form>
         </Overlay>
@@ -284,7 +285,7 @@ export function ForgetMenu(
         <MenuBox at={at} title={serverLabel(server)}>
             <button type="button" onClick={() => { close(); onForget(server.id); }} className={`${MENU_ITEM} text-error`}>
                 <Icon name="trash" className="h-4 w-4" />
-                Remove server
+                {t("menu.remove_server")}
             </button>
         </MenuBox>
     );
@@ -299,12 +300,12 @@ export function serverLabel(server: StoredServer): string
 //ONE SERVER AS A ROW
 export function ServerRow(
 {
-    server, here, connecting, onPick, bind,
+    server, here, connecting, icon, onPick, bind,
 }: {
     server: StoredServer;
     here: boolean;
     connecting: boolean;
-    size?: "small" | "large";
+    icon?: string;
     onPick: () => void;
     bind: Record<string, unknown>;
 })
@@ -318,7 +319,7 @@ export function ServerRow(
             {...bind}
             className={`group flex w-full select-none items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover ${here ? "bg-selected" : ""}`}
         >
-            <SpaceIcon name={label} size={32} />
+            <SpaceIcon name={label} size={32} src={icon} />
 
             <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-medium">{label}</span>
@@ -334,13 +335,15 @@ export function ServerRow(
 //THE SERVER WE ARE ON, AND THE OTHERS UNDER IT
 export function ServerSwitcher(
 {
-    servers, active, connecting, serverName, onPick, onAdd, onForget,
+    servers, active, connecting, serverName, icon, icons, onPick, onAdd, onForget,
 }: {
     servers: StoredServer[];
     active: string | null;
     connecting: boolean;
     serverName: string;
     address: string;
+    icon?: string;                 //THE ONE WE ARE ON
+    icons: Record<string, string>; //EVERY KEPT ONE, BY HASH
     onPick: (server: StoredServer) => void;
     onAdd: () => void;
     onForget: (id: string) => void;
@@ -384,12 +387,12 @@ export function ServerSwitcher(
         <div ref={box} className="min-w-0 flex-1">
             <button
                 type="button"
-                title="Switch server"
+                title={t("connect.switch")}
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
                 className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
             >
-                <SpaceIcon name={name} size={26} />
+                <SpaceIcon name={name} size={26} src={icon} />
                 <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">{name}</span>
                 <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
@@ -403,6 +406,7 @@ export function ServerSwitcher(
                                 server={server}
                                 here={server.id === active}
                                 connecting={connecting}
+                                icon={server.icon ? icons[server.icon] : undefined}
                                 bind={bind(server.id)}
                                 onPick={() =>
                                 {
@@ -425,7 +429,7 @@ export function ServerSwitcher(
                         <span className="flex h-8 w-8 items-center justify-center rounded-[9px] border border-dashed border-border-strong">
                             <Icon name="plus" className="h-4 w-4" />
                         </span>
-                        Add server
+                        {t("connect.add")}
                     </button>
                 </div>
             )}

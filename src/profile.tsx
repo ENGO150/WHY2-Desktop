@@ -20,11 +20,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { ProfileInfo, OnlineUser, ClientConfig } from "./types";
+import type { ProfileInfo, OnlineUser, ClientConfig, VocabularyValue } from "./types";
 import { Icon } from "./icons";
 import { Avatar, Overlay, PanelHeader } from "./components";
 import { linked } from "./messages";
 import { deviceIcon } from "./roster";
+import { ANSI_TRUE } from "./theme";
+import { t } from "./i18n";
 
 //WHAT A NAME ANYWHERE IN THE WINDOW CAN ASK FOR
 export interface People
@@ -123,7 +125,7 @@ export function ProfileCard(
         <div
             ref={card}
             role="dialog"
-            aria-label={`${username}'s profile`}
+            aria-label={t("card.of", { username })}
             style={narrow ? undefined : at
                 ? { left: at.x, top: at.y, width: CARD_WIDTH }
                 : { width: CARD_WIDTH, visibility: anchor ? "hidden" : undefined }}
@@ -139,13 +141,13 @@ export function ProfileCard(
                 <div className="mt-3 flex items-baseline gap-2">
                     <span className="min-w-0 truncate text-[18px] font-semibold" style={{ color }}>{username}</span>
                     {config.show_id && online && <span className="shrink-0 text-[12px] text-faint">{online.id}</span>}
-                    {own && <span className="shrink-0 text-[12px] text-faint">you</span>}
+                    {own && <span className="shrink-0 text-[12px] text-faint">{t("card.you")}</span>}
                 </div>
 
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
                     <span className="flex items-center gap-1.5">
                         <span className={`h-2 w-2 rounded-full ${online ? "bg-online" : "bg-faint"}`} />
-                        {online ? `#${online.channel ?? "lobby"}` : "Offline"}
+                        {online ? `#${online.channel ?? "lobby"}` : t("sidebar.offline")}
                     </span>
                     {profile?.pronouns && <span>· {profile.pronouns}</span>}
                     {role && <span className="capitalize">· {role}</span>}
@@ -171,19 +173,19 @@ export function ProfileCard(
                     </button>
                 )}
 
-                {loading && !profile && <div className="mt-3 text-[13px] text-faint">Loading…</div>}
+                {loading && !profile && <div className="mt-3 text-[13px] text-faint">{t("card.loading")}</div>}
 
                 {(message || edit) && (
                     <div className="mt-4 flex gap-2">
                         {message && (
                             <button type="button" onClick={message} className="btn btn-accent flex-1 py-2">
-                                Message
+                                {t("card.message")}
                             </button>
                         )}
 
                         {edit && (
                             <button type="button" onClick={edit} className="btn flex-1 py-2">
-                                Edit profile
+                                {t("card.edit")}
                             </button>
                         )}
                     </div>
@@ -210,15 +212,84 @@ function same(one: ProfileFields, other: ProfileFields): boolean
         && one.website === other.website && one.status === other.status;
 }
 
+const colorName = (choice: VocabularyValue) => choice.value.replace(/_/g, " ");
+
+//ONE COLOR, AND THE MENU OF THE OTHERS
+function ColorRow({ label, colors, current, pick }: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
+{
+    const [open, setOpen] = useState(false);
+    const boxRef = useRef<HTMLDivElement>(null);
+    const chosen = colors.find((choice) => choice.color !== null && choice.color === current);
+
+    //A PRESS OUTSIDE CLOSES IT
+    useEffect(() =>
+    {
+        if (!open) return;
+
+        const away = (event: MouseEvent) =>
+        {
+            if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+
+        document.addEventListener("mousedown", away);
+
+        return () => document.removeEventListener("mousedown", away);
+    }, [open]);
+
+    return (
+        <div
+            ref={boxRef}
+            className="relative"
+            onKeyDown={(event) => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}
+        >
+            <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpen(!open)}
+                className="field flex w-full items-center gap-3 text-left"
+            >
+                <span className="flex-1 truncate">{label}</span>
+                <span
+                    className="h-4 w-4 shrink-0 rounded-full ring-1 ring-border-strong"
+                    style={{ backgroundColor: chosen?.color != null ? ANSI_TRUE[chosen.color] : "transparent" }}
+                />
+                <span className="text-[13px] text-muted">{chosen ? colorName(chosen) : t("card.not_set")}</span>
+                <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`} />
+            </button>
+
+            {open && (
+                <div className="absolute right-0 top-full z-10 mt-1.5 grid grid-cols-8 gap-1.5 rounded-xl border border-border-strong bg-overlay p-2.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
+                    {colors.map((choice) => choice.color !== null && (
+                        <button
+                            key={choice.value}
+                            type="button"
+                            title={colorName(choice)}
+                            aria-label={colorName(choice)}
+                            aria-pressed={choice.color === current}
+                            onClick={() => { pick(choice); setOpen(false); }}
+                            className={`h-6 w-6 rounded-full ring-1 ring-border-strong ${choice.color === current ? "ring-2 ring-text ring-offset-2 ring-offset-overlay" : "hover:ring-muted"}`}
+                            style={{ backgroundColor: ANSI_TRUE[choice.color] }}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 //OUR OWN PROFILE, EDITABLE
 export function ProfileEditor(
 {
-    username, profile, avatar, color, uploading, narrow, save, pickAvatar, dropAvatar, close,
+    username, profile, avatar, color, colors, nameColor, messageColor, pickColor, uploading, narrow, save, pickAvatar, dropAvatar, close,
 }: {
     username: string;
     profile: ProfileInfo | null;
     avatar: string | undefined;
     color: string | undefined;
+    colors: VocabularyValue[];
+    nameColor: number | null;
+    messageColor: number | null;
+    pickColor: (name: boolean, choice: VocabularyValue) => void;
     uploading: boolean;
     narrow: boolean;
     save: (fields: ProfileFields) => Promise<unknown>;
@@ -265,12 +336,12 @@ export function ProfileEditor(
         setDraft({ ...draft, [key]: event.currentTarget.value });
 
     return (
-        <Overlay narrow={narrow} width={440} label="Edit profile" cardRef={cardRef} close={close}>
-            <PanelHeader title="Edit profile" close={close} />
+        <Overlay narrow={narrow} width={440} label={t("card.edit")} cardRef={cardRef} close={close}>
+            <PanelHeader title={t("card.edit")} close={close} />
 
             <form onSubmit={submit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-2">
                 <div className="flex flex-col items-center">
-                    <button type="button" disabled={uploading} onClick={pickAvatar} title="Change picture" className="group relative rounded-full">
+                    <button type="button" disabled={uploading} onClick={pickAvatar} title={t("card.change_picture")} className="group relative rounded-full">
                         <Avatar name={username} color={color} size={88} src={avatar} />
                         <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
                             <Icon name="upload" className="h-6 w-6" />
@@ -279,27 +350,34 @@ export function ProfileEditor(
 
                     <div className="mt-2 flex gap-1">
                         <button type="button" disabled={uploading} onClick={pickAvatar} className="btn btn-quiet px-3 py-1 text-[13px] text-accent">
-                            {uploading ? "Uploading…" : "Change picture"}
+                            {uploading ? t("card.uploading") : t("card.change_picture")}
                         </button>
 
                         {profile?.avatar && (
                             <button type="button" disabled={uploading} onClick={dropAvatar} className="btn btn-quiet px-3 py-1 text-[13px]">
-                                Remove
+                                {t("card.remove")}
                             </button>
                         )}
                     </div>
                 </div>
 
-                <div className="mt-4 flex flex-col gap-3">
-                    <input aria-label="Status" value={draft.status} onChange={set("status")} placeholder="Status" className="field" />
-                    <input aria-label="Pronouns" value={draft.pronouns} onChange={set("pronouns")} placeholder="Pronouns" className="field" spellCheck={false} />
-                    <input aria-label="Website" value={draft.website} onChange={set("website")} placeholder="Website" className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />
-                    {badWebsite && <div className="-mt-1.5 px-1 text-[12.5px] text-error">Starts with http:// or https://</div>}
-                    <textarea aria-label="About" rows={4} value={draft.bio} onChange={set("bio")} placeholder="About you" className="field resize-none leading-relaxed" />
+                {colors.length > 0 && (
+                    <div className="mt-5 flex flex-col gap-3">
+                        <ColorRow label={t("card.name_color")} colors={colors} current={nameColor} pick={(choice) => pickColor(true, choice)} />
+                        <ColorRow label={t("card.message_color")} colors={colors} current={messageColor} pick={(choice) => pickColor(false, choice)} />
+                    </div>
+                )}
+
+                <div className="mt-5 flex flex-col gap-3">
+                    <input aria-label={t("profile.status")} value={draft.status} onChange={set("status")} placeholder={t("profile.status")} className="field" />
+                    <input aria-label={t("profile.pronouns")} value={draft.pronouns} onChange={set("pronouns")} placeholder={t("profile.pronouns")} className="field" spellCheck={false} />
+                    <input aria-label={t("profile.website")} value={draft.website} onChange={set("website")} placeholder={t("profile.website")} className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />
+                    {badWebsite && <div className="-mt-1.5 px-1 text-[12.5px] text-error">{t("card.bad_website")}</div>}
+                    <textarea aria-label={t("profile.bio")} rows={4} value={draft.bio} onChange={set("bio")} placeholder={t("card.about")} className="field resize-none leading-relaxed" />
                 </div>
 
                 <button type="submit" disabled={!changed || badWebsite || saving} className="btn btn-accent mt-5 w-full py-2">
-                    {saving ? "Saving…" : "Save"}
+                    {saving ? t("card.saving") : t("settings.save")}
                 </button>
             </form>
         </Overlay>

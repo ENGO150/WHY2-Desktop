@@ -20,6 +20,7 @@ import { useState } from "react";
 
 import type { AccountAction } from "./types";
 import { Overlay, PanelHeader } from "./components";
+import { t } from "./i18n";
 
 //AN OPEN /account FORM
 export interface AccountBox
@@ -31,10 +32,10 @@ export interface AccountBox
 }
 
 //THE FIELDS PER ACTION, AS IN tui/account.rs
-const LABELS: Record<AccountAction, string[]> =
+const FIELDS: Record<AccountAction, string[]> =
 {
-    passwd: ["Current password", "New password", "Confirm new password"],
-    delete: ["Current password"],
+    passwd: ["current", "new", "confirm"],
+    delete: ["current"],
 };
 
 //THE FORM
@@ -49,7 +50,8 @@ export function AccountDialog(
     close: () => void;
 })
 {
-    const labels = LABELS[box.action];
+    const fieldKeys = FIELDS[box.action];
+    const labels = fieldKeys.map((key) => t(`account.label.${key}`));
     const deleting = box.action === "delete";
 
     const [fields, setFields] = useState(() => labels.map(() => ""));
@@ -73,14 +75,14 @@ export function AccountDialog(
 
         if (empty >= 0)
         {
-            setError(`Enter the ${labels[empty].toLowerCase()}.`);
+            setError(t(`account.missing.${fieldKeys[empty]}`));
             return;
         }
 
         if (!deleting && fields[1] !== fields[2])
         {
             setFields([fields[0], fields[1], ""]);
-            setError("Passwords do not match.");
+            setError(t("account.mismatch"));
             return;
         }
 
@@ -97,22 +99,22 @@ export function AccountDialog(
     };
 
     const status = box.busy
-        ? <span className="text-muted">Waiting for the server…</span>
+        ? <span className="text-muted">{t("login.waiting")}</span>
         : armed
-            ? <span className="text-error">This cannot be undone. Press again to confirm.</span>
+            ? <span className="text-error">{t("acct.delete_warning")}</span>
             : error || box.error
                 ? <span className="text-error">{error || box.error}</span>
                 : null;
 
     return (
-        <Overlay narrow={narrow} width={400} label={deleting ? "Delete account" : "Change password"} cardRef={cardRef} close={close}>
-            <PanelHeader title={deleting ? "Delete account" : "Change password"} close={close} />
+        <Overlay narrow={narrow} width={400} label={deleting ? t("account.title.delete") : t("account.title.passwd")} cardRef={cardRef} close={close}>
+            <PanelHeader title={deleting ? t("account.title.delete") : t("account.title.passwd")} close={close} />
 
             <form onSubmit={onSubmit} className="scroller scroller-quiet flex-1 px-6 pb-6 pt-3">
                 <div className="flex flex-col gap-3">
                     {labels.map((label, index) => (
                         <input
-                            key={label}
+                            key={fieldKeys[index]}
                             id={`account-${index}`}
                             type="password"
                             aria-label={label}
@@ -133,7 +135,7 @@ export function AccountDialog(
                     disabled={box.busy}
                     className={`btn mt-5 w-full py-2.5 ${deleting ? "btn-danger armed" : "btn-accent"}`}
                 >
-                    {deleting ? (armed ? "Delete for good" : "Delete account") : "Change password"}
+                    {deleting ? (armed ? t("acct.delete_for_good") : t("account.title.delete")) : t("account.title.passwd")}
                 </button>
             </form>
         </Overlay>

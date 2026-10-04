@@ -22,16 +22,18 @@ import type { UIState, StoredServer } from "./types";
 import { Icon } from "./icons";
 import type { ServerForm } from "./servers";
 import { serverLabel, AddServerFields, ForgetMenu, ServerRow, useHoldMenu } from "./servers";
+import { t } from "./i18n";
 
 //THE SCREEN WHILE THERE IS NO SESSION: ADD A SERVER, ANSWER ITS QUESTION, OR PICK ONE
 export function LoginScreen(
 {
-    uiState, mode, servers, target, form, setForm, value, setValue, connecting, retrying, errorMsg, hint,
+    uiState, mode, servers, icons, target, form, setForm, value, setValue, connecting, retrying, errorMsg, hint,
     registering, inputRef, narrow, onSubmit, onPick, onAdd, onForget, onCancel,
 }: {
     uiState: UIState;
     mode: "add" | "prompt" | "idle";
     servers: StoredServer[];
+    icons: Record<string, string>;
     target: StoredServer | null;
     form: ServerForm;
     setForm: (form: ServerForm) => void;
@@ -58,14 +60,14 @@ export function LoginScreen(
     const [others, setOthers] = useState(false);
 
     const title = mode === "add"
-        ? "Add server"
-        : { server_select: "WHY2", username_prompt: "Username", password_prompt: registering ? "Create a password" : "Password", connected: "" }[uiState];
+        ? t("connect.add")
+        : { server_select: "WHY2", username_prompt: t("login.label.username"), password_prompt: registering ? t("connect.create_password") : t("login.label.password"), connected: "" }[uiState];
 
-    const button = { server_select: "", username_prompt: "Continue", password_prompt: registering ? "Create account" : "Log in", connected: "" }[uiState];
+    const button = { server_select: "", username_prompt: t("connect.continue"), password_prompt: registering ? t("connect.create_account") : t("login.title.login"), connected: "" }[uiState];
 
     //WHAT IS HAPPENING, WHAT WENT WRONG, OR THE SERVER'S RULES
     const status = connecting
-        ? <span className="text-muted">{retrying || (uiState === "server_select" ? "Connecting…" : "Waiting for the server…")}</span>
+        ? <span className="text-muted">{retrying || (uiState === "server_select" ? t("login.connecting") : t("login.waiting"))}</span>
         : errorMsg
             ? <span className="text-error">{errorMsg}</span>
             : hint ? <span className="text-faint">{hint}</span> : null;
@@ -112,19 +114,19 @@ export function LoginScreen(
                                 disabled={connecting || (mode === "add" ? !form.address : !value)}
                                 className="btn btn-accent mt-5 w-full py-2.5"
                             >
-                                {mode === "add" ? "Connect" : button}
+                                {mode === "add" ? t("connect.connect") : button}
                             </button>
 
                             {/* BACK TO THE LIST, WHERE THERE IS ONE */}
                             {mode === "add" && servers.length > 0 && (
                                 <button type="button" onClick={onCancel} disabled={connecting} className="btn btn-quiet mt-2 w-full py-2.5">
-                                    Back
+                                    {t("connect.back")}
                                 </button>
                             )}
 
                             {mode === "prompt" && servers.length > 1 && !others && (
                                 <button type="button" onClick={() => setOthers(true)} className="btn btn-quiet mt-2 w-full py-2.5">
-                                    Other servers
+                                    {t("connect.other_servers")}
                                 </button>
                             )}
                         </form>
@@ -140,6 +142,7 @@ export function LoginScreen(
                                         server={server}
                                         here={target?.id === server.id && connecting}
                                         connecting={connecting}
+                                        icon={server.icon ? icons[server.icon] : undefined}
                                         bind={bind(server.id)}
                                         onPick={() => { if (held() || connecting) return; close(); onPick(server); }}
                                     />
@@ -154,7 +157,7 @@ export function LoginScreen(
                                     <span className="flex h-8 w-8 items-center justify-center rounded-[9px] border border-dashed border-border-strong">
                                         <Icon name="plus" className="h-4 w-4" />
                                     </span>
-                                    Add server
+                                    {t("connect.add")}
                                 </button>
                             </div>
 

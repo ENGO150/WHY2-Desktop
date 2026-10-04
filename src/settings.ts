@@ -17,14 +17,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import type { AudioDevice, AudioDevices, ChoiceOption, ClientSetting, SettingRow, SettingsRow } from "./types";
+import { t } from "./i18n";
 
-//STARTUP-ONLY ONES IN USE
-export const SAVE_LABEL = "Save";
-export const RESTART_LABEL = "Restart server";
+//SHOWN FOR AN EMPTY input_device/output_device
+export const defaultDevice = () => t("settings.default_device");
 
-export const DEFAULT_DEVICE = "System default"; //SHOWN FOR AN EMPTY input_device/output_device
-
-export const NO_CHOICE = "None"; //SHOWN FOR AN EMPTY auto_connect - THE WINDOW OPENS ON THE LIST AND DIALS NOTHING
+//SHOWN FOR AN EMPTY auto_connect - THE WINDOW OPENS ON THE LIST AND DIALS NOTHING
+export const noChoice = () => t("prefs.none");
 
 export const NO_DEVICES: AudioDevices = { input: [], output: [] };
 
@@ -32,18 +31,19 @@ export const NO_DEVICES: AudioDevices = { input: [], output: [] };
 //ONE THAT IS CONFIGURED BUT CURRENTLY UNPLUGGED STILL DESERVES A ROW
 export function deviceEntries(devices: AudioDevices, id: string, input: boolean): AudioDevice[]
 {
-    const entries: AudioDevice[] = [{ id: "", label: DEFAULT_DEVICE }, ...(input ? devices.input : devices.output)];
+    const entries: AudioDevice[] = [{ id: "", label: defaultDevice() }, ...(input ? devices.input : devices.output)];
 
     if (id && !entries.some((entry) => entry.id === id)) entries.push({ id, label: id });
 
     return entries;
 }
 
-//None PLUS EVERY ANSWER THE BRIDGE SENT WITH THE ROW. A STORED ANSWER THAT IS NOT AMONG THEM IS NOT KEPT
-//THE WAY AN UNPLUGGED DEVICE IS: THE BRIDGE ALREADY ANSWERS None FOR A SERVER THAT HAS BEEN FORGOTTEN
-export function choiceEntries(options: ChoiceOption[]): ChoiceOption[]
+//None, WHERE THE ROW HAS ONE, PLUS EVERY ANSWER THE BRIDGE SENT WITH IT. A STORED ANSWER THAT IS NOT
+//AMONG THEM IS NOT KEPT THE WAY AN UNPLUGGED DEVICE IS: THE BRIDGE ALREADY ANSWERS None FOR A SERVER
+//THAT HAS BEEN FORGOTTEN
+export function choiceEntries(options: ChoiceOption[], none: boolean): ChoiceOption[]
 {
-    return [{ id: "", label: NO_CHOICE }, ...options];
+    return none ? [{ id: "", label: noChoice() }, ...options] : options;
 }
 
 //OUR OWN CONFIG, GROUPED THE WAY THE BRIDGE GROUPED IT
@@ -98,8 +98,8 @@ export function serverRows(settings: SettingRow[]): SettingsRow[]
         } });
     }
 
-    rows.push({ row: "action", label: SAVE_LABEL }); //NOTHING LEAVES THIS BOX UNTIL THIS IS PRESSED
-    rows.push({ row: "action", label: RESTART_LABEL });
+    rows.push({ row: "action", action: "save" }); //NOTHING LEAVES THIS BOX UNTIL THIS IS PRESSED
+    rows.push({ row: "action", action: "restart" });
 
     return rows;
 }

@@ -1,0 +1,266 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "other"
+
+[bridge]
+login_ok = "Giriş başarılı. Komutlar için / yazın."
+identity_rejected = "Sunucu kimliği reddedildi."
+invalid_usage = "Geçersiz kullanım!"
+invalid_command = "Geçersiz komut!"
+invalid_action = "Geçersiz işlem!"
+invalid_role = "Geçersiz rol!"
+invalid_image = "Geçersiz görsel."
+not_connected = "Bağlı değil."
+unknown_setting = "Bilinmeyen ayar!"
+unknown_language = "Bilinmeyen dil!"
+no_voice = "Ses bu platformda kullanılamıyor."
+no_route = "Bu platformda yönlendirilecek bir şey yok."
+usage = "Kullanım: {usage}"
+unavailable = "{command} masaüstü uygulamasında kullanılamıyor."
+clipboard_refused = "Pano metni reddetti."
+screen_decode = "Ekran paylaşımı çözülemiyor: {error}."
+nothing_to_answer = "Yanıtlanacak bir şey yok."
+session_gone = "Oturum zaten sona erdi."
+no_picture_clipboard = "Bu sistemde görsel panosu yok."
+not_a_picture = "Bu bir görsel değil."
+picture_undecodable = "Görsel çözülemedi."
+picture_copy_failed = "Görsel kopyalanamadı."
+nowhere_to_save = "Kaydedilecek yer yok."
+picture_save_failed = "Görsel kaydedilemedi."
+
+[android]
+channel_session = "Oturum"
+channel_messages = "Mesajlar"
+connected = "Bağlı"
+connected_to = "{server} sunucusuna bağlı"
+in_call = "Sesli aramada"
+in_call_on = "{server} üzerinde sesli aramada"
+mic_dialog = "Android mikrofon iletişim kutusunu açmadı. Android'in uygulama ayarlarından WHY2 için mikrofona izin verin."
+mic_unreachable = "WHY2 mikrofon için Android'e ulaşamadı. Android'in uygulama ayarlarından WHY2 için mikrofona izin verin."
+mic_refused = "Mikrofon reddedildi. Android'in uygulama ayarlarından WHY2 için izin verin."
+mic_needed = "Arama için mikrofon gerekiyor."
+save_refused = "Android görseli kaydetmedi."
+unreachable = "WHY2 Android'e ulaşamadı."
+
+[tray]
+open = "WHY2'yi aç"
+quit = "WHY2'den çık"
+
+[window]
+minimize = "Simge durumuna küçült"
+maximize = "Büyüt"
+restore = "Geri yükle"
+close = "Kapat"
+
+[connect]
+add = "Sunucu ekle"
+connect = "Bağlan"
+back = "Geri"
+continue = "Devam"
+create_account = "Hesap oluştur"
+create_password = "Bir parola oluşturun"
+other_servers = "Diğer sunucular"
+password_optional = "Parola (isteğe bağlı)"
+switch = "Sunucu değiştir"
+
+[trust]
+unknown = "Bu sunucuya güvenilsin mi?"
+changed = "Sunucu anahtarı değişti"
+type_to_replace = "Anahtarı değiştirmek için \"{word}\" yazın"
+cancel = "İptal"
+replace = "Anahtarı değiştir"
+trust = "Güven"
+
+[acct]
+delete_warning = "Bu işlem geri alınamaz. Onaylamak için tekrar basın."
+delete_for_good = "Kalıcı olarak sil"
+send_failed = "İstek gönderilemedi."
+
+[chat]
+today = "Bugün"
+yesterday = "Dün"
+private = "özel"
+show = "Göster"
+retry = "Yeniden dene"
+unavailable = "kullanılamıyor"
+picture = "Görsel"
+message_number = "Mesaj #{id}"
+copied = "Mesaj kopyalandı."
+copy_failed = "Mesaj kopyalanamadı."
+image_copied = "Görsel kopyalandı."
+image_saved = "Görsel kaydedildi"
+saved_to = "{path} konumuna kaydedildi"
+images = "Görseller"
+online = "çevrimiçi"
+offline = "çevrimdışı"
+join_call = "Aramaya katıl"
+leave_call = "Aramadan ayrıl"
+members = "Üyeler"
+back = "Sohbete dön (Esc)"
+screen_of = "{username} kullanıcısının ekranı"
+decode_webview = "Pencere H.264 akışını kendisi çözüyor"
+decode_bridge = "Bu webview'de H.264 çözücü yok; kareler onun yerine çözülüp görsel olarak gönderiliyor"
+stop_watching = "İzlemeyi bırak"
+editing = "Düzenleniyor"
+cancel_edit = "Düzenlemeyi iptal et"
+cancel_reply = "Yanıtı iptal et"
+placeholder = "{target} için mesaj"
+attach = "Dosya ekle"
+send_picture = "Görsel gönder"
+send = "Gönder"
+
+[chat.online_count]
+other = "{count} çevrimiçi"
+
+[chat.transfer]
+uploading = "Yükleniyor · {size} boyutunun %{percent} kadarı"
+downloading = "İndiriliyor · {size} boyutunun %{percent} kadarı"
+uploaded = "Yüklendi · {size}"
+downloaded = "İndirildi · {size}"
+failed = "Başarısız"
+avatar = "Profil resmi"
+icon = "Sunucu simgesi"
+
+[menu]
+heart = "Kalp"
+unheart = "Kalbi kaldır"
+reply = "Yanıtla"
+copy = "Kopyala"
+copy_text = "Metni kopyala"
+edit = "Düzenle"
+delete_message = "Mesajı sil"
+you = "Sen"
+copy_image = "Görseli kopyala"
+save_image = "Görseli kaydet"
+delete_image = "Görseli sil"
+remove_server = "Sunucuyu kaldır"
+view_profile = "Profili görüntüle"
+send_message = "Mesaj gönder"
+kick = "At"
+kick_confirm = "Atmak için tekrar basın"
+ban = "Yasakla"
+ban_confirm = "Yasaklamak için tekrar basın"
+banip = "IP'yi yasakla"
+banip_confirm = "IP'yi yasaklamak için tekrar basın"
+set_role = "Rol ata"
+make_role = "{role} yapılsın mı?"
+
+[menu.hearts]
+other = "{count} kalp"
+
+[card]
+of = "{username} profili"
+you = "sen"
+loading = "Yükleniyor…"
+message = "Mesaj"
+edit = "Profili düzenle"
+change_picture = "Resmi değiştir"
+uploading = "Yükleniyor…"
+remove = "Kaldır"
+bad_website = "http:// veya https:// ile başlamalı"
+about = "Hakkında"
+saving = "Kaydediliyor…"
+name_color = "Ad rengi"
+message_color = "Mesaj rengi"
+not_set = "Ayarlanmadı"
+
+[members]
+in_channel = "{username}, #{channel} kanalında"
+
+[side]
+new_channel = "Yeni kanal"
+channel_name = "Kanal adı"
+direct = "Doğrudan mesajlar"
+close_direct = "Sohbeti kapat"
+earpiece = "Ahizeden çal"
+speaker = "Hoparlörden çal"
+mute = "Sessize al"
+unmute = "Sesi aç"
+join = "Katıl"
+leave = "Ayrıl"
+share_other = "Başka bir ekran paylaş"
+sharing = "Ekran paylaşılıyor"
+sharing_monitor = "{monitor} paylaşılıyor"
+mic_mute = "Mikrofonu kapat"
+mic_unmute = "Mikrofonu aç"
+disconnect = "Bağlantıyı kes"
+
+[files]
+title = "Dosyalar"
+refresh = "Yenile"
+search = "Ara"
+no_results = "Sonuç yok"
+none = "Dosya yok"
+download = "{name} dosyasını indir"
+
+[files.kind]
+image = "Görsel"
+audio = "Ses"
+video = "Video"
+archive = "Arşiv"
+code = "Kod"
+document = "Belge"
+file = "Dosya"
+extension = "{extension} dosyası"
+
+[screens]
+title = "Ekranlar"
+live = "Canlı"
+nobody = "Kimse paylaşmıyor"
+you = "{username} (sen)"
+stop = "Durdur"
+watch = "İzle"
+share = "Paylaş"
+no_monitors = "Ekran bulunamadı"
+sharing = "Paylaşılıyor"
+
+[prefs]
+appearance = "Görünüm"
+icon = "Sunucu simgesi"
+icon_change = "Simgeyi değiştir"
+general = "Genel"
+account = "Hesap"
+server = "Sunucu"
+unsaved = "Kaydedilmemiş değişiklikler"
+edited = "Düzenlendi"
+restart_badge = "Yeniden başlatma"
+restart_warning = "Herkesin bağlantısı kesilecek."
+restart_now = "Şimdi yeniden başlat"
+none = "Hiçbiri"
+
+[prefs.section]
+startup = "Başlangıç"
+
+[prefs.row]
+auto_connect = "Otomatik olarak bağlan"
+
+[themes]
+why2 = "Siyah"
+dark = "Koyu"
+midnight = "Gece yarısı"
+forest = "Orman"
+plum = "Erik"
+mocha = "Moka"
+light = "Açık"
+paper = "Kâğıt"
+sky = "Gökyüzü"
+mint = "Nane"
+rose = "Gül"
+lavender = "Lavanta"

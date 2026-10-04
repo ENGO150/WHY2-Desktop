@@ -19,7 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { invoke } from "@tauri-apps/api/core";
 import { applyTheme, cachedTheme } from "./themes";
+import { setLocale, type Locale } from "./i18n";
 
 //LAST PALETTE, BEFORE THE FIRST FRAME
 applyTheme(cachedTheme());
@@ -49,11 +51,15 @@ document.addEventListener("contextmenu", (event) =>
 
 const boot = document.getElementById("boot");
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-        <App />
-    </React.StrictMode>,
-);
+//THE LANGUAGE BEFORE THE FIRST FRAME, SO NOTHING IS DRAWN AS A KEY
+invoke<Locale>("get_locale").then(setLocale).catch(() => {}).finally(() =>
+{
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+        <React.StrictMode>
+            <App />
+        </React.StrictMode>,
+    );
+});
 
 //IT STANDS OVER THE WINDOW RATHER THAN INSIDE IT, SO TAKING IT DOWN IS THIS AND NOTHING ELSE
 if (boot)

@@ -37,6 +37,7 @@ use why2_chat::
         client::{ self, ClientEvent },
         codes::
         {
+            PacketCode,
             SettingValue,
             BanEntry,
             OnlineUser,
@@ -49,10 +50,12 @@ use why2_chat::
     },
 };
 
+use crate::{ tr, trn };
 use crate::types::*;
 use crate::state::*;
 use crate::emit::*;
-use crate::net::{ request_picture, picture_arrived };
+use crate::servers;
+use crate::net::{ request_picture, picture_arrived, send_packet };
 use crate::picture;
 use crate::settings::client_settings;
 
@@ -92,7 +95,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::Connected(server) =>
         {
-            say(app, ChatMessage::ok(format!("Successfully connected to {server}.")));
+            say(app, ChatMessage::ok(tr!("event.connected", server_name = &server)));
 
             //THE SESSION IS HELD FROM THE MOMENT THERE IS A SOCKET, WHICH IS BEFORE ANYBODY HAS SAID WHAT
             //THE SERVER IS CALLED - SO THE NOTIFICATION STARTS OUT NAMING THE ADDRESS AND IS REDRAWN HERE
@@ -104,7 +107,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::FirstUser =>
         {
-            say(app, ChatMessage::notice("You are the first user to register, owner role has been granted to you."));
+            say(app, ChatMessage::notice(tr!("event.first_user")));
         },
 
         ClientEvent::Authenticated(role) =>
@@ -112,13 +115,19 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             *state.role.lock().unwrap() = role;
 
             emit(app, UiEvent::Authenticated { role: role.to_string() });
-            say(app, ChatMessage::ok("Login successful. Type / for commands."));
+            say(app, ChatMessage::ok(tr!("bridge.login_ok")));
 
             //THE SERVER BACKDATES ITS OWN CLOCK BY min_message_delay WHEN IT AUTHENTICATES SOMEBODY, SO
             //THE FIRST PACKET AFTER LOGIN IS FREE BY CONSTRUCTION - OURS IS BACKDATED TO MATCH, WHICH IS
             //WHAT LETS THE FIRST THING THE USER DOES GO OUT AT ONCE. THE ROSTER IS NOT ONE OF THOSE ANY
             //MORE: THE SERVER SENDS IT UNASKED THE MOMENT IT LETS SOMEBODY IN
             *state.last_sent.lock().unwrap() = Instant::now() - ROSTER_GAP;
+
+            //THE SERVER'S PICTURE IS ASKED FOR, NEVER PUSHED
+            if let Some(write_stream) = state.write_stream.lock().await.clone()
+            {
+                send_packet(&state, &write_stream, PacketCode::ServerIconRequest).await;
+            }
         },
 
         //A ROLE WAS SET, ON ANYBODY
@@ -148,8 +157,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                     .named(color).with_message_id(message_id).at(timestamp).picture(image)),
 
                 //IT DECODED AND STILL WOULD NOT ENCODE, WHICH IS THE SAME NEWS TO EVERYBODY LOOKING AT IT
-                None => say(app, ChatMessage::error(
-                    format!("{username} sent an image that could not be displayed ({filename})."))),
+                None => say(app, ChatMessage::error(tr!("event.image_failed", username, filename))),
             }
         },
 
@@ -188,7 +196,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //IT PASSED THE SERVER'S HEADER CHECK AND STILL WOULD NOT DECODE, SO SAY SO WHERE IT WOULD HAVE BEEN
         ClientEvent::ImageFailed(username, filename, ..) =>
         {
-            say(app, ChatMessage::error(format!("{username} sent an image that could not be displayed ({filename}).")));
+            say(app, ChatMessage::error(tr!("event.image_failed", username, filename)));
         },
 
         //THE ANSWER TO A CAPTION SOMEBODY ASKED TO SEE - OR THE LACK OF ONE, WHICH THE CAPTION THEN SAYS.
@@ -207,6 +215,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 Some(image) => picture::encode(image, String::new(), Some(hash)).await,
                 None => None,
             };
+
+            //THE SERVER'S PICTURE IS KEPT FOR THE LIST
+            let icon = *state.server_icon.lock().unwrap() == Some(hash);
+
+            if let Some(source) = image.as_ref().and_then(|image| image.source.as_deref()).filter(|_| icon)
+            {
+                servers::store_icon(&hex, source);
+            }
 
             emit(app, UiEvent::ImageData { hash: hex, image });
         },
@@ -247,7 +263,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                     .replying(reply).hearted(hearts).reworded(edited),
             }).collect::<Vec<ChatMessage>>();
 
-            if !older { say(app, ChatMessage::title(format!("Message history ({kept}):"))); }
+            if !older { say(app, ChatMessage::title(tr!("event.history", count = kept))); }
 
             emit(app, UiEvent::History { messages, start, more, older });
         },
@@ -278,7 +294,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 }
             };
 
-            if saved { say(app, ChatMessage::ok("Profile saved.")); }
+            if saved { say(app, ChatMessage::ok(tr!("event.profile_saved"))); }
 
             //THE PICTURE IS FETCHED LIKE A CAPTION'S, ONCE A SESSION
             let fresh = profile.avatar.filter(|hash| state.avatars.lock().unwrap().insert(*hash));
@@ -294,7 +310,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //A PASSWORD CHANGE CAME BACK
         ClientEvent::Passwd(ok) =>
         {
-            if ok { say(app, ChatMessage::ok("Password changed.")); }
+            if ok { say(app, ChatMessage::ok(tr!("event.password_changed"))); }
 
             emit(app, UiEvent::Passwd { ok });
         },
@@ -302,17 +318,45 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //AN ACCOUNT DELETION CAME BACK, THE SERVER HANGS UP NEXT
         ClientEvent::AccountDeleted(ok) =>
         {
-            if ok { *state.disconnect_reason.lock().unwrap() = Some(String::from("Account deleted.")); }
+            if ok { *state.disconnect_reason.lock().unwrap() = Some(tr!("event.account_deleted")); }
 
             emit(app, UiEvent::AccountDeleted { ok });
         },
 
-        //OUR AVATAR COULD NOT BE CUT
+        //OUR AVATAR OR THE SERVER'S ICON COULD NOT BE CUT
         ClientEvent::AvatarFailed(error) => popup(app, error),
 
         //THE SERVER STORED A COLOR. IT KEEPS THEM NOW, SO THERE IS NOTHING HERE TO WRITE DOWN - AND
         //NOTHING IN THE PANE CHANGES COLOR FOR IT, EVERY LINE KEEPING THE COLORS IT WAS SAID IN
-        ClientEvent::Colors => popup(app, "Color set successfully."),
+        ClientEvent::Colors(None) => popup(app, tr!("event.color_set")),
+
+        //OUR COLORS AT LOGIN, FOR THE PROFILE EDITOR
+        ClientEvent::Colors(Some(colors)) =>
+        {
+            emit(app, UiEvent::OwnColors { username_color: colors.username_color, message_color: colors.message_color });
+        },
+
+        //THE SERVER'S PICTURE, FETCHED LIKE AN AVATAR
+        ClientEvent::ServerIcon(hash, save) =>
+        {
+            if save
+            {
+                say(app, ChatMessage::ok(match hash
+                {
+                    Some(_) => tr!("event.server_icon_set"),
+                    None => tr!("event.server_icon_removed"),
+                }));
+            }
+
+            *state.server_icon.lock().unwrap() = hash;
+
+            if let (Some(hash), Some(events)) = (hash, state.events.lock().unwrap().clone())
+            {
+                client::image::fetch_image(hash, events);
+            }
+
+            emit(app, UiEvent::ServerIcon { hash: hash.as_ref().map(picture::hex) });
+        },
 
         ClientEvent::ServerSay(message) =>
         {
@@ -324,7 +368,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //AND EVERYBODY STARTS IN THE LOBBY
         ClientEvent::Join(username, username_color, id, device, role) =>
         {
-            say(app, ChatMessage::ok(format!("{username} connected.")).from_server());
+            say(app, ChatMessage::ok(tr!("event.joined", username = &username)).from_server());
 
             emit(app, UiEvent::UserJoined { user: OnlineUserInfo
             {
@@ -341,7 +385,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
         ClientEvent::Leave(username, id, registered) =>
         {
-            say(app, ChatMessage::system(format!("{username} disconnected.")).from_server());
+            say(app, ChatMessage::system(tr!("event.left", username)).from_server());
             emit(app, UiEvent::UserLeft { id, registered });
 
             //Leave IS BROADCAST TO EVERY CHANNEL AND NAMES THE ID, SO IT IS ALSO THE ONLY THING THAT
@@ -358,7 +402,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             {
                 let here = options::get_channel();
 
-                block(app, format!("Online clients ({})", users.len()), users.iter().map(|user| BlockRow
+                block(app, heading(tr!("event.list.title", count = users.len())), users.iter().map(|user| BlockRow
                 {
                     depth: 0,
                     id: Some(user.id),
@@ -411,13 +455,13 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //IS LIFTED, SO THE ANSWER IS THE NEW LIST RATHER THAN AN 'OK' OVER A STALE ONE
         ClientEvent::ServerBans(users, ips) =>
         {
-            if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::system("No bans.")) }
+            if users.is_empty() && ips.is_empty() { return say(app, ChatMessage::system(tr!("event.bans.none"))) }
 
             let total = users.len() + ips.len();
             let mut rows = Vec::new();
 
             //TWO SECTIONS, EACH NUMBERED FROM ITS OWN ZERO - THE HEADING NAMES THE ACTION THAT LIFTS IT
-            for (name, bans) in [("users", users), ("addresses", ips)]
+            for (name, bans) in [(tr!("event.bans.users"), users), (tr!("event.bans.addresses"), ips)]
             {
                 if bans.is_empty() { continue }
 
@@ -425,7 +469,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 {
                     depth: 0,
                     id: None,
-                    text: name.to_string(),
+                    text: name,
                     note: None,
                     color: None,
                     device: None,
@@ -444,14 +488,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 }));
             }
 
-            block(app, format!("Bans ({total})"), rows);
+            block(app, heading(tr!("event.bans.title", count = total)), rows);
         },
 
         //server.toml CAME BACK - EITHER THE COPY THE BOX ASKED FOR, OR THE ONE THE SERVER JUST STORED.
         //THE ANSWER TO A SAVE IS THE CONFIG AS IT ACTUALLY STANDS, SO A ROW IT REFUSED SNAPS BACK
         ClientEvent::ServerSettings(settings, saved) =>
         {
-            if saved { say(app, ChatMessage::ok("Server settings saved.")) }
+            if saved { say(app, ChatMessage::ok(tr!("event.server_settings_saved"))) }
 
             let settings = settings.into_iter().map(|ServerSetting { key, value, section, description, restart }| SettingRow
             {
@@ -498,13 +542,13 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //REFUSING THE CHECK JUST ENDS THE SESSION
         ClientEvent::TofuError =>
         {
-            emit(app, UiEvent::Disconnected { reason: Some(String::from("Server identity rejected.")), said: false });
+            emit(app, UiEvent::Disconnected { reason: Some(tr!("bridge.identity_rejected")), said: false });
         },
 
         //THE SERVER WENT AWAY BETWEEN THE TWO CONNECTIONS - THE KEY IS PINNED NOW, THE SOCKET IS NOT
         ClientEvent::ReconnectFailed =>
         {
-            emit(app, UiEvent::Disconnected { reason: Some(String::from("Reconnecting to the server failed.")), said: false });
+            emit(app, UiEvent::Disconnected { reason: Some(tr!("event.reconnect_failed")), said: false });
         },
 
         //UNLIKE TofuError THERE WAS NO PROMPT TO EXPLAIN ITSELF, SO THE REASON GOES BACK WITH THE BOX
@@ -512,9 +556,8 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::TofuSkip(hash) =>
         {
-            say(app, ChatMessage::error("SECURITY WARNING: UNKNOWN SERVER IDENTITY"));
-            say(app, ChatMessage::notice("The server's identity key cannot be verified due to disabled ToFU \
-                verification. If you don't recognize the identity key below, disconnect immediately!"));
+            say(app, ChatMessage::error(tr!("event.tofu_skip.title")));
+            say(app, ChatMessage::notice(tr!("event.tofu_skip.body")));
             say(app, ChatMessage::notice(hash));
         },
 
@@ -545,14 +588,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         ClientEvent::UploadDone(uid, _) | ClientEvent::Downloaded(uid, _) => transfer_done(app, &state, uid, true),
         ClientEvent::DownloadFailed(uid, _) => transfer_done(app, &state, uid, false),
 
-        ClientEvent::UploadLimit => popup(app, "Maximum concurrent uploads reached!"),
+        ClientEvent::UploadLimit => popup(app, tr!("event.upload_limit")),
 
         ClientEvent::Uploaded(username, filename) =>
         {
-            say(app, ChatMessage::plain(format!("{username} uploaded file \"{filename}\".")).from_server());
+            say(app, ChatMessage::plain(tr!("event.uploaded", username, filename)).from_server());
         },
 
-        ClientEvent::Muted => say(app, ChatMessage::notice("You have been muted by a moderator.")),
+        ClientEvent::Muted => say(app, ChatMessage::notice(tr!("event.muted"))),
 
         ClientEvent::Deleted(message_id) => emit(app, UiEvent::Deleted { message_id }),
 
@@ -603,7 +646,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         {
             state.voice_enabled.store(true, Ordering::Relaxed);
 
-            say(app, ChatMessage::ok("Voice enabled."));
+            say(app, ChatMessage::ok(tr!("event.voice_enabled")));
             emit_voice(app);
         },
 
@@ -614,7 +657,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             //ONLY OUR OWN HALF OF THE PANEL GOES - THE OTHERS ARE STILL IN VOICE, WE JUST STOPPED HEARING THEM
             state.voice_activity.lock().unwrap().clear();
 
-            say(app, ChatMessage::system("Voice disabled."));
+            say(app, ChatMessage::system(tr!("event.voice_disabled")));
             emit_voice(app);
         },
 
@@ -622,7 +665,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //THE BOX ARE NOW BEHIND WHAT client.toml HOLDS - THEY ARE SENT AGAIN RATHER THAN LEFT LYING
         ClientEvent::VoiceDeviceFailed =>
         {
-            say(app, ChatMessage::error("Switching the audio device failed - the previous one is still in use."));
+            say(app, ChatMessage::error(tr!("event.device_failed")));
 
             //ON A PHONE THE DEVICE THAT REFUSED IS USUALLY THE ONE THE ROUTE BUTTON JUST ASKED FOR, AND
             //THE CALL IS STILL COMING OUT OF THE OTHER SPEAKER - SO THE BUTTON GOES BACK TO SAYING SO
@@ -637,30 +680,30 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::VoiceHandshakeFailed =>
         {
-            say(app, ChatMessage::error("The server never answered the voice handshake - is UDP getting through?"));
+            say(app, ChatMessage::error(tr!("event.voice_handshake_failed")));
         },
 
         ClientEvent::Socks5Voice =>
         {
-            say(app, ChatMessage::error("Voice chat cannot be enabled while using SOCKS5."));
+            say(app, ChatMessage::error(tr!("event.socks5_voice")));
         },
         //THE SHARE ITSELF IS THE CRATE'S: IT CAPTURES, ENCODES AND SENDS, AND THE SERVER ANSWERS THE
         //TOGGLE. ALL THAT IS LEFT HERE IS TO SAY WHETHER IT IS RUNNING - WHICH MONITOR IT IS POINTED AT
         //IS THE Screens WINDOW'S TO BADGE, AND THE TUI SAYS NO MORE THAN THIS EITHER
         ClientEvent::Screen(enabled) =>
         {
-            say(app, ChatMessage::ok(format!("{} screen sharing.", match enabled
+            say(app, ChatMessage::ok(match enabled
             {
-                true => "Started",
-                false => "Stopped",
-            })));
+                true => tr!("event.screen.started"),
+                false => tr!("event.screen.stopped"),
+            }));
 
             emit_screen(app);
         },
 
         ClientEvent::ScreenFailed(reason) =>
         {
-            say(app, ChatMessage::error(format!("Screen sharing failed: {reason}.")));
+            say(app, ChatMessage::error(tr!("event.screen.failed", reason)));
 
             emit_screen(app);
         },
@@ -679,7 +722,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //PICTURE IT IS ABOUT TO BE DRAWING, SO IT CAN ASK FOR THE FRAMES AND MAKE ROOM FOR THEM
         ClientEvent::Attach(username) =>
         {
-            say(app, ChatMessage::plain(format!("Attached {username}'s screen sharing.")));
+            say(app, ChatMessage::plain(tr!("event.screen.attach", username = &username)));
 
             emit(app, UiEvent::Watching { username: Some(username) });
         },
@@ -689,7 +732,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         {
             state.screen_channel.lock().unwrap().take();
 
-            say(app, ChatMessage::plain(format!("Deattached {username}'s screen sharing.")));
+            say(app, ChatMessage::plain(tr!("event.screen.deattach", username)));
 
             emit(app, UiEvent::Watching { username: None });
         },
@@ -701,7 +744,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::notice(format!("{username} started screen sharing.")).from_server());
+                say(app, ChatMessage::notice(tr!("event.screen.peer_started", username)).from_server());
             }
         },
 
@@ -709,7 +752,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         {
             if !is_us(&state, &username)
             {
-                say(app, ChatMessage::system(format!("{username} stopped screen sharing.")).from_server());
+                say(app, ChatMessage::system(tr!("event.screen.peer_stopped", username)).from_server());
             }
         },
 
@@ -718,16 +761,16 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //SINCE THIS IS NOT AN ANNOUNCEMENT TO A ROOM
         ClientEvent::Attached(username) =>
         {
-            say(app, ChatMessage::plain(format!("{username} attached your screen sharing.")));
+            say(app, ChatMessage::plain(tr!("event.screen.attached", username)));
         },
 
         ClientEvent::Deattached(username) =>
         {
-            say(app, ChatMessage::plain(format!("{username} deattached your screen sharing.")));
+            say(app, ChatMessage::plain(tr!("event.screen.deattached", username)));
         },
 
-        ClientEvent::SpamWarning => popup(app, "Slow down! You're sending messages too quickly."),
-        ClientEvent::InvalidUsage => popup(app, "Invalid command usage!"),
+        ClientEvent::SpamWarning => popup(app, tr!("event.spam_warning")),
+        ClientEvent::InvalidUsage => popup(app, tr!("bridge.invalid_usage")),
         ClientEvent::DisabledFeature =>
         {
             //A QUIET PROFILE ASK WAS REFUSED BEFORE ANY CAME BACK - THE SERVER KEEPS NONE
@@ -744,7 +787,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                     emit(app, UiEvent::ProfilesDisabled);
                 },
 
-                false => popup(app, "Server has disabled the feature you requested."),
+                false => popup(app, tr!("event.disabled_feature")),
             }
         },
 
@@ -752,25 +795,22 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //FOR THE Quit THAT FOLLOWS AND SAID ON THE CONNECT SCREEN, WHICH IS WHERE IT WILL BE READ
         ClientEvent::IncompatibleVersion(version, server_version) =>
         {
-            *state.disconnect_reason.lock().unwrap() =
-                Some(format!("Incompatible version! ({version}/{server_version})"));
+            *state.disconnect_reason.lock().unwrap() = Some(tr!("event.incompatible_version", version, server_version));
         },
 
         ClientEvent::VersionMismatch(version, server_version) =>
         {
-            say(app, ChatMessage::notice(format!("Version mismatch - some features may not work \
-                ({version}/{server_version})")));
+            say(app, ChatMessage::notice(tr!("event.version_mismatch", client_version = version, server_version)));
         },
 
         ClientEvent::UnsafeVersion(newer_versions, version, newest_version) =>
         {
-            say(app, ChatMessage::notice(format!("This release could be unsafe! You are {newer_versions} \
-                versions behind! ({version}/{newest_version})")));
+            say(app, ChatMessage::notice(trn!("event.unsafe_version", newer_versions, current_version = version, newest_version)));
         },
 
         ClientEvent::VersionFailed =>
         {
-            say(app, ChatMessage::notice("Fetching versions failed, this release could be unsafe!"));
+            say(app, ChatMessage::notice(tr!("event.version_failed")));
         },
 
         //THE SOCKET IS GONE, BUT THE APP IS NOT: THE CONNECT BOX COMES BACK SO ANOTHER SERVER (OR THE
@@ -786,7 +826,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 {
                     true => None,
                     false => Some(state.disconnect_reason.lock().unwrap().take()
-                        .unwrap_or_else(|| String::from("Server quit communication."))),
+                        .unwrap_or_else(|| tr!("event.server_quit"))),
                 },
 
                 said,
@@ -832,10 +872,11 @@ fn transfer(app: &AppHandle, uid: u64, filename: String, total: u64, upload: boo
 {
     app.state::<AppState>().transfers.lock().unwrap().insert(uid, (total, 0));
 
-    //A CUT AVATAR IS NAMED AFTER ITS HASH
-    let avatar = upload && filename.starts_with(consts::AVATAR_TEMP_PREFIX);
+    //A CUT AVATAR IS NAMED AFTER ITS HASH, AND SO IS THE SERVER'S ICON
+    let cut = upload && filename.starts_with(consts::AVATAR_TEMP_PREFIX);
+    let icon = cut && app.state::<AppState>().icon_cut.lock().unwrap().as_deref() == Some(filename.as_str());
 
-    emit(app, UiEvent::Transfer { transfer: TransferInfo { uid: uid.to_string(), filename, total, upload, image, avatar } });
+    emit(app, UiEvent::Transfer { transfer: TransferInfo { uid: uid.to_string(), filename, total, upload, image, avatar: cut && !icon, icon } });
 }
 
 //AND ENDING, WELL OR NOT
@@ -854,6 +895,12 @@ fn percent(done: u64, total: u64) -> u64
         0 => 100,
         total => (done.min(total) * 100) / total,
     }
+}
+
+//A BLOCK'S TITLE, ITS TRAILING COLON OFF
+fn heading(title: String) -> String
+{
+    title.trim_end_matches([':', '：']).to_owned()
 }
 
 //WHETHER A NAME THE SERVER BROADCAST IS OUR OWN. THE SHARE NOTIFICATIONS GO TO THE WHOLE SERVER, AND

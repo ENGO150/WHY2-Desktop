@@ -20,6 +20,7 @@ import type { FileOwner, ClientConfig } from "./types";
 import { Icon } from "./icons";
 import { Avatar, Overlay, PanelHeader } from "./components";
 import { fileKind } from "./format";
+import { t } from "./i18n";
 
 //WHAT IS UP FOR DOWNLOAD; A ROW SENDS THE SAME /download TYPING WOULD
 export function FilesBox(
@@ -51,11 +52,11 @@ export function FilesBox(
         .filter((owner) => owner.files.length > 0);
 
     return (
-        <Overlay narrow={narrow} width={500} label="Files" cardRef={filesRef} close={close}>
+        <Overlay narrow={narrow} width={500} label={t("files.title")} cardRef={filesRef} close={close}>
             <PanelHeader
-                title="Files"
+                title={t("files.title")}
                 aside={(
-                    <button type="button" title="Refresh" aria-label="Refresh" onClick={refresh} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-hover hover:text-text">
+                    <button type="button" title={t("files.refresh")} aria-label={t("files.refresh")} onClick={refresh} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-hover hover:text-text">
                         <Icon name="refresh" className="h-[18px] w-[18px]" />
                     </button>
                 )}
@@ -70,7 +71,7 @@ export function FilesBox(
                         autoFocus={!narrow}
                         value={filter}
                         onChange={(event) => setFilter(event.currentTarget.value)}
-                        placeholder="Search"
+                        placeholder={t("files.search")}
                         className="field pl-10"
                         spellCheck={false}
                     />
@@ -80,7 +81,7 @@ export function FilesBox(
             <div className="scroller min-h-[200px] flex-1 px-3 pb-5">
                 {shown.length === 0 && (
                     <div className="px-4 py-16 text-center text-[14px] text-faint">
-                        {needle ? "No results" : "No files"}
+                        {needle ? t("files.no_results") : t("files.none")}
                     </div>
                 )}
 
@@ -100,7 +101,7 @@ export function FilesBox(
                                 <button
                                     key={file.id}
                                     type="button"
-                                    title={`Download ${file.name}`}
+                                    title={t("files.download", { name: file.name })}
                                     onClick={() => send(`/download ${owner.id} ${file.id}`)}
                                     className="group flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-hover"
                                 >

@@ -1,0 +1,266 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "other"
+
+[bridge]
+login_ok = "ログインしました。/ でコマンドを表示します。"
+identity_rejected = "サーバーの身元を拒否しました。"
+invalid_usage = "使い方が正しくありません！"
+invalid_command = "無効なコマンドです！"
+invalid_action = "無効な操作です！"
+invalid_role = "無効なロールです！"
+invalid_image = "無効な画像です。"
+not_connected = "接続されていません。"
+unknown_setting = "不明な設定です！"
+unknown_language = "不明な言語です！"
+no_voice = "このプラットフォームでは音声を利用できません。"
+no_route = "このプラットフォームでは切り替える出力がありません。"
+usage = "使い方: {usage}"
+unavailable = "{command} はデスクトップアプリでは利用できません。"
+clipboard_refused = "クリップボードがテキストを受け付けませんでした。"
+screen_decode = "画面共有をデコードできません: {error}。"
+nothing_to_answer = "応答するものがありません。"
+session_gone = "セッションはすでに終了しています。"
+no_picture_clipboard = "このシステムには画像用のクリップボードがありません。"
+not_a_picture = "画像ではありません。"
+picture_undecodable = "画像をデコードできませんでした。"
+picture_copy_failed = "画像のコピーに失敗しました。"
+nowhere_to_save = "保存先がありません。"
+picture_save_failed = "画像の保存に失敗しました。"
+
+[android]
+channel_session = "セッション"
+channel_messages = "メッセージ"
+connected = "接続中"
+connected_to = "{server} に接続中"
+in_call = "音声通話中"
+in_call_on = "{server} で音声通話中"
+mic_dialog = "Android がマイクのダイアログを開きませんでした。Android のアプリ設定で WHY2 のマイクを許可してください。"
+mic_unreachable = "WHY2 がマイクの許可を求めるために Android に接続できませんでした。Android のアプリ設定で WHY2 のマイクを許可してください。"
+mic_refused = "マイクが拒否されました。Android のアプリ設定で WHY2 に許可してください。"
+mic_needed = "通話にはマイクが必要です。"
+save_refused = "Android が画像を保存しませんでした。"
+unreachable = "WHY2 が Android に接続できませんでした。"
+
+[tray]
+open = "WHY2 を開く"
+quit = "WHY2 を終了"
+
+[window]
+minimize = "最小化"
+maximize = "最大化"
+restore = "元に戻す"
+close = "閉じる"
+
+[connect]
+add = "サーバーを追加"
+connect = "接続"
+back = "戻る"
+continue = "続ける"
+create_account = "アカウントを作成"
+create_password = "パスワードを作成"
+other_servers = "ほかのサーバー"
+password_optional = "パスワード（任意）"
+switch = "サーバーを切り替え"
+
+[trust]
+unknown = "このサーバーを信頼しますか？"
+changed = "サーバーの鍵が変更されました"
+type_to_replace = "鍵を置き換えるには「{word}」と入力してください"
+cancel = "キャンセル"
+replace = "鍵を置き換える"
+trust = "信頼する"
+
+[acct]
+delete_warning = "元に戻せません。もう一度押して確定します。"
+delete_for_good = "完全に削除"
+send_failed = "リクエストを送信できませんでした。"
+
+[chat]
+today = "今日"
+yesterday = "昨日"
+private = "非公開"
+show = "表示"
+retry = "再試行"
+unavailable = "利用不可"
+picture = "画像"
+message_number = "メッセージ #{id}"
+copied = "メッセージをコピーしました。"
+copy_failed = "メッセージをコピーできませんでした。"
+image_copied = "画像をコピーしました。"
+image_saved = "画像を保存しました"
+saved_to = "{path} に保存しました"
+images = "画像"
+online = "オンライン"
+offline = "オフライン"
+join_call = "通話に参加"
+leave_call = "通話から退出"
+members = "メンバー"
+back = "会話に戻る（Esc）"
+screen_of = "{username} の画面"
+decode_webview = "ウィンドウ自身が H.264 ストリームをデコードしています"
+decode_bridge = "この webview には H.264 デコーダーがないため、フレームを代わりにデコードして画像として送っています"
+stop_watching = "視聴をやめる"
+editing = "編集中"
+cancel_edit = "編集をキャンセル"
+cancel_reply = "返信をキャンセル"
+placeholder = "{target} にメッセージ"
+attach = "ファイルを添付"
+send_picture = "画像を送信"
+send = "送信"
+
+[chat.online_count]
+other = "{count} 人がオンライン"
+
+[chat.transfer]
+uploading = "アップロード中 · {size} の {percent}%"
+downloading = "ダウンロード中 · {size} の {percent}%"
+uploaded = "アップロード完了 · {size}"
+downloaded = "ダウンロード完了 · {size}"
+failed = "失敗"
+avatar = "プロフィール画像"
+icon = "サーバーアイコン"
+
+[menu]
+heart = "ハート"
+unheart = "ハートを外す"
+reply = "返信"
+copy = "コピー"
+copy_text = "テキストをコピー"
+edit = "編集"
+delete_message = "メッセージを削除"
+you = "あなた"
+copy_image = "画像をコピー"
+save_image = "画像を保存"
+delete_image = "画像を削除"
+remove_server = "サーバーを削除"
+view_profile = "プロフィールを表示"
+send_message = "メッセージを送る"
+kick = "キック"
+kick_confirm = "もう一度押してキック"
+ban = "BAN"
+ban_confirm = "もう一度押して BAN"
+banip = "IP を BAN"
+banip_confirm = "もう一度押して IP を BAN"
+set_role = "ロールを設定"
+make_role = "{role} にしますか？"
+
+[menu.hearts]
+other = "ハート {count} 件"
+
+[card]
+of = "{username} のプロフィール"
+you = "あなた"
+loading = "読み込み中…"
+message = "メッセージ"
+edit = "プロフィールを編集"
+change_picture = "画像を変更"
+uploading = "アップロード中…"
+remove = "削除"
+bad_website = "http:// または https:// で始まる必要があります"
+about = "自己紹介"
+saving = "保存中…"
+name_color = "名前の色"
+message_color = "メッセージの色"
+not_set = "未設定"
+
+[members]
+in_channel = "{username}（#{channel}）"
+
+[side]
+new_channel = "新しいチャンネル"
+channel_name = "チャンネル名"
+direct = "ダイレクトメッセージ"
+close_direct = "会話を閉じる"
+earpiece = "受話口で再生"
+speaker = "スピーカーで再生"
+mute = "ミュート"
+unmute = "ミュート解除"
+join = "参加"
+leave = "退出"
+share_other = "別の画面を共有"
+sharing = "画面を共有中"
+sharing_monitor = "{monitor} を共有中"
+mic_mute = "マイクをミュート"
+mic_unmute = "マイクのミュートを解除"
+disconnect = "切断"
+
+[files]
+title = "ファイル"
+refresh = "更新"
+search = "検索"
+no_results = "結果なし"
+none = "ファイルなし"
+download = "{name} をダウンロード"
+
+[files.kind]
+image = "画像"
+audio = "音声"
+video = "動画"
+archive = "アーカイブ"
+code = "コード"
+document = "文書"
+file = "ファイル"
+extension = "{extension} ファイル"
+
+[screens]
+title = "画面"
+live = "ライブ"
+nobody = "共有している人はいません"
+you = "{username}（あなた）"
+stop = "停止"
+watch = "視聴"
+share = "共有"
+no_monitors = "画面が見つかりません"
+sharing = "共有中"
+
+[prefs]
+appearance = "外観"
+icon = "サーバーアイコン"
+icon_change = "アイコンを変更"
+general = "一般"
+account = "アカウント"
+server = "サーバー"
+unsaved = "未保存の変更"
+edited = "編集済み"
+restart_badge = "再起動"
+restart_warning = "全員が切断されます。"
+restart_now = "今すぐ再起動"
+none = "なし"
+
+[prefs.section]
+startup = "起動"
+
+[prefs.row]
+auto_connect = "自動接続先"
+
+[themes]
+why2 = "ブラック"
+dark = "ダーク"
+midnight = "ミッドナイト"
+forest = "フォレスト"
+plum = "プラム"
+mocha = "モカ"
+light = "ライト"
+paper = "ペーパー"
+sky = "スカイ"
+mint = "ミント"
+rose = "ローズ"
+lavender = "ラベンダー"

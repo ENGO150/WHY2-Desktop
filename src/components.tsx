@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 
 import { avatarColor } from "./theme";
 import { IconButton } from "./icons";
+import { t } from "./i18n";
 
 //HOLD MENUS ARE THIS WIDE
 export const MENU_WIDTH = 224;
@@ -76,10 +77,23 @@ export function Avatar(
     );
 }
 
-//A SERVER'S ICON, A ROUNDED SQUARE
-export function SpaceIcon({ name, size }: { name: string; size: number })
+//A SERVER'S ICON, A ROUNDED SQUARE: ITS PICTURE, OR ITS INITIAL
+export function SpaceIcon({ name, size, src }: { name: string; size: number; src?: string })
 {
     const hue = avatarColor(name);
+
+    if (src)
+    {
+        return (
+            <img
+                src={src}
+                alt={name}
+                draggable={false}
+                className="shrink-0 select-none object-cover"
+                style={{ width: size, height: size, borderRadius: Math.round(size * 0.28) }}
+            />
+        );
+    }
 
     return (
         <span
@@ -173,7 +187,7 @@ export function PanelHeader({ title, aside, close }: { kicker?: string; title: s
 
             {aside}
 
-            <IconButton icon="close" label="Close" onClick={close} />
+            <IconButton icon="close" label={t("window.close")} onClick={close} />
         </header>
     );
 }

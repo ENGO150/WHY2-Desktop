@@ -1,0 +1,266 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "other"
+
+[bridge]
+login_ok = "登录成功。输入 / 查看命令。"
+identity_rejected = "已拒绝服务器身份。"
+invalid_usage = "用法无效！"
+invalid_command = "命令无效！"
+invalid_action = "操作无效！"
+invalid_role = "角色无效！"
+invalid_image = "图片无效。"
+not_connected = "未连接。"
+unknown_setting = "未知设置！"
+unknown_language = "未知语言！"
+no_voice = "此平台不支持语音。"
+no_route = "此平台没有可切换的音频输出。"
+usage = "用法：{usage}"
+unavailable = "{command} 在桌面应用中不可用。"
+clipboard_refused = "剪贴板拒绝了该文本。"
+screen_decode = "无法解码屏幕共享：{error}。"
+nothing_to_answer = "没有需要回答的内容。"
+session_gone = "会话已结束。"
+no_picture_clipboard = "此系统没有图片剪贴板。"
+not_a_picture = "这不是图片。"
+picture_undecodable = "无法解码图片。"
+picture_copy_failed = "复制图片失败。"
+nowhere_to_save = "没有可保存的位置。"
+picture_save_failed = "保存图片失败。"
+
+[android]
+channel_session = "会话"
+channel_messages = "消息"
+connected = "已连接"
+connected_to = "已连接到 {server}"
+in_call = "语音通话中"
+in_call_on = "在 {server} 上语音通话中"
+mic_dialog = "Android 未打开麦克风对话框。请在 Android 的应用设置中允许 WHY2 使用麦克风。"
+mic_unreachable = "WHY2 无法联系 Android 请求麦克风。请在 Android 的应用设置中允许 WHY2 使用麦克风。"
+mic_refused = "麦克风权限被拒绝。请在 Android 的应用设置中允许 WHY2 使用麦克风。"
+mic_needed = "通话需要麦克风。"
+save_refused = "Android 未保存该图片。"
+unreachable = "WHY2 无法联系 Android。"
+
+[tray]
+open = "打开 WHY2"
+quit = "退出 WHY2"
+
+[window]
+minimize = "最小化"
+maximize = "最大化"
+restore = "还原"
+close = "关闭"
+
+[connect]
+add = "添加服务器"
+connect = "连接"
+back = "返回"
+continue = "继续"
+create_account = "创建账户"
+create_password = "设置密码"
+other_servers = "其他服务器"
+password_optional = "密码（可选）"
+switch = "切换服务器"
+
+[trust]
+unknown = "信任此服务器？"
+changed = "服务器密钥已更改"
+type_to_replace = "输入“{word}”以替换密钥"
+cancel = "取消"
+replace = "替换密钥"
+trust = "信任"
+
+[acct]
+delete_warning = "此操作无法撤销。再按一次以确认。"
+delete_for_good = "永久删除"
+send_failed = "无法发送请求。"
+
+[chat]
+today = "今天"
+yesterday = "昨天"
+private = "私信"
+show = "显示"
+retry = "重试"
+unavailable = "不可用"
+picture = "图片"
+message_number = "消息 #{id}"
+copied = "已复制消息。"
+copy_failed = "无法复制消息。"
+image_copied = "已复制图片。"
+image_saved = "已保存图片"
+saved_to = "已保存到 {path}"
+images = "图片"
+online = "在线"
+offline = "离线"
+join_call = "加入通话"
+leave_call = "离开通话"
+members = "成员"
+back = "返回对话（Esc）"
+screen_of = "{username} 的屏幕"
+decode_webview = "窗口自行解码 H.264 流"
+decode_bridge = "此 webview 没有 H.264 解码器，因此帧在外部解码后以图片形式发送"
+stop_watching = "停止观看"
+editing = "正在编辑"
+cancel_edit = "取消编辑"
+cancel_reply = "取消回复"
+placeholder = "发送消息给 {target}"
+attach = "附加文件"
+send_picture = "发送图片"
+send = "发送"
+
+[chat.online_count]
+other = "{count} 人在线"
+
+[chat.transfer]
+uploading = "正在上传 · {size} 的 {percent}%"
+downloading = "正在下载 · {size} 的 {percent}%"
+uploaded = "已上传 · {size}"
+downloaded = "已下载 · {size}"
+failed = "失败"
+avatar = "头像"
+icon = "服务器图标"
+
+[menu]
+heart = "点赞"
+unheart = "取消点赞"
+reply = "回复"
+copy = "复制"
+copy_text = "复制文本"
+edit = "编辑"
+delete_message = "删除消息"
+you = "你"
+copy_image = "复制图片"
+save_image = "保存图片"
+delete_image = "删除图片"
+remove_server = "移除服务器"
+view_profile = "查看资料"
+send_message = "发送消息"
+kick = "踢出"
+kick_confirm = "再按一次以踢出"
+ban = "封禁"
+ban_confirm = "再按一次以封禁"
+banip = "封禁 IP"
+banip_confirm = "再按一次以封禁 IP"
+set_role = "设置角色"
+make_role = "设为 {role}？"
+
+[menu.hearts]
+other = "{count} 个赞"
+
+[card]
+of = "{username} 的资料"
+you = "你"
+loading = "加载中…"
+message = "发消息"
+edit = "编辑资料"
+change_picture = "更换头像"
+uploading = "上传中…"
+remove = "移除"
+bad_website = "必须以 http:// 或 https:// 开头"
+about = "关于你"
+saving = "保存中…"
+name_color = "名称颜色"
+message_color = "消息颜色"
+not_set = "未设置"
+
+[members]
+in_channel = "{username} 在 #{channel}"
+
+[side]
+new_channel = "新频道"
+channel_name = "频道名称"
+direct = "私信"
+close_direct = "关闭对话"
+earpiece = "通过听筒播放"
+speaker = "通过扬声器播放"
+mute = "静音"
+unmute = "取消静音"
+join = "加入"
+leave = "离开"
+share_other = "共享其他屏幕"
+sharing = "正在共享屏幕"
+sharing_monitor = "正在共享 {monitor}"
+mic_mute = "关闭麦克风"
+mic_unmute = "打开麦克风"
+disconnect = "断开连接"
+
+[files]
+title = "文件"
+refresh = "刷新"
+search = "搜索"
+no_results = "无结果"
+none = "没有文件"
+download = "下载 {name}"
+
+[files.kind]
+image = "图片"
+audio = "音频"
+video = "视频"
+archive = "压缩包"
+code = "代码"
+document = "文档"
+file = "文件"
+extension = "{extension} 文件"
+
+[screens]
+title = "屏幕"
+live = "直播中"
+nobody = "没有人在共享"
+you = "{username}（你）"
+stop = "停止"
+watch = "观看"
+share = "共享"
+no_monitors = "未找到屏幕"
+sharing = "共享中"
+
+[prefs]
+appearance = "外观"
+icon = "服务器图标"
+icon_change = "更换图标"
+general = "常规"
+account = "账户"
+server = "服务器"
+unsaved = "有未保存的更改"
+edited = "已编辑"
+restart_badge = "需重启"
+restart_warning = "所有人都将被断开连接。"
+restart_now = "立即重启"
+none = "无"
+
+[prefs.section]
+startup = "启动"
+
+[prefs.row]
+auto_connect = "自动连接到"
+
+[themes]
+why2 = "纯黑"
+dark = "深色"
+midnight = "午夜"
+forest = "森林"
+plum = "梅紫"
+mocha = "摩卡"
+light = "浅色"
+paper = "纸张"
+sky = "天空"
+mint = "薄荷"
+rose = "玫瑰"
+lavender = "薰衣草"

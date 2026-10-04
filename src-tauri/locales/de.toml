@@ -1,0 +1,268 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "one-other"
+
+[bridge]
+login_ok = "Anmeldung erfolgreich. Tippe / für Befehle."
+identity_rejected = "Serveridentität abgelehnt."
+invalid_usage = "Ungültige Verwendung!"
+invalid_command = "Ungültiger Befehl!"
+invalid_action = "Ungültige Aktion!"
+invalid_role = "Ungültige Rolle!"
+invalid_image = "Ungültiges Bild."
+not_connected = "Nicht verbunden."
+unknown_setting = "Unbekannte Einstellung!"
+unknown_language = "Unbekannte Sprache!"
+no_voice = "Sprache ist auf dieser Plattform nicht verfügbar."
+no_route = "Auf dieser Plattform gibt es nichts umzuleiten."
+usage = "Verwendung: {usage}"
+unavailable = "{command} ist in der Desktop-App nicht verfügbar."
+clipboard_refused = "Die Zwischenablage hat den Text abgelehnt."
+screen_decode = "Die Bildschirmfreigabe kann nicht dekodiert werden: {error}."
+nothing_to_answer = "Nichts zu beantworten."
+session_gone = "Die Sitzung ist bereits beendet."
+no_picture_clipboard = "Dieses System hat keine Zwischenablage für Bilder."
+not_a_picture = "Das ist kein Bild."
+picture_undecodable = "Das Bild konnte nicht dekodiert werden."
+picture_copy_failed = "Das Kopieren des Bildes ist fehlgeschlagen."
+nowhere_to_save = "Kein Speicherort angegeben."
+picture_save_failed = "Das Speichern des Bildes ist fehlgeschlagen."
+
+[android]
+channel_session = "Sitzung"
+channel_messages = "Nachrichten"
+connected = "Verbunden"
+connected_to = "Verbunden mit {server}"
+in_call = "Im Sprachanruf"
+in_call_on = "Im Sprachanruf auf {server}"
+mic_dialog = "Android hat den Mikrofondialog nicht geöffnet. Erlaube das Mikrofon für WHY2 in den App-Einstellungen von Android."
+mic_unreachable = "WHY2 konnte Android nicht erreichen, um nach dem Mikrofon zu fragen. Erlaube das Mikrofon für WHY2 in den App-Einstellungen von Android."
+mic_refused = "Das Mikrofon wurde verweigert. Erlaube es für WHY2 in den App-Einstellungen von Android."
+mic_needed = "Der Anruf braucht das Mikrofon."
+save_refused = "Android hat das Bild nicht gespeichert."
+unreachable = "WHY2 konnte Android nicht erreichen."
+
+[tray]
+open = "WHY2 öffnen"
+quit = "WHY2 beenden"
+
+[window]
+minimize = "Minimieren"
+maximize = "Maximieren"
+restore = "Wiederherstellen"
+close = "Schließen"
+
+[connect]
+add = "Server hinzufügen"
+connect = "Verbinden"
+back = "Zurück"
+continue = "Weiter"
+create_account = "Konto erstellen"
+create_password = "Passwort festlegen"
+other_servers = "Andere Server"
+password_optional = "Passwort (optional)"
+switch = "Server wechseln"
+
+[trust]
+unknown = "Diesem Server vertrauen?"
+changed = "Serverschlüssel geändert"
+type_to_replace = "Tippe „{word}“, um den Schlüssel zu ersetzen"
+cancel = "Abbrechen"
+replace = "Schlüssel ersetzen"
+trust = "Vertrauen"
+
+[acct]
+delete_warning = "Das kann nicht rückgängig gemacht werden. Zum Bestätigen erneut drücken."
+delete_for_good = "Endgültig löschen"
+send_failed = "Die Anfrage konnte nicht gesendet werden."
+
+[chat]
+today = "Heute"
+yesterday = "Gestern"
+private = "privat"
+show = "Anzeigen"
+retry = "Erneut versuchen"
+unavailable = "nicht verfügbar"
+picture = "Bild"
+message_number = "Nachricht #{id}"
+copied = "Nachricht kopiert."
+copy_failed = "Die Nachricht konnte nicht kopiert werden."
+image_copied = "Bild kopiert."
+image_saved = "Bild gespeichert"
+saved_to = "Gespeichert unter {path}"
+images = "Bilder"
+online = "online"
+offline = "offline"
+join_call = "Anruf beitreten"
+leave_call = "Anruf verlassen"
+members = "Mitglieder"
+back = "Zurück zur Unterhaltung (Esc)"
+screen_of = "Bildschirm von {username}"
+decode_webview = "Das Fenster dekodiert den H.264-Stream selbst"
+decode_bridge = "Diese Webview hat keinen H.264-Decoder, daher werden die Frames für sie dekodiert und als Bilder weitergeschickt"
+stop_watching = "Zuschauen beenden"
+editing = "Bearbeiten"
+cancel_edit = "Bearbeiten abbrechen"
+cancel_reply = "Antwort abbrechen"
+placeholder = "Nachricht an {target}"
+attach = "Datei anhängen"
+send_picture = "Bild senden"
+send = "Senden"
+
+[chat.online_count]
+one = "{count} online"
+other = "{count} online"
+
+[chat.transfer]
+uploading = "Wird hochgeladen · {percent} % von {size}"
+downloading = "Wird heruntergeladen · {percent} % von {size}"
+uploaded = "Hochgeladen · {size}"
+downloaded = "Heruntergeladen · {size}"
+failed = "Fehlgeschlagen"
+avatar = "Profilbild"
+icon = "Server-Symbol"
+
+[menu]
+heart = "Herz"
+unheart = "Herz entfernen"
+reply = "Antworten"
+copy = "Kopieren"
+copy_text = "Text kopieren"
+edit = "Bearbeiten"
+delete_message = "Nachricht löschen"
+you = "Du"
+copy_image = "Bild kopieren"
+save_image = "Bild speichern"
+delete_image = "Bild löschen"
+remove_server = "Server entfernen"
+view_profile = "Profil anzeigen"
+send_message = "Nachricht senden"
+kick = "Rauswerfen"
+kick_confirm = "Zum Rauswerfen erneut drücken"
+ban = "Sperren"
+ban_confirm = "Zum Sperren erneut drücken"
+banip = "IP sperren"
+banip_confirm = "Zum Sperren der IP erneut drücken"
+set_role = "Rolle festlegen"
+make_role = "Zu {role} machen?"
+
+[menu.hearts]
+one = "{count} Herz"
+other = "{count} Herzen"
+
+[card]
+of = "Profil von {username}"
+you = "du"
+loading = "Wird geladen…"
+message = "Nachricht"
+edit = "Profil bearbeiten"
+change_picture = "Bild ändern"
+uploading = "Wird hochgeladen…"
+remove = "Entfernen"
+bad_website = "Beginnt mit http:// oder https://"
+about = "Über dich"
+saving = "Wird gespeichert…"
+name_color = "Namensfarbe"
+message_color = "Nachrichtenfarbe"
+not_set = "Nicht festgelegt"
+
+[members]
+in_channel = "{username} in #{channel}"
+
+[side]
+new_channel = "Neuer Kanal"
+channel_name = "Kanalname"
+direct = "Direktnachrichten"
+close_direct = "Unterhaltung schließen"
+earpiece = "Über die Hörmuschel abspielen"
+speaker = "Über den Lautsprecher abspielen"
+mute = "Stummschalten"
+unmute = "Stummschaltung aufheben"
+join = "Beitreten"
+leave = "Verlassen"
+share_other = "Anderen Bildschirm teilen"
+sharing = "Bildschirm wird geteilt"
+sharing_monitor = "{monitor} wird geteilt"
+mic_mute = "Mikrofon stummschalten"
+mic_unmute = "Mikrofon einschalten"
+disconnect = "Trennen"
+
+[files]
+title = "Dateien"
+refresh = "Aktualisieren"
+search = "Suchen"
+no_results = "Keine Ergebnisse"
+none = "Keine Dateien"
+download = "{name} herunterladen"
+
+[files.kind]
+image = "Bild"
+audio = "Audio"
+video = "Video"
+archive = "Archiv"
+code = "Code"
+document = "Dokument"
+file = "Datei"
+extension = "{extension}-Datei"
+
+[screens]
+title = "Bildschirme"
+live = "Live"
+nobody = "Niemand teilt"
+you = "{username} (du)"
+stop = "Stoppen"
+watch = "Ansehen"
+share = "Teilen"
+no_monitors = "Keine Bildschirme gefunden"
+sharing = "Wird geteilt"
+
+[prefs]
+appearance = "Darstellung"
+icon = "Server-Symbol"
+icon_change = "Symbol ändern"
+general = "Allgemein"
+account = "Konto"
+server = "Server"
+unsaved = "Ungespeicherte Änderungen"
+edited = "Bearbeitet"
+restart_badge = "Neustart"
+restart_warning = "Alle werden getrennt."
+restart_now = "Jetzt neu starten"
+none = "Keiner"
+
+[prefs.section]
+startup = "Start"
+
+[prefs.row]
+auto_connect = "Automatisch verbinden mit"
+
+[themes]
+why2 = "Schwarz"
+dark = "Dunkel"
+midnight = "Mitternacht"
+forest = "Wald"
+plum = "Pflaume"
+mocha = "Mokka"
+light = "Hell"
+paper = "Papier"
+sky = "Himmel"
+mint = "Minze"
+rose = "Rose"
+lavender = "Lavendel"

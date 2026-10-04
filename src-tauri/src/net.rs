@@ -46,6 +46,7 @@ use why2_chat::
     },
 };
 
+use crate::tr;
 use crate::state::*;
 use crate::emit::*;
 use crate::events::pump_events;
@@ -110,7 +111,7 @@ async fn pump_pictures(state: &AppState)
 #[tauri::command]
 pub(crate) async fn request_history(before: u64, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     send_packet(&state, &write_stream, PacketCode::HistoryRequest { before }).await;
 
@@ -269,8 +270,8 @@ pub(crate) async fn connect_to_server(address: String, app: AppHandle, state: St
 #[tauri::command]
 pub(crate) fn answer_tofu(accept: bool, state: State<'_, AppState>) -> Result<(), String> //ANSWER THE IDENTITY PROMPT
 {
-    let Some(reply) = state.tofu_reply.lock().unwrap().take() else { return Err(String::from("Nothing to answer")) };
+    let Some(reply) = state.tofu_reply.lock().unwrap().take() else { return Err(tr!("bridge.nothing_to_answer")) };
 
     //THE LISTENING TASK EITHER PINS THE KEY AND RECONNECTS ON ITS OWN, OR DISCONNECTS AND REPORTS TofuError
-    reply.send(accept).map_err(|_| String::from("The session is already gone"))
+    reply.send(accept).map_err(|_| tr!("bridge.session_gone"))
 }

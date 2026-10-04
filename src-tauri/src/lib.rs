@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //THE ORDER THEY STAND ON EACH OTHER IN - THE TYPES THE WIRE AND THE WEBVIEW BOTH SPEAK, THE STATE A
 //SESSION KEEPS, WHAT PUSHES AN EVENT AT THE WINDOW, AND THEN THE PATHS THAT DO SOMETHING: THE SOCKET,
 //THE LINE THE USER TYPED, THE EVENTS COMING BACK, AND THE PICTURE OF SOMEBODY ELSE'S SCREEN
+mod i18n;
 mod types;
 mod state;
 mod emit;
@@ -79,7 +80,8 @@ use state::AppState;
 
 use net::{ connect_to_server, refresh_screens, answer_tofu, request_history, typing };
 use profile::{ request_profiles, save_profile, set_avatar };
-use servers::{ get_servers, save_server, remove_server, get_auto_connect, get_theme, set_theme };
+use servers::{ get_servers, save_server, remove_server, get_auto_connect, get_theme, set_theme, get_server_icon };
+use i18n::get_locale;
 use input::{ send_input, account_request, upload_file_from_path, request_image };
 use picture::{ picture_actions, copy_image, save_image };
 use clipboard::copy_text;
@@ -177,6 +179,8 @@ pub fn run()
             profiles_off: AtomicBool::new(false),
             profiles_seen: AtomicBool::new(false),
             avatars: Mutex::new(HashSet::new()),
+            server_icon: Mutex::new(None),
+            icon_cut: Mutex::new(None),
             typing_sent: Mutex::new(None),
             transfers: Mutex::new(HashMap::new()),
         })
@@ -276,6 +280,8 @@ pub fn run()
             get_auto_connect,
             get_theme,
             set_theme,
+            get_server_icon,
+            get_locale,
             window_chrome,
             notify_message,
             notification_target,

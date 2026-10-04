@@ -23,6 +23,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::sync::atomic::{ AtomicBool, Ordering };
 
+use crate::tr;
+
 use tauri::
 {
     AppHandle,
@@ -49,6 +51,8 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 //TO WORRY ABOUT, KEEP THE PRODUCT NAME
 const NAME: &str = "WHY2 Desktop";
 
+const TRAY: &str = "why2";
+
 //THE MENU IS TWO ITEMS, BECAUSE THERE ARE TWO THINGS TO DO WITH A PROGRAM THAT IS NOT ON SCREEN: LOOK AT
 //IT, OR STOP IT. A LEFT CLICK IS THE FIRST OF THEM WITHOUT THE MENU - EXCEPT ON LINUX, WHERE THE
 //INDICATOR REPORTS NO CLICKS AT ALL AND THE MENU IS THE WHOLE OF THE INTERFACE, WHICH IS WHY `Open` IS
@@ -63,14 +67,9 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()>
     #[cfg(target_os = "linux")]
     glib::set_application_name(NAME);
 
-    let open = MenuItem::with_id(app, "open", "Open WHY2", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "quit", "Quit WHY2", true, None::<&str>)?;
-
-    let menu = Menu::with_items(app, &[&open, &stop])?;
-
-    let mut tray = TrayIconBuilder::with_id("why2")
+    let mut tray = TrayIconBuilder::with_id(TRAY)
         .tooltip(NAME)
-        .menu(&menu)
+        .menu(&menu(app)?)
 
         //THE LEFT BUTTON OPENS THE WINDOW AND THE RIGHT ONE OPENS THE MENU, WHICH IS WHAT EVERY OTHER
         //TRAY ICON ON THE MACHINE DOES
@@ -105,6 +104,23 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()>
     tray.build(app)?;
 
     Ok(())
+}
+
+//THE TWO ITEMS, IN THE CURRENT LANGUAGE
+fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>>
+{
+    let open = MenuItem::with_id(app, "open", tr!("tray.open"), true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "quit", tr!("tray.quit"), true, None::<&str>)?;
+
+    Menu::with_items(app, &[&open, &stop])
+}
+
+//REBUILD THEM AFTER A LANGUAGE CHANGE
+pub fn relabel<R: Runtime>(app: &AppHandle<R>)
+{
+    let Some(tray) = app.tray_by_id(TRAY) else { return };
+
+    if let Ok(menu) = menu(app) { let _ = tray.set_menu(Some(menu)); }
 }
 
 //AND THE OTHER WAY OUT, WHICH IS THE ONE A DESKTOP ALREADY HAS A KEY FOR. A WINDOW MANAGER'S CLOSE

@@ -112,6 +112,9 @@ pub(crate) struct AppState
     pub(crate) profiles_seen: AtomicBool, //ONE CAME BACK THIS SESSION
     pub(crate) avatars: Mutex<HashSet<[u8; 32]>>, //AVATARS ASKED FOR
 
+    pub(crate) server_icon: Mutex<Option<[u8; 32]>>, //THE SERVER'S PICTURE
+    pub(crate) icon_cut: Mutex<Option<String>>,      //OUR ICON UPLOAD'S FILE NAME
+
     pub(crate) typing_sent: Mutex<Option<Instant>>, //LAST TypingRequest
     pub(crate) transfers: Mutex<HashMap<u64, (u64, u64)>>, //UID -> TOTAL, LAST PERCENT
 }
@@ -128,6 +131,8 @@ impl AppState
         self.profiles_off.store(false, Ordering::Relaxed);
         self.profiles_seen.store(false, Ordering::Relaxed);
         self.avatars.lock().unwrap().clear();
+        *self.server_icon.lock().unwrap() = None;
+        *self.icon_cut.lock().unwrap() = None;
         *self.typing_sent.lock().unwrap() = None;
         self.transfers.lock().unwrap().clear();
     }

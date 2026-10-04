@@ -18,15 +18,26 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import type { SettingsBox, SettingsItem, AccountAction } from "./types";
 import { Icon } from "./icons";
-import { Switch, Overlay, PanelHeader, PanelFooter } from "./components";
-import { RESTART_LABEL, DEFAULT_DEVICE, NO_CHOICE, unsavedRows } from "./settings";
+import { Switch, Overlay, PanelHeader, PanelFooter, SpaceIcon } from "./components";
+import { defaultDevice, noChoice, unsavedRows } from "./settings";
 import { THEMES, type Theme } from "./themes";
+import { t, tOr } from "./i18n";
+
+//THE SERVER'S PICTURE, AS ITS OWNER SEES IT
+export interface ServerIconBox
+{
+    name: string;
+    src: string | undefined;
+    busy: boolean;
+    pick: () => void;
+    remove: () => void;
+}
 
 //tui/settings.rs WITH CONTROLS: OURS WRITES THROUGH, THE SERVER'S IS SAVED IN ONE GO
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, narrow,
-    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, icon, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -43,6 +54,7 @@ export function SettingsDialog(
     account: ((action: AccountAction) => void) | null; //OURS ONLY, WHERE THE SERVER HAS /account
     theme: string | null; //OURS ONLY
     pickTheme: (id: string) => void;
+    icon: ServerIconBox | null; //THE SERVER'S ONLY, FOR ITS OWNER
     close: () => void;
 })
 {
@@ -100,7 +112,7 @@ export function SettingsDialog(
 
             return (
                 <button type="button" onClick={(event) => { event.stopPropagation(); activateRow(index); }} className={`${picker} ${wide}`}>
-                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : DEFAULT_DEVICE}</span>
+                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : defaultDevice()}</span>
                     <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
                 </button>
             );
@@ -113,7 +125,7 @@ export function SettingsDialog(
 
             return (
                 <button type="button" onClick={(event) => { event.stopPropagation(); activateRow(index); }} className={`${picker} ${wide}`}>
-                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : NO_CHOICE}</span>
+                    <span className={`min-w-0 flex-1 truncate ${id ? "" : "text-muted"}`}>{id ? found?.label ?? id : noChoice()}</span>
                     <Icon name="chevron" className="h-4 w-4 shrink-0 text-faint" />
                 </button>
             );
@@ -161,7 +173,7 @@ export function SettingsDialog(
                 onClick={(event) => { event.stopPropagation(); activateRow(index); }}
                 className={`${wide} truncate rounded-lg bg-active px-3 py-1.5 text-left text-[13.5px] transition hover:brightness-125`}
             >
-                {text || <span className="text-faint">empty</span>}
+                {text || <span className="text-faint">{t("settings.empty")}</span>}
             </button>
         );
     };
@@ -192,7 +204,7 @@ export function SettingsDialog(
                     </span>
                 </span>
 
-                <span className={`text-[12.5px] ${chosen ? "font-medium text-text" : "text-muted"}`}>{entry.name}</span>
+                <span className={`text-[12.5px] ${chosen ? "font-medium text-text" : "text-muted"}`}>{tOr(`themes.${entry.id}`, entry.name)}</span>
             </button>
         );
     };
@@ -220,9 +232,10 @@ export function SettingsDialog(
     //THE NAV, AND WHICH ENTRY THE SELECTED ROW IS UNDER
     const nav: { key: string; label: string }[] = [];
 
-    if (theme !== null) nav.push({ key: "appearance", label: "Appearance" });
-    groups.forEach((group, at) => nav.push({ key: `group-${at}`, label: group.label ?? "General" }));
-    if (account) nav.push({ key: "account", label: "Account" });
+    if (theme !== null) nav.push({ key: "appearance", label: t("prefs.appearance") });
+    if (icon) nav.push({ key: "icon", label: t("prefs.icon") });
+    groups.forEach((group, at) => nav.push({ key: `group-${at}`, label: group.label ?? t("prefs.general") }));
+    if (account) nav.push({ key: "account", label: t("prefs.account") });
 
     const current = groups.findIndex((group) => group.rows.some((row) => row.index === box.selected));
 
@@ -230,7 +243,7 @@ export function SettingsDialog(
         <Overlay
             narrow={narrow}
             width={760}
-            label={box.server ? "Server settings" : "Settings"}
+            label={box.server ? t("settings.title.server") : t("settings.title.client")}
             cardRef={settingsRef}
             onKeyDown={onKeyDown}
             close={close}
@@ -238,7 +251,7 @@ export function SettingsDialog(
             <div className="flex min-h-0 flex-1">
             {!narrow && (
                 <nav className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-border bg-sidebar p-2 pt-4">
-                    <div className="px-2.5 pb-2 text-[16px] font-semibold">{box.server ? "Server" : "Settings"}</div>
+                    <div className="px-2.5 pb-2 text-[16px] font-semibold">{box.server ? t("prefs.server") : t("settings.title.client")}</div>
 
                     {nav.map((entry) => (
                         <button
@@ -255,16 +268,16 @@ export function SettingsDialog(
 
             <div className="flex min-w-0 flex-1 flex-col">
             <PanelHeader
-                title={narrow ? (box.server ? "Server settings" : "Settings") : ""}
+                title={narrow ? (box.server ? t("settings.title.server") : t("settings.title.client")) : ""}
                 aside={box.saving
-                    ? <span className="text-[13px] text-muted">Saving…</span>
-                    : unsaved ? <span className="text-[13px] text-muted">Unsaved changes</span> : null}
+                    ? <span className="text-[13px] text-muted">{t("card.saving")}</span>
+                    : unsaved ? <span className="text-[13px] text-muted">{t("prefs.unsaved")}</span> : null}
                 close={close}
             />
 
             <div className="scroller h-[min(640px,70vh)] flex-1 px-6 pb-6 pt-0">
                 {/* THE WINDOW'S PALETTE */}
-                {theme !== null && section("Appearance", (
+                {theme !== null && section(t("prefs.appearance"), (
                     <div className="flex flex-col gap-4 px-4 py-4">
                         {/* DARK, THEN LIGHT */}
                         {[false, true].map((light) => (
@@ -274,6 +287,25 @@ export function SettingsDialog(
                         ))}
                     </div>
                 ), "appearance")}
+
+                {/* THE SERVER'S PICTURE */}
+                {icon && section(t("prefs.icon"), (
+                    <div className="flex items-center gap-4 px-4 py-4">
+                        <SpaceIcon name={icon.name} size={56} src={icon.src} />
+
+                        <div className="flex flex-wrap gap-2">
+                            <button type="button" disabled={icon.busy} onClick={icon.pick} className="btn">
+                                {icon.busy ? t("card.uploading") : t("prefs.icon_change")}
+                            </button>
+
+                            {icon.src && (
+                                <button type="button" disabled={icon.busy} onClick={icon.remove} className="btn btn-quiet">
+                                    {t("card.remove")}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ), "icon")}
 
                 {groups.map((group, at) => section(group.label, group.rows.map(({ item, index }) =>
                 {
@@ -293,8 +325,8 @@ export function SettingsDialog(
                                     <span className="text-[14px]">{item.label}</span>
 
                                     {/* UNSAVED, OR ONLY READ AT STARTUP */}
-                                    {item.changed && <span className="h-1.5 w-1.5 rounded-full bg-accent" title="Edited" />}
-                                    {item.restart && <span className="rounded-full bg-warning/15 px-2 py-px text-[11px] font-medium text-warning">Restart</span>}
+                                    {item.changed && <span className="h-1.5 w-1.5 rounded-full bg-accent" title={t("prefs.edited")} />}
+                                    {item.restart && <span className="rounded-full bg-warning/15 px-2 py-px text-[11px] font-medium text-warning">{t("prefs.restart_badge")}</span>}
                                 </div>
 
                                 {item.hint && <div className="mt-0.5 pr-2 text-[12.5px] leading-snug text-faint">{item.hint}</div>}
@@ -306,15 +338,15 @@ export function SettingsDialog(
                 }), `group-${at}`))}
 
                 {/* THE SERVER'S, NOT client.toml'S */}
-                {account && section("Account", (
+                {account && section(t("prefs.account"), (
                     <>
                         <button type="button" onClick={() => account("passwd")} className="flex w-full items-center px-4 py-2.5 text-left text-[14px] transition-colors hover:bg-hover">
-                            <span className="flex-1">Change password</span>
+                            <span className="flex-1">{t("account.title.passwd")}</span>
                             <Icon name="chevron_right" className="h-4 w-4 text-faint" />
                         </button>
 
                         <button type="button" onClick={() => account("delete")} className="flex w-full items-center px-4 py-2.5 text-left text-[14px] text-error transition-colors hover:bg-hover">
-                            Delete account
+                            {t("account.title.delete")}
                         </button>
                     </>
                 ), "account")}
@@ -323,26 +355,26 @@ export function SettingsDialog(
             {/* ONLY THE SERVER'S ROWS NEED A BUTTON */}
             {actions.length > 0 && (
                 <PanelFooter>
-                    {box.confirm && <span className="mr-auto text-[13px] text-error">Everybody will be disconnected.</span>}
+                    {box.confirm && <span className="mr-auto text-[13px] text-error">{t("prefs.restart_warning")}</span>}
 
                     {actions.map(({ row, index }) =>
                     {
                         if (row.row !== "action") return null;
 
-                        const restart = row.label === RESTART_LABEL;
+                        const restart = row.action === "restart";
                         const live = restart ? !unsaved && !box.saving : unsaved && !box.saving;
                         const armed = restart && box.confirm;
                         const chosen = index === box.selected;
 
                         return (
                             <button
-                                key={row.label}
+                                key={row.action}
                                 type="button"
                                 disabled={!live}
                                 onClick={() => activateRow(index)}
                                 className={`btn ${restart ? `btn-danger ${armed ? "armed" : ""}` : "btn-accent"} ${chosen ? "ring-2 ring-border-strong ring-offset-2 ring-offset-overlay" : ""}`}
                             >
-                                {armed ? "Restart now" : row.label}
+                                {armed ? t("prefs.restart_now") : restart ? t("settings.restart") : t("settings.save")}
                             </button>
                         );
                     })}

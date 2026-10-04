@@ -19,6 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import type { ScreenUser } from "./types";
 import { Icon } from "./icons";
 import { Avatar, Overlay, PanelHeader, SectionLabel } from "./components";
+import { t } from "./i18n";
 
 //WHO TO WATCH, AND WHAT OF OURS TO SHARE
 export function ScreensBox(
@@ -37,11 +38,11 @@ export function ScreensBox(
 })
 {
     return (
-        <Overlay narrow={narrow} width={440} label="Screens" cardRef={(node) => { node?.focus(); }} close={close}>
+        <Overlay narrow={narrow} width={440} label={t("screens.title")} cardRef={(node) => { node?.focus(); }} close={close}>
             <PanelHeader
-                title="Screens"
+                title={t("screens.title")}
                 aside={(
-                    <button type="button" title="Refresh" aria-label="Refresh" onClick={askScreens} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-hover hover:text-text">
+                    <button type="button" title={t("files.refresh")} aria-label={t("files.refresh")} onClick={askScreens} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-hover hover:text-text">
                         <Icon name="refresh" className="h-[18px] w-[18px]" />
                     </button>
                 )}
@@ -49,10 +50,10 @@ export function ScreensBox(
             />
 
             <div className="scroller flex-1 px-3 pb-5">
-                <SectionLabel>Live</SectionLabel>
+                <SectionLabel>{t("screens.live")}</SectionLabel>
 
                 {sharers.length === 0 && (
-                    <div className="px-4 py-3 text-[14px] text-faint">Nobody is sharing</div>
+                    <div className="px-4 py-3 text-[14px] text-faint">{t("screens.nobody")}</div>
                 )}
 
                 {sharers.map((user) =>
@@ -65,23 +66,23 @@ export function ScreensBox(
                         <div key={user.id} className="flex items-center gap-3 rounded-xl px-3 py-2">
                             <Avatar name={user.username} size={32} />
 
-                            <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium">{own ? `${user.username} (you)` : user.username}</span>
+                            <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium">{own ? t("screens.you", { username: user.username }) : user.username}</span>
 
                             <button
                                 type="button"
                                 onClick={() => { send(here ? "/deattach" : `/attach ${user.id}`); if (!here) close(); }}
                                 className={`btn ${here ? "btn-danger" : "btn-accent"}`}
                             >
-                                {here ? "Stop" : "Watch"}
+                                {here ? t("screens.stop") : t("screens.watch")}
                             </button>
                         </div>
                     );
                 })}
 
-                <SectionLabel>Share</SectionLabel>
+                <SectionLabel>{t("screens.share")}</SectionLabel>
 
                 {monitors.length === 0 && (
-                    <div className="px-4 py-3 text-[14px] text-faint">No screens found</div>
+                    <div className="px-4 py-3 text-[14px] text-faint">{t("screens.no_monitors")}</div>
                 )}
 
                 {monitors.map((name) =>
@@ -101,7 +102,7 @@ export function ScreensBox(
 
                             <span className="min-w-0 flex-1 truncate text-[14.5px]">{name}</span>
 
-                            {live && <span className="text-[13px] font-medium text-online">Sharing</span>}
+                            {live && <span className="text-[13px] font-medium text-online">{t("screens.sharing")}</span>}
                         </button>
                     );
                 })}

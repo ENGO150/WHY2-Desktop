@@ -46,8 +46,11 @@ use why2_chat::
     },
 };
 
+use crate::tr;
+use crate::i18n;
 use crate::types::*;
 use crate::state::*;
+use crate::profile::cut_square;
 use crate::emit::*;
 use crate::color::color_handler;
 use crate::net::send_packet;
@@ -62,7 +65,7 @@ use why2_chat::network::screen::client::capture as screen_capture;
 //COPY GOES IN OUR OWN CACHE, WHICH IS A REAL PATH AND STAYS PUT FOR AS LONG AS THE UPLOAD NEEDS IT.
 //THE CACHE IS THE SYSTEM'S TO RECLAIM, WHICH IS THE RIGHT PLACE FOR A COPY NOBODY ASKED TO KEEP
 #[cfg(target_os = "android")]
-fn stage_content_uri(app: &AppHandle, path: &str) -> Result<Option<String>, &'static str>
+fn stage_content_uri(app: &AppHandle, path: &str) -> Result<Option<String>, String>
 {
     use std::os::fd::AsRawFd;
     use tauri::Manager;
@@ -76,7 +79,7 @@ fn stage_content_uri(app: &AppHandle, path: &str) -> Result<Option<String>, &'st
     let mut options = OpenOptions::new();
     options.read(true);
 
-    let Ok(mut source) = app.fs().open(uri, options) else { return Err("File not found!") };
+    let Ok(mut source) = app.fs().open(uri, options) else { return Err(tr!("upload.not_found")) };
 
     //WHAT TO CALL THE COPY, WHICH IS THE NAME EVERYBODY ELSE WILL SEE. THE DESCRIPTOR THE RESOLVER HANDED
     //US POINTS AT THE REAL FILE WHEREVER THE PROVIDER IS BACKED BY ONE, AND ITS NAME IS THE HONEST ANSWER;
@@ -88,19 +91,19 @@ fn stage_content_uri(app: &AppHandle, path: &str) -> Result<Option<String>, &'st
         .or_else(|| uri_name(path))
         .unwrap_or_else(|| String::from("upload"));
 
-    let Ok(cache) = app.path().app_cache_dir() else { return Err("File not found!") };
+    let Ok(cache) = app.path().app_cache_dir() else { return Err(tr!("upload.not_found")) };
 
     let directory = cache.join("uploads");
 
-    if std::fs::create_dir_all(&directory).is_err() { return Err("Error reading file!") }
+    if std::fs::create_dir_all(&directory).is_err() { return Err(tr!("upload.read_failed")) }
 
     let destination = directory.join(name);
 
     //THE SAME FILE PICKED TWICE IS THE SAME COPY WRITTEN AGAIN, WHICH IS WHAT SHOULD HAPPEN: THE ONE ON
     //THE PHONE MAY HAVE CHANGED SINCE, AND THE HASH IS TAKEN OVER WHAT WE ACTUALLY SEND
-    let Ok(mut copy) = File::create(&destination) else { return Err("Error reading file!") };
+    let Ok(mut copy) = File::create(&destination) else { return Err(tr!("upload.read_failed")) };
 
-    if std::io::copy(&mut source, &mut copy).is_err() { return Err("Error reading file!") }
+    if std::io::copy(&mut source, &mut copy).is_err() { return Err(tr!("upload.read_failed")) }
 
     Ok(Some(destination.to_string_lossy().into_owned()))
 }
@@ -163,8 +166,8 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
         match task::spawn_blocking(move || stage_content_uri(&app_handle, &picked)).await
         {
             Ok(Ok(staged)) => staged,
-            Ok(Err(message)) => return Err(message.into()),
-            Err(_) => return Err("Error reading file!".into()),
+            Ok(Err(message)) => return Err(message),
+            Err(_) => return Err(tr!("upload.read_failed")),
         }
     };
 
@@ -176,14 +179,14 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
 
     let path = Path::new(path.trim());
 
-    let Ok(mut file) = File::open(path) else { return Err("File not found!".into()) };
+    let Ok(mut file) = File::open(path) else { return Err(tr!("upload.not_found")) };
 
     if !path.is_file() || path.file_name().and_then(|name| name.to_str()).is_none()
     {
-        return Err("File not found!".into());
+        return Err(tr!("upload.not_found"));
     }
 
-    let Ok(path) = path.canonicalize() else { return Err("File not found!".into()) };
+    let Ok(path) = path.canonicalize() else { return Err(tr!("upload.not_found")) };
 
     if image
     {
@@ -191,7 +194,7 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
         //SIZE IS KNOWN HERE, SO IT IS SAID HERE
         if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_IMAGE_SIZE as u64
         {
-            return Err(format!("Image is too large! (limit is {}MB)", consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
+            return Err(tr!("upload.image_too_large", limit = consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
         }
 
         //THE HEADER IS READ BEFORE THE SERVER IS ASKED FOR ANYTHING, SO A FILE THAT IS NOT AN IMAGE COSTS
@@ -201,9 +204,9 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
 
         file.by_ref().take(consts::IMAGE_HEADER_SIZE as u64).read_to_end(&mut header).ok();
 
-        if file.rewind().is_err() { return Err("Error reading file!".into()) }
+        if file.rewind().is_err() { return Err(tr!("upload.read_failed")) }
 
-        if !misc::is_image(&header) { return Err("Not an image!".into()) }
+        if !misc::is_image(&header) { return Err(tr!("upload.not_image")) }
     }
 
     Ok((file, path))
@@ -242,7 +245,7 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
         }
     }).await.unwrap_or(None);
 
-    let Some(hash) = hash else { return popup(app, "Error reading file!") };
+    let Some(hash) = hash else { return popup(app, tr!("upload.read_failed")) };
 
     //THE UPLOAD TASK LOOKS THE PATH UP BY HASH WHEN THE APPROVAL COMES BACK
     client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
@@ -255,6 +258,12 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
     };
 
     send_packet(state, write_stream, request).await;
+}
+
+//A COMMAND'S SHAPE, ITS PARAMETER TRANSLATED
+fn usage(command: &str, arg: &str) -> String
+{
+    tr!("bridge.usage", usage = format!("{command} <{}>", i18n::text(arg)))
 }
 
 //WHAT WE TELL THE SERVER WE ARE RUNNING, AND ONLY WHERE THE USER SAID TO. THE TWO BUILDS ARE TWO
@@ -278,9 +287,9 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
 
     //HIDING THE COMMAND DOES NOT STOP ANYBODY TYPING IT OUT, AND REFUSING IT WOULD CONFIRM IT EXISTS -
     //TO A ROLE THAT MAY NOT RUN IT, IT IS SIMPLY NOT A COMMAND
-    if !info.available(role) { return popup(app, "Invalid command!") }
+    if !info.available(role) { return popup(app, tr!("bridge.invalid_command")) }
 
-    let Some(parameters) = parameters else { return popup(app, "Invalid usage!") };
+    let Some(parameters) = parameters else { return popup(app, tr!("bridge.invalid_usage")) };
 
     //THE ACTION IS THE FIRST WORD, WHATEVER IT TAKES FOLLOWS IT
     let (action, tail) = match parameters.split_once(char::is_whitespace)
@@ -290,10 +299,10 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
     };
 
     //AN ACTION ABOVE OUR ROLE IS UNKNOWN FOR THE SAME REASON THE COMMAND IS
-    let Some(sub) = info.action(action).filter(|sub| sub.available(role)) else { return popup(app, "Invalid action!") };
+    let Some(sub) = info.action(action).filter(|sub| sub.available(role)) else { return popup(app, tr!("bridge.invalid_action")) };
 
-    //AN ACTION THAT TAKES A PARAMETER NEEDS ONE, WHATEVER IT IS
-    if !sub.args.is_empty() && tail.is_empty() { return popup(app, "Invalid usage!") }
+    //AN ACTION THAT NEEDS A PARAMETER NEEDS ONE, WHATEVER IT IS
+    if sub.args.iter().any(|arg| arg.required) && tail.is_empty() { return popup(app, tr!("bridge.invalid_usage")) }
 
     //SOME ACTIONS TAKE AN ID - THE REST READ THE TAIL AS TEXT
     let id = match sub.takes_id()
@@ -301,7 +310,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
         true => match tail.parse::<usize>()
         {
             Ok(id) => Some(id),
-            Err(_) => return popup(app, "Invalid usage!"),
+            Err(_) => return popup(app, tr!("bridge.invalid_usage")),
         },
 
         false => None,
@@ -322,15 +331,33 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
         //THE ONE ACTION THAT AIMS AT A USER AND STILL TAKES A ROLE
         Subcommand::Role =>
         {
-            let Some((target, role)) = tail.split_once(char::is_whitespace) else { return popup(app, "Invalid usage!") };
+            let Some((target, role)) = tail.split_once(char::is_whitespace) else { return popup(app, tr!("bridge.invalid_usage")) };
 
-            let Ok(role) = role.trim().parse::<Role>() else { return popup(app, "Invalid role!") };
+            let Ok(role) = role.trim().parse::<Role>() else { return popup(app, tr!("bridge.invalid_role")) };
 
             PacketCode::ServerRoleRequest { target: target.to_owned(), role }
         },
 
+        //CUT LIKE AN AVATAR, OR DROPPED WITHOUT A PATH
+        Subcommand::Icon => match tail.is_empty()
+        {
+            true => PacketCode::ServerIconSave { hash: None },
+
+            false => match cut_square(app, tail).await
+            {
+                Ok((hash, cut)) =>
+                {
+                    *state.icon_cut.lock().unwrap() = cut.file_name().and_then(|name| name.to_str()).map(str::to_owned);
+
+                    PacketCode::ServerIconSave { hash: Some(hash) }
+                },
+
+                Err(error) => return popup(app, error),
+            },
+        },
+
         //ACCOUNT ACTIONS
-        Subcommand::Delete | Subcommand::Passwd => return popup(app, "Invalid action!"),
+        Subcommand::Delete | Subcommand::Passwd => return popup(app, tr!("bridge.invalid_action")),
     };
 
     send_packet(state, write_stream, code).await;
@@ -341,7 +368,7 @@ fn account_command(app: &AppHandle, parameters: Option<String>)
 {
     let Some(info) = command::COMMAND_LIST.iter().find(|info| info.command == Command::Account) else { return };
 
-    let Some(sub) = parameters.as_deref().and_then(|action| info.action(action.trim())) else { return popup(app, "Invalid action!") };
+    let Some(sub) = parameters.as_deref().and_then(|action| info.action(action.trim())) else { return popup(app, tr!("bridge.invalid_action")) };
 
     emit(app, UiEvent::OpenAccount { action: match sub.subcommand
     {
@@ -355,12 +382,12 @@ fn account_command(app: &AppHandle, parameters: Option<String>)
 pub(crate) async fn account_request(action: AccountAction, password: String, new_password: Option<String>,
     state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     let code = match (action, new_password)
     {
         (AccountAction::Passwd, Some(new_password)) => PacketCode::AccountPasswdRequest { old_password: password, new_password },
-        (AccountAction::Passwd, None) => return Err(String::from("Enter the new password.")),
+        (AccountAction::Passwd, None) => return Err(tr!("account.missing.new")),
         (AccountAction::Delete, _) => PacketCode::AccountDeleteRequest { password },
     };
 
@@ -374,7 +401,7 @@ pub(crate) async fn account_request(action: AccountAction, password: String, new
 #[tauri::command]
 pub(crate) async fn upload_file_from_path(path: String, image: bool, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     upload_file(&app, &state, &write_stream, &path, image).await;
 
@@ -391,9 +418,9 @@ pub(crate) async fn upload_file_from_path(path: String, image: bool, app: AppHan
 #[tauri::command]
 pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(events) = state.events.lock().unwrap().clone() else { return Err(String::from("Not connected")) };
+    let Some(events) = state.events.lock().unwrap().clone() else { return Err(tr!("bridge.not_connected")) };
 
-    let Some(hash) = unhex(&hash) else { return Err(String::from("Invalid image")) };
+    let Some(hash) = unhex(&hash) else { return Err(tr!("bridge.invalid_image")) };
 
     client::image::fetch_image(hash, events);
 
@@ -403,7 +430,7 @@ pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> R
 #[tauri::command]
 pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
-    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(String::from("Not connected")) };
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
     //A PASSWORD IS WHATEVER WAS TYPED, SPACES INCLUDED
     let input = match options::get_asking_password()
@@ -451,7 +478,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
             match sent
             {
                 Some(true) => {},                          //COMMAND SENT
-                Some(false) => popup(&app, "Invalid usage!"),
+                Some(false) => popup(&app, tr!("bridge.invalid_usage")),
 
                 //NOTHING WENT TO THE SERVER BECAUSE THE COMMAND IS OURS TO RUN
                 None => match command
@@ -459,7 +486,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     Command::Upload => match parameters
                     {
                         Some(path) => upload_file(&app, &state, &write_stream, &path, false).await,
-                        None => popup(&app, "Usage: /upload <PATH>"),
+                        None => popup(&app, usage("/upload", "arg.path")),
                     },
 
                     //THE SAME PATH, ASKED FOR WITH THE OTHER CODE: THE SERVER KEEPS THE PICTURE AND PUTS
@@ -467,7 +494,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     Command::Image => match parameters
                     {
                         Some(path) => upload_file(&app, &state, &write_stream, &path, true).await,
-                        None => popup(&app, "Usage: /image <PATH>"),
+                        None => popup(&app, usage("/image", "arg.path")),
                     },
 
                     Command::Server => server_command(&app, &state, &write_stream, parameters).await,
@@ -479,7 +506,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     Command::Hearts => match parameters.and_then(|id| id.trim().parse::<u64>().ok())
                     {
                         Some(message_id) => emit(&app, UiEvent::ListHearts { message_id }),
-                        None => popup(&app, "Usage: /hearts <ID>"),
+                        None => popup(&app, usage("/hearts", "arg.id")),
                     },
 
                     //MUTING IS ENTIRELY OURS: THE CRATE KEEPS THE SET AND DROPS THE AUDIO (AND THE
@@ -488,16 +515,19 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     #[cfg(voice)]
                     Command::Mute => match parameters.as_deref().map(|id| id.trim().parse::<usize>())
                     {
-                        Some(Err(_)) => popup(&app, "Usage: /mute [ID]"),
+                        Some(Err(_)) => popup(&app, tr!("bridge.usage", usage = format!("/mute [{}]", i18n::text("arg.id")))),
 
                         parsed =>
                         {
                             let id = parsed.map(|parsed| parsed.unwrap_or_default());
-                            let muted = options::toggle_mute(id);
 
-                            say(&app, ChatMessage::ok(format!("Successfully {}muted{}.",
-                                if muted { "" } else { "un" },
-                                id.map(|id| format!(" ID {id}")).unwrap_or_default())));
+                            say(&app, ChatMessage::ok(match (options::toggle_mute(id), id)
+                            {
+                                (true, Some(id)) => tr!("mute.muted_id", id),
+                                (false, Some(id)) => tr!("mute.unmuted_id", id),
+                                (true, None) => tr!("mute.muted"),
+                                (false, None) => tr!("mute.unmuted"),
+                            }));
 
                             //THE PANEL AND THE MICROPHONE READING BOTH DRAW THIS, AND A SILENT CALL SENDS
                             //NOTHING OF ITS OWN TO REDRAW THEM WITH - THE MUTED SET ITSELF IS READ WHERE
@@ -516,8 +546,8 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     {
                         say(&app, ChatMessage::ok(match screen_capture::current_monitor()
                         {
-                            Some(monitor) => format!("Sharing {monitor} now."),
-                            None => String::from("Swapped the shared monitor."),
+                            Some(monitor) => tr!("screen.swapped_to", monitor),
+                            None => tr!("screen.swapped"),
                         }));
 
                         emit_screen(&app);
@@ -527,10 +557,10 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     //BUILD HAS NO FEATURE FOR LEFT OUT
                     Command::Settings => emit(&app, UiEvent::OpenSettings),
 
-                    Command::Invalid => popup(&app, "Invalid command!"),
+                    Command::Invalid => popup(&app, tr!("bridge.invalid_command")),
 
                     //Help AND Info ARE FILTERED OUT OF THE PALETTE, BUT NOTHING STOPS THEM BEING TYPED OUT
-                    _ => popup(&app, format!("{command} is not available in the desktop app.")),
+                    _ => popup(&app, tr!("bridge.unavailable", command)),
                 },
             }
 

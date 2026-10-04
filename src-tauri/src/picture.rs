@@ -39,6 +39,7 @@ use image::
 
 use why2_chat::network::client::image::Animation;
 
+use crate::tr;
 use crate::types::{ MessageImage, PictureState, PictureActions };
 
 //CONSTS
@@ -193,14 +194,14 @@ pub(crate) async fn copy_image(source: String, app: AppHandle) -> Result<(), Str
     {
         let _ = (source, app);
 
-        Err(String::from("This system has no picture clipboard."))
+        Err(tr!("bridge.no_picture_clipboard"))
     }
 
     #[cfg(not(target_os = "android"))]
     {
         use tauri_plugin_clipboard_manager::ClipboardExt;
 
-        let Some((_, bytes)) = decode(&source) else { return Err(String::from("That is not a picture.")) };
+        let Some((_, bytes)) = decode(&source) else { return Err(tr!("bridge.not_a_picture")) };
 
         //THE DECODE IS UNBROKEN CPU OVER THE WHOLE PICTURE, AND THE WRITE IS A BLOCKING CALL INTO THE
         //SYSTEM'S OWN CLIPBOARD THAT DOES NOT COME BACK UNTIL IT HAS TAKEN THE PICTURE OVER - NEITHER
@@ -209,7 +210,7 @@ pub(crate) async fn copy_image(source: String, app: AppHandle) -> Result<(), Str
         {
             let Ok(image) = image::load_from_memory(&bytes) else
             {
-                return Err(String::from("The picture could not be decoded."));
+                return Err(tr!("bridge.picture_undecodable"));
             };
 
             let rgba = image.to_rgba8();
@@ -217,7 +218,7 @@ pub(crate) async fn copy_image(source: String, app: AppHandle) -> Result<(), Str
 
             app.clipboard().write_image(&tauri::image::Image::new_owned(rgba.into_raw(), width, height))
                 .map_err(|error| error.to_string())
-        }).await.map_err(|_| String::from("Copying the picture panicked."))?
+        }).await.map_err(|_| tr!("bridge.picture_copy_failed"))?
     }
 }
 
@@ -228,18 +229,18 @@ pub(crate) async fn copy_image(source: String, app: AppHandle) -> Result<(), Str
 #[tauri::command]
 pub(crate) async fn save_image(source: String, path: Option<String>, filename: String) -> Result<String, String>
 {
-    let Some((mime, bytes)) = decode(&source) else { return Err(String::from("That is not a picture.")) };
+    let Some((mime, bytes)) = decode(&source) else { return Err(tr!("bridge.not_a_picture")) };
 
     #[cfg(not(target_os = "android"))]
     {
         let _ = (mime, filename);
 
-        let Some(path) = path else { return Err(String::from("Nowhere to save it.")) };
+        let Some(path) = path else { return Err(tr!("bridge.nowhere_to_save")) };
 
         let written = path.clone();
 
         task::spawn_blocking(move || std::fs::write(&written, &bytes))
-            .await.map_err(|_| String::from("Writing the picture panicked."))?
+            .await.map_err(|_| tr!("bridge.picture_save_failed"))?
             .map_err(|error| error.to_string())?;
 
         Ok(path)
@@ -252,6 +253,6 @@ pub(crate) async fn save_image(source: String, path: Option<String>, filename: S
         //JNI ATTACHES WHATEVER THREAD IT IS CALLED ON, AND THE WRITE ITSELF IS THE WHOLE PICTURE THROUGH
         //A CONTENT RESOLVER - NEITHER BELONGS ON THE RUNTIME
         task::spawn_blocking(move || crate::android::save_picture(&filename, &mime, &bytes))
-            .await.map_err(|_| String::from("Saving the picture panicked."))?
+            .await.map_err(|_| tr!("bridge.picture_save_failed"))?
     }
 }

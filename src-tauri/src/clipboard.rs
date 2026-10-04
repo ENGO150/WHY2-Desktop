@@ -20,6 +20,8 @@ use tauri::AppHandle;
 
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+use crate::tr;
+
 //A LINE OF TEXT ONTO THE SYSTEM CLIPBOARD - WHAT A MESSAGE'S COPY BUTTON ASKS FOR. IT IS A COMMAND OF
 //OURS AND NOT THE PLUGIN'S OWN IPC BECAUSE THE PLUGIN'S IS BEHIND THE ACL AND THIS IS NOT: A COMMAND IN
 //generate_handler! IS REACHABLE THE MOMENT IT EXISTS, WHILE A PLUGIN COMMAND NEEDS ITS PERMISSION SPELLED
@@ -37,7 +39,7 @@ pub(crate) fn copy_text(text: String, app: AppHandle) -> Result<(), String>
 
         match error.is_empty()
         {
-            true => String::from("The clipboard refused the text."),
+            true => tr!("bridge.clipboard_refused"),
             false => error,
         }
     })

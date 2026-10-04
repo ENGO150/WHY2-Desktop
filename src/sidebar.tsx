@@ -21,6 +21,7 @@ import { LOBBY } from "./types";
 import { Icon, IconButton } from "./icons";
 import { Avatar } from "./components";
 import type { People } from "./profile";
+import { t } from "./i18n";
 
 //ONE WIDGET'S HEAD
 function WidgetHead({ title, action }: { title: React.ReactNode; action?: React.ReactNode })
@@ -79,19 +80,19 @@ export function Sidebar(
                 {switcher}
 
                 {canServerSettings && (
-                    <IconButton icon="gear" label="Server settings" onClick={() => send("/server settings")} />
+                    <IconButton icon="gear" label={t("settings.title.server")} onClick={() => send("/server settings")} />
                 )}
             </header>
 
             <div className="scroller scroller-quiet flex flex-1 flex-col gap-2 px-2 pb-2">
                 <div className="widget">
                     <WidgetHead
-                        title="Channels"
+                        title={t("sidebar.channels")}
                         action={(
                             <button
                                 type="button"
-                                title="New channel"
-                                aria-label="New channel"
+                                title={t("side.new_channel")}
+                                aria-label={t("side.new_channel")}
                                 onClick={() => setCreating("")}
                                 className="flex h-6 w-6 items-center justify-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
                             >
@@ -106,7 +107,7 @@ export function Sidebar(
                             <input
                                 autoFocus
                                 value={creating}
-                                placeholder="Channel name"
+                                placeholder={t("side.channel_name")}
                                 onChange={(event) => setCreating(event.currentTarget.value)}
                                 onBlur={() => setCreating(null)}
                                 onKeyDown={(event) =>
@@ -156,7 +157,7 @@ export function Sidebar(
                 {/* CONVERSATIONS LIVE AS LONG AS THE SESSION */}
                 {directs.length > 0 && (
                     <div className="widget">
-                        <WidgetHead title="Direct messages" />
+                        <WidgetHead title={t("side.direct")} />
 
                         {directs.map((chat) =>
                         {
@@ -186,8 +187,8 @@ export function Sidebar(
 
                                     <button
                                         type="button"
-                                        title="Close"
-                                        aria-label="Close the conversation"
+                                        title={t("window.close")}
+                                        aria-label={t("side.close_direct")}
                                         onClick={() => closeDirect(chat.id)}
                                         className={`h-5 w-5 shrink-0 items-center justify-center rounded text-faint transition-colors hover:text-text group-hover:flex ${narrow ? "flex" : "hidden"}`}
                                     >
@@ -206,14 +207,14 @@ export function Sidebar(
                             title={(
                                 <span className="flex items-center gap-1.5">
                                     {voice.enabled && <span className="h-1.5 w-1.5 rounded-full bg-online" />}
-                                    Voice · #{currentChannel || "lobby"}
+                                    {t("sidebar.voice")} · #{currentChannel || "lobby"}
                                 </span>
                             )}
                             action={voice.speaker !== null && voice.enabled && (
                                 <button
                                     type="button"
-                                    title={voice.speaker ? "Play through the earpiece" : "Play through the speaker"}
-                                    aria-label={voice.speaker ? "Play through the earpiece" : "Play through the speaker"}
+                                    title={voice.speaker ? t("side.earpiece") : t("side.speaker")}
+                                    aria-label={voice.speaker ? t("side.earpiece") : t("side.speaker")}
                                     onClick={() => setSpeaker(!voice.speaker)}
                                     className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
                                 >
@@ -229,7 +230,7 @@ export function Sidebar(
                                 type="button"
                                 disabled={!voice.enabled}
                                 onClick={() => send(user.local ? "/mute" : `/mute ${user.id}`)}
-                                title={voice.enabled ? (user.muted ? "Unmute" : "Mute") : undefined}
+                                title={voice.enabled ? (user.muted ? t("side.unmute") : t("side.mute")) : undefined}
                                 className={`${row} hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent`}
                             >
                                 <Avatar name={user.username} size={20} ring={user.speaking && !user.muted} src={people.avatar(user.username)} />
@@ -248,7 +249,7 @@ export function Sidebar(
                                     onClick={() => send("/voice")}
                                     className={`btn w-full py-1 ${voice.enabled ? "btn-danger" : ""}`}
                                 >
-                                    {voice.enabled ? "Leave" : "Join"}
+                                    {voice.enabled ? t("side.leave") : t("side.join")}
                                 </button>
                             </div>
                         )}
@@ -260,11 +261,11 @@ export function Sidebar(
                     <div className="widget flex items-center gap-2.5 py-1.5 pl-2.5 pr-1.5">
                         <Icon name="monitor" className="h-4 w-4 shrink-0 text-online" />
 
-                        <button type="button" title="Share a different screen" onClick={openScreens} className="min-w-0 flex-1 truncate text-left text-[13.5px]">
-                            Sharing {screen.monitor ?? "screen"}
+                        <button type="button" title={t("side.share_other")} onClick={openScreens} className="min-w-0 flex-1 truncate text-left text-[13.5px]">
+                            {screen.monitor ? t("side.sharing_monitor", { monitor: screen.monitor }) : t("side.sharing")}
                         </button>
 
-                        <button type="button" onClick={() => send("/screen")} className="btn btn-danger py-1">Stop</button>
+                        <button type="button" onClick={() => send("/screen")} className="btn btn-danger py-1">{t("screens.stop")}</button>
                     </div>
                 )}
             </div>
@@ -273,7 +274,7 @@ export function Sidebar(
             <div className="flex shrink-0 items-center gap-0.5 px-2 pb-2 pt-1">
                 <button
                     type="button"
-                    title="Your profile"
+                    title={t("settings.title.own_profile")}
                     onClick={(event) => people.open(username, event.currentTarget)}
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-hover"
                 >
@@ -289,13 +290,13 @@ export function Sidebar(
                 {hasVoice && (
                     <IconButton
                         icon={voice.mic ? "mic" : "mic_off"}
-                        label={voice.mic ? "Mute microphone" : "Unmute microphone"}
+                        label={voice.mic ? t("side.mic_mute") : t("side.mic_unmute")}
                         tone={voice.mic ? "default" : "error"}
                         onClick={() => send("/mute")}
                     />
                 )}
-                <IconButton icon="gear" label="Settings" onClick={() => send("/settings")} />
-                <IconButton icon="logout" label="Disconnect" onClick={() => send("/exit")} />
+                <IconButton icon="gear" label={t("settings.title.client")} onClick={() => send("/settings")} />
+                <IconButton icon="logout" label={t("side.disconnect")} onClick={() => send("/exit")} />
             </div>
         </aside>
     );

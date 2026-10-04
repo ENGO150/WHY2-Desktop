@@ -28,6 +28,7 @@ use why2_chat::
     network::codes::PacketCode,
 };
 
+use crate::tr;
 use crate::types::*;
 use crate::state::AppState;
 use crate::emit::popup;
@@ -83,9 +84,9 @@ pub(crate) fn offered_colors() -> Vec<VocabularyValue>
 pub(crate) async fn color_handler(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
     username: bool, parameters: Option<String>)
 {
-    let Some(parameters) = parameters else { return popup(app, "Invalid usage!") };
+    let Some(parameters) = parameters else { return popup(app, tr!("bridge.invalid_usage")) };
 
-    let Ok((color, _)) = to_color(&parameters) else { return popup(app, "Invalid color!") };
+    let Ok((color, _)) = to_color(&parameters) else { return popup(app, tr!("invalid.color")) };
 
-    send_packet(state, write_stream, PacketCode::Colors { username, color }).await;
+    send_packet(state, write_stream, PacketCode::ColorRequest { username, color }).await;
 }

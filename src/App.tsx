@@ -70,7 +70,7 @@ import { hasMarkup } from "./markup";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
 import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
-import { TofuDialog, CHALLENGE } from "./tofu";
+import { TofuDialog, challenge } from "./tofu";
 import { ScreensBox } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
@@ -92,7 +92,6 @@ import { markWaiting, markLoading, deliverPicture, pictureName } from "./picture
 import { sortRoster, sortOffline } from "./roster";
 import
 {
-    RESTART_LABEL,
     NO_DEVICES,
     deviceEntries,
     choiceEntries,
@@ -102,6 +101,7 @@ import
     landRow,
     unsavedRows,
 } from "./settings";
+import { t, tn, around, setLocale } from "./i18n";
 
 //A DROP NOBODY ASKED FOR DIALS ITSELF BACK, THE WAY THE TUI'S Reconnect DOES - THE SAME WAIT AND THE SAME
 //NUMBER OF TRIES. WHAT IS REPLAYED IS THE ROW'S OWN IDENTITY, WHICH THE LIST ALREADY HOLDS
@@ -335,6 +335,20 @@ function App()
     const closedCardRef = useRef<{ username: string; at: number } | null>(null);
     const [editing, setEditing] = useState(false);
 
+    //THE SERVER'S PICTURE BY HASH, EVERY ICON WE HOLD, AND AN UPLOAD OF OURS IN FLIGHT
+    const [serverIcon, setServerIcon] = useState<string | null>(null);
+    const [icons, setIcons] = useState<Record<string, string>>({});
+    const [uploadingIcon, setUploadingIcon] = useState(false);
+    const iconHashRef = useRef<string | null>(null);
+    const iconsAskedRef = useRef<Set<string>>(new Set());
+
+    //THE LANGUAGE, SO A SWITCH REDRAWS EVERYTHING
+    const [, setLanguageCode] = useState("");
+
+    //THE SIXTEEN COLORS, AND THE TWO THE SERVER HOLDS FOR US
+    const [colorChoices, setColorChoices] = useState<VocabularyValue[]>([]);
+    const [ownColors, setOwnColors] = useState<{ name: number | null; message: number | null }>({ name: null, message: null });
+
     //THE /account FORM, WHILE UP
     const [account, setAccount] = useState<AccountBox | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -485,6 +499,23 @@ function App()
         };
     }, []);
 
+    //THE ICONS THE LIST KEEPS, READ OFF THE DISK ONCE EACH
+    useEffect(() =>
+    {
+        for (const server of servers)
+        {
+            const hash = server.icon;
+
+            if (!hash || iconsAskedRef.current.has(hash)) continue;
+
+            iconsAskedRef.current.add(hash);
+
+            invoke<string | null>("get_server_icon", { hash })
+                .then((source) => { if (source) setIcons((previous) => ({ ...previous, [hash]: source })); })
+                .catch(() => {});
+        }
+    }, [servers]);
+
     //A DRAWER IS A NARROW WINDOW'S IDEA ONLY. DRAGGING THE WINDOW WIDE PUTS THE COLUMNS BACK WHERE THEY
     //BELONG, AND A DRAWER LEFT OPEN BEHIND THEM WOULD BE A PANEL FLOATING OVER ITS OWN TWIN
     useEffect(() => { if (!narrow) setDrawer(null); }, [narrow]);
@@ -530,6 +561,10 @@ function App()
     }, [uiState, connecting, narrow]);
 
     const connected = uiState === "connected";
+
+    //THE LISTENER READS IT
+    const connectedRef = useRef(false);
+    connectedRef.current = connected;
 
     //THE PICTURE GETS THE WHOLE WINDOW. A SCREEN IS SOMEBODY'S WHOLE MONITOR, AND EVERY COLUMN LEFT
     //STANDING BESIDE IT IS TAKEN OFF THE ONLY THING ANYBODY IS LOOKING AT
@@ -941,11 +976,15 @@ function App()
         setEditing(false);
         setAccount(null);
         setUploadingAvatar(false);
+        setServerIcon(null);
+        setUploadingIcon(false);
+        setOwnColors({ name: null, message: null });
         setTypingUsers({});
         setTransfers({});
 
         askedRef.current = new Set();
         avatarHashRef.current = new Set();
+        iconHashRef.current = null;
         pageRef.current = { cursor: null, pending: false };
         typingRef.current = { active: false, at: 0 };
 
@@ -971,6 +1010,8 @@ function App()
         addressRef.current = server.address;
         setUsername(server.username);
         setServerName(server.name ?? "");
+        setServerIcon(server.icon ?? null);
+        iconHashRef.current = server.icon ?? null;
         setUiState("server_select");
         setInputValue("");
         setErrorMsg("");
@@ -1011,7 +1052,7 @@ function App()
 
         retryRef.current.left -= 1;
 
-        setRetrying(`Connection lost, reconnecting… (${RECONNECT_ATTEMPTS - retryRef.current.left}/${RECONNECT_ATTEMPTS})`);
+        setRetrying(t("login.reconnecting", { attempt: RECONNECT_ATTEMPTS - retryRef.current.left, attempts: RECONNECT_ATTEMPTS }));
         setConnecting(true);
 
         retryRef.current.timer = window.setTimeout(() =>
@@ -1133,7 +1174,7 @@ function App()
 
                     setUiState("username_prompt");
                     setConnecting(false);
-                    setHint(registration ? `a-Z, 0-9; ${min}-${max} characters` : "Registration is disabled.");
+                    setHint(registration ? t("login.username_rules", { min, max }) : t("login.registration_disabled"));
                     break;
                 }
 
@@ -1167,7 +1208,7 @@ function App()
                     //A REPLAYED ANSWER THE SERVER REFUSES IS NOT ONE TO REPLAY AGAIN
                     cancelRetry();
 
-                    setErrorMsg("Username rejected!");
+                    setErrorMsg(t("login.username_rejected"));
                     setConnecting(false);
                     break;
                 }
@@ -1178,7 +1219,7 @@ function App()
 
                     cancelRetry();
 
-                    setErrorMsg(`Password rejected! Enter at least ${payload.data.min} characters.`);
+                    setErrorMsg(t("login.password_rejected", { min: payload.data.min }));
                     setConnecting(false);
                     break;
                 }
@@ -1221,7 +1262,7 @@ function App()
                     {
                         setRole(role);
                         refreshCommands();
-                        setPopupMessage(`You are now ${role}.`);
+                        setPopupMessage(t("event.role", { role }));
                     }
 
                     break;
@@ -1355,11 +1396,11 @@ function App()
                     const panes = panesRef.current;
                     const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
 
-                    if (!message) push(entryFor(localLine("error", `Message #${message_id} is not loaded.`)));
-                    else if (message.hearts.length === 0) push(entryFor(localLine("notice", `Nobody hearted #${message_id}.`)));
+                    if (!message) push(entryFor(localLine("error", t("hearts.not_loaded", { message_id }))));
+                    else if (message.hearts.length === 0) push(entryFor(localLine("notice", t("hearts.none", { message_id }))));
                     else push({
                         entry: "block",
-                        title: `Hearts on #${message_id} (${message.hearts.length})`,
+                        title: t("hearts.title", { message_id, count: message.hearts.length }).replace(/[:：]$/, ""),
                         rows: message.hearts.map((name) => ({ depth: 0, id: null, text: name, note: null, color: null, device: null, accent: name === usernameRef.current })),
                     });
                     break;
@@ -1429,7 +1470,11 @@ function App()
                         return { ...previous, [uid]: { ...transfer, done: ok ? transfer.total : transfer.done, outcome: ok } };
                     });
 
-                    if (!ok) setUploadingAvatar(false);
+                    if (!ok)
+                    {
+                        setUploadingAvatar(false);
+                        setUploadingIcon(false);
+                    }
                     break;
                 }
 
@@ -1448,6 +1493,9 @@ function App()
                     const source = image?.source;
 
                     if (source && avatarHashRef.current.has(hash)) setAvatars((previous) => ({ ...previous, [hash]: source }));
+
+                    //AND THE SERVER'S
+                    if (source && iconHashRef.current === hash) setIcons((previous) => ({ ...previous, [hash]: source }));
                     break;
                 }
 
@@ -1479,7 +1527,7 @@ function App()
                 {
                     if (!payload.data.ok)
                     {
-                        refuseAccount("Wrong current password, or the new one does not meet the requirements.");
+                        refuseAccount(t("event.password_refused"));
                         break;
                     }
 
@@ -1504,7 +1552,7 @@ function App()
                 {
                     if (!payload.data.ok)
                     {
-                        refuseAccount("Wrong password.");
+                        refuseAccount(t("event.wrong_password"));
                         break;
                     }
 
@@ -1628,6 +1676,45 @@ function App()
                 case "popup":
                 {
                     setPopupMessage(payload.data.text);
+                    setUploadingIcon(false);
+                    break;
+                }
+
+                //THE SERVER'S PICTURE, KEPT ON ITS ROW FOR THE LIST
+                case "server_icon":
+                {
+                    const { hash } = payload.data;
+                    const entry = entryRef.current;
+
+                    iconHashRef.current = hash;
+                    setServerIcon(hash);
+                    setUploadingIcon(false);
+
+                    if (entry && entry.icon !== hash)
+                    {
+                        entryRef.current = { ...entry, icon: hash };
+
+                        setDialing(entryRef.current);
+                        invoke<StoredServer[]>("save_server", { server: entryRef.current }).then(setServers).catch(console.error);
+                    }
+
+                    break;
+                }
+
+                //SENT RIGHT AFTER THE LOGIN
+                case "own_colors":
+                {
+                    setOwnColors({ name: payload.data.username_color, message: payload.data.message_color });
+                    break;
+                }
+
+                //THE WHOLE WINDOW IN ANOTHER LANGUAGE
+                case "locale":
+                {
+                    setLocale(payload.data.locale);
+                    setLanguageCode(payload.data.locale.code);
+
+                    if (connectedRef.current) refreshCommands();
                     break;
                 }
 
@@ -2014,7 +2101,7 @@ function App()
     {
         const row = paneRef.current?.querySelector(`[data-message-id="${message_id}"]`);
 
-        if (!row) return setPopupMessage(`Message #${message_id} is not loaded.`);
+        if (!row) return setPopupMessage(t("hearts.not_loaded", { message_id }));
 
         row.scrollIntoView({ behavior: "smooth", block: "center" });
         row.classList.remove("flash");
@@ -2166,6 +2253,7 @@ function App()
                     username: wanted,
                     password: form.password || null,
                     name: null,
+                    icon: null,
                 });
 
             return;
@@ -2239,7 +2327,7 @@ function App()
         setAccount({ ...account, busy: true, error: "" });
 
         invoke("account_request", { action: account.action, password, newPassword }).catch((error: unknown) =>
-            setAccount((box) => box && { ...box, busy: false, error: String(error) || "Could not send the request." }));
+            setAccount((box) => box && { ...box, busy: false, error: String(error) || t("acct.send_failed") }));
     };
 
     const closeAccount = () =>
@@ -2279,7 +2367,7 @@ function App()
     //AND DIALS AGAIN ITSELF - NOTHING HERE HAS TO RECONNECT
     const answerTofu = (accept: boolean) =>
     {
-        if (accept && tofu?.mismatch && tofuTyped !== CHALLENGE) return;
+        if (accept && tofu?.mismatch && tofuTyped !== challenge()) return;
 
         setTofu(null);
         setTofuTyped("");
@@ -2299,7 +2387,7 @@ function App()
     const uploadFile = async (image: boolean) =>
     {
         const selected = await open(image
-            ? { multiple: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] }
+            ? { multiple: false, filters: [{ name: t("chat.images"), extensions: IMAGE_EXTENSIONS }] }
             : { multiple: false });
 
         if (typeof selected !== "string") return;
@@ -2335,8 +2423,8 @@ function App()
     const copyMessage = (text: string) =>
     {
         invoke("copy_text", { text })
-            .then(() => setPopupMessage("Message copied."))
-            .catch((error: unknown) => setPopupMessage(String(error) || "The message could not be copied."));
+            .then(() => setPopupMessage(t("chat.copied")))
+            .catch((error: unknown) => setPopupMessage(String(error) || t("chat.copy_failed")));
     };
 
     //THE PICTURE PUT SOMEWHERE ELSE. THE BYTES ARE THE ONES THE WINDOW WAS SENT - THE data: URL GOES BACK
@@ -2347,7 +2435,7 @@ function App()
         if (!image.source) return;
 
         invoke("copy_image", { source: image.source })
-            .then(() => setPopupMessage("Image copied."))
+            .then(() => setPopupMessage(t("chat.image_copied")))
             .catch((error: unknown) => setPopupMessage(String(error)));
     };
 
@@ -2366,7 +2454,7 @@ function App()
         {
             const extension = filename.slice(filename.lastIndexOf(".") + 1);
 
-            path = await save({ defaultPath: filename, filters: [{ name: "Image", extensions: [extension] }] })
+            path = await save({ defaultPath: filename, filters: [{ name: t("files.kind.image"), extensions: [extension] }] })
                 .catch(() => null);
 
             //THE DIALOG WAS DISMISSED, WHICH IS AN ANSWER AND NOT A FAILURE
@@ -2377,7 +2465,7 @@ function App()
         //PATH, SO THE PATH IS NEWS AND THE LINE NAMES IT; A PHONE WAS NEVER ASKED - THE PICTURE GOES WHERE
         //A PHONE KEEPS PICTURES AND THERE IS NOTHING TO REPORT BUT THAT IT GOT THERE
         invoke<string>("save_image", { source: image.source, path, filename })
-            .then((where) => setPopupMessage(actions.ask ? `Saved to ${where}` : "Image saved"))
+            .then((where) => setPopupMessage(actions.ask ? t("chat.saved_to", { path: where }) : t("chat.image_saved")))
             .catch((error: unknown) => setPopupMessage(String(error)));
     };
 
@@ -3181,7 +3269,7 @@ function App()
         editSettings((current) => withRow({ ...current, selected: index, confirm: false }, index,
             (item) => (value.kind === "device"
                 ? { ...item, value: { kind: "device", value: { id, input: value.value.input } } }
-                : { ...item, value: { kind: "choice", value: { id, options: value.value.options } } })));
+                : { ...item, value: { kind: "choice", value: { ...value.value, id } } })));
     };
 
     //LEFT/RIGHT: FLIP A TOGGLE, SLIDE A VOLUME, STEP A NUMBER, OR CYCLE A DEVICE WITHOUT OPENING THE PICKER
@@ -3224,7 +3312,7 @@ function App()
         if (row.item.value.kind === "choice")
         {
             const { id, options } = row.item.value.value;
-            const entries = choiceEntries(options);
+            const entries = choiceEntries(options, row.item.value.value.none);
 
             const current = Math.max(entries.findIndex((entry) => entry.id === id), 0);
             const next = (current + direction + entries.length) % entries.length;
@@ -3297,7 +3385,7 @@ function App()
         {
             editSettings((current) => ({ ...current, selected: index }));
 
-            if (row.label === RESTART_LABEL) restartServer();
+            if (row.action === "restart") restartServer();
             else saveSettings();
 
             return;
@@ -3330,7 +3418,7 @@ function App()
                 ...current,
                 selected: index,
                 confirm: false,
-                picker: { title: input ? " Input device " : " Output device ", entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
+                picker: { title: input ? t("settings.row.input_device") : t("settings.row.output_device"), entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
             }));
 
             return;
@@ -3339,14 +3427,14 @@ function App()
         //AND SO HAS THE SERVER LIST
         if (row.item.value.kind === "choice")
         {
-            const { id, options } = row.item.value.value;
-            const entries = choiceEntries(options);
+            const { id, options, none } = row.item.value.value;
+            const entries = choiceEntries(options, none);
 
             editSettings((current) => ({
                 ...current,
                 selected: index,
                 confirm: false,
-                picker: { title: ` ${row.item.label} `, entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
+                picker: { title: row.item.label, entries, selected: Math.max(entries.findIndex((entry) => entry.id === id), 0), row: index },
             }));
 
             return;
@@ -3662,8 +3750,8 @@ function App()
 
     //WHAT THE PALETTE IS OFFERING
     const paletteTitle = palette.mode === "values"
-        ? palette.arg ? `${palette.arg.name.charAt(0)}${palette.arg.name.slice(1).toLowerCase()}` : "Mentions"
-        : palette.mode === "menu" ? "Commands" : "Parameters";
+        ? palette.arg ? `${palette.arg.name.charAt(0)}${palette.arg.name.slice(1).toLowerCase()}` : t("palette.mentions")
+        : palette.mode === "menu" ? t("palette.commands") : t("palette.parameters");
 
     //ONE COMMAND, OR THE SIGNATURE HINT (index null)
     const entryRow = (entry: PaletteEntry, index: number | null, activeArgument: number | null) =>
@@ -3760,10 +3848,11 @@ function App()
     //WHO IS WRITING HERE
     const typers = Object.keys(typingUsers).sort();
 
-    const typingLine = dm || typers.length === 0 ? null
-        : typers.length === 1 ? `${typers[0]} is typing`
-            : typers.length === 2 ? `${typers[0]} and ${typers[1]} are typing`
-                : `${typers.length} people are typing`;
+    //THE TUI'S WORDS, ITS ELLIPSIS LEFT TO THE DOTS
+    const typingLine = (dm || typers.length === 0 ? null
+        : typers.length === 1 ? t("typing.one", { one: typers[0] })
+            : typers.length === 2 ? t("typing.two", { one: typers[0], two: typers[1] })
+                : tn("typing.many", typers.length))?.replace(/(…|\.\.\.)$/, "") ?? null;
 
     //THE WHOLE PANE: RUNS, NOTICES, AND A DIVIDER WHERE THE DAY CHANGES
     const paneNodes = (() =>
@@ -3843,6 +3932,20 @@ function App()
         invoke("set_theme", { id: id === DEFAULT_THEME ? "" : id }).catch((error) => setPopupMessage(String(error)));
     };
 
+    //THE SERVER'S PICTURE, CUT AND SENT THROUGH /server icon
+    const pickIcon = async () =>
+    {
+        const selected = await open({ multiple: false, filters: [{ name: t("chat.images"), extensions: IMAGE_EXTENSIONS }] });
+
+        if (typeof selected !== "string") return;
+
+        setUploadingIcon(true);
+        send(`/server icon ${selected}`);
+    };
+
+    //WHAT THE SERVER WE ARE ON LOOKS LIKE
+    const iconSrc = serverIcon ? icons[serverIcon] : undefined;
+
     //THE SETTINGS SHEET, WHICH OWNS THE KEYBOARD WHILE UP
     const settingsBox = settings && (
         <SettingsDialog
@@ -3861,6 +3964,9 @@ function App()
             account={!settings?.server && hasAccount ? (action) => { closeSettings(); send(`/account ${action}`); } : null}
             theme={settings?.server ? null : theme}
             pickTheme={pickTheme}
+            icon={settings?.server && serverAction("icon")
+                ? { name: serverName || "WHY2", src: iconSrc, busy: uploadingIcon, pick: pickIcon, remove: () => send("/server icon") }
+                : null}
             close={closeSettings}
         />
     );
@@ -3882,8 +3988,8 @@ function App()
 
                 <button
                     type="button"
-                    title="Close"
-                    aria-label="Close"
+                    title={t("window.close")}
+                    aria-label={t("window.close")}
                     onClick={closeLightbox}
                     className="touch-target flex h-8 w-8 items-center justify-center rounded-app text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                 >
@@ -4022,7 +4128,7 @@ function App()
     //A NEW PICTURE IS CUT AND UPLOADED AT ONCE
     const pickAvatar = async () =>
     {
-        const selected = await open({ multiple: false, filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+        const selected = await open({ multiple: false, filters: [{ name: t("chat.images"), extensions: IMAGE_EXTENSIONS }] });
 
         if (typeof selected !== "string") return;
 
@@ -4039,6 +4145,24 @@ function App()
         invoke("save_profile", { profile: { username, avatar: null, ...fields } })
             .catch((error: unknown) => { setPopupMessage(String(error)); throw error; });
 
+    //ASKED ONCE, WHEN THE EDITOR FIRST OPENS
+    useEffect(() =>
+    {
+        if (!editing || colorChoices.length > 0) return;
+
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "colors", typed: "" }).then(setColorChoices).catch(console.error);
+    }, [editing]);
+
+    //SET A COLOR ON THE SERVER
+    const pickColor = (name: boolean, choice: VocabularyValue) =>
+    {
+        send(`/${name ? "ucolor" : "color"} ${choice.value}`);
+
+        setOwnColors((previous) => (name ? { ...previous, name: choice.color } : { ...previous, message: choice.color }));
+
+        if (name) setUsers((previous) => previous.map((user) => user.username === username ? { ...user, username_color: choice.color } : user));
+    };
+
     const closeEditor = () =>
     {
         setEditing(false);
@@ -4052,6 +4176,10 @@ function App()
             profile={profiles[username] ?? null}
             avatar={people.avatar(username)}
             color={colorOf(username)}
+            colors={colorChoices}
+            nameColor={ownColors.name}
+            messageColor={ownColors.message}
+            pickColor={pickColor}
             uploading={uploadingAvatar}
             narrow={narrow}
             save={saveProfile}
@@ -4124,6 +4252,8 @@ function App()
             connecting={connecting}
             serverName={serverName}
             address={address}
+            icon={iconSrc}
+            icons={icons}
             onPick={pickServer}
             onAdd={openAdd}
             onForget={forgetServer}
@@ -4135,6 +4265,7 @@ function App()
             uiState={uiState}
             mode={mode}
             servers={servers}
+            icons={icons}
             target={dialing}
             form={form}
             setForm={setForm}
@@ -4196,8 +4327,8 @@ function App()
 
     //WHAT THE HEADER SAYS UNDER THE NAME
     const subtitle = typingLine ?? (dm
-        ? users.some((user) => user.id === dm.id) ? "online" : "offline"
-        : `${users.length} online`);
+        ? users.some((user) => user.id === dm.id) ? t("chat.online") : t("chat.offline")
+        : tn("chat.online_count", users.length));
 
     const shell = (
         <main
@@ -4257,7 +4388,7 @@ function App()
                     <section className="flex min-w-0 flex-1 flex-col bg-chat">
                         <header className={`h-14 shrink-0 items-center gap-2 ${narrow ? "px-2" : "px-4"} ${theater ? "hidden" : "flex"}`}>
                             {narrow && (
-                                <IconButton icon="menu" label="Channels" onClick={() => setDrawer("left")} />
+                                <IconButton icon="menu" label={t("sidebar.channels")} onClick={() => setDrawer("left")} />
                             )}
 
                             {/* WITH A SCREEN UP, THE HEAD IS THE CHOICE OF WHICH TO LOOK AT */}
@@ -4297,12 +4428,12 @@ function App()
                             )}
 
                             <div className="ml-auto flex items-center gap-0.5">
-                                {hasVoice && headerAction("headset", voice.enabled ? "Leave call" : "Join call", () => send("/voice"), voice.enabled ? "live" : null)}
-                                {hasScreens && headerAction("monitor", "Screens", openScreens, screen.sharing ? "live" : screensOpen ? "on" : null)}
-                                {headerAction("folder", "Files", () => (filesOpen ? closeFiles() : send("/files")), filesOpen ? "on" : null)}
+                                {hasVoice && headerAction("headset", voice.enabled ? t("chat.leave_call") : t("chat.join_call"), () => send("/voice"), voice.enabled ? "live" : null)}
+                                {hasScreens && headerAction("monitor", t("screens.title"), openScreens, screen.sharing ? "live" : screensOpen ? "on" : null)}
+                                {headerAction("folder", t("files.title"), () => (filesOpen ? closeFiles() : send("/files")), filesOpen ? "on" : null)}
 
                                 {/* A COLUMN WHEN WIDE, A DRAWER WHEN NARROW */}
-                                {headerAction("users", "Members", () => (narrow
+                                {headerAction("users", t("chat.members"), () => (narrow
                                     ? setDrawer((previous) => (previous === "right" ? null : "right"))
                                     : setMembers((previous) => !previous)), (narrow ? drawer === "right" : members) ? "on" : null)}
                             </div>
@@ -4323,7 +4454,7 @@ function App()
                             <div className="flex h-11 shrink-0 items-center gap-3 border-t border-border bg-deep px-3">
                                 <button
                                     type="button"
-                                    title="Back to the conversation (esc)"
+                                    title={t("chat.back")}
                                     onClick={() => setView("chat")}
                                     className="flex shrink-0 items-center gap-1.5 rounded-app px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
                                 >
@@ -4335,16 +4466,15 @@ function App()
 
                                 <span className="pulse h-1.5 w-1.5 shrink-0 rounded-full bg-online" />
 
-                                <span className="min-w-0 truncate text-[13px]">
-                                    <span className="font-semibold">{watching}</span>
-                                    <span className="text-muted">&apos;s screen</span>
+                                <span className="min-w-0 truncate text-[13px] text-muted">
+                                    {around("chat.screen_of", "username").map((part, at) => (part === null
+                                        ? <span key={at} className="font-semibold text-text">{watching}</span>
+                                        : <span key={at}>{part}</span>))}
                                 </span>
 
                                 {decoding && (
                                     <span
-                                        title={decoding === "webview"
-                                            ? "The window is decoding the H.264 stream itself"
-                                            : "This webview has no H.264 decoder, so the frames are decoded for it and sent on as pictures"}
+                                        title={decoding === "webview" ? t("chat.decode_webview") : t("chat.decode_bridge")}
                                         className="shrink-0 rounded-full bg-active px-2 py-0.5 text-[10.5px] font-medium uppercase text-muted"
                                     >
                                         {decoding === "webview" ? "h.264" : "jpeg"}
@@ -4352,7 +4482,7 @@ function App()
                                 )}
 
                                 <button type="button" onClick={() => send("/deattach")} className="btn btn-danger armed ml-auto py-1.5">
-                                    Stop watching
+                                    {t("chat.stop_watching")}
                                 </button>
                             </div>
                         </div>
@@ -4384,7 +4514,7 @@ function App()
                                         pinnedRef.current = true;
                                         setUnread(0);
                                     }}
-                                    title={`${unread} new`}
+                                    title={t("pane.unread", { count: unread })}
                                     className="absolute bottom-4 right-6 flex h-10 w-10 items-center justify-center rounded-full border border-border-strong bg-overlay text-text shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]"
                                 >
                                     <Icon name="arrow_down" className="h-5 w-5" />
@@ -4419,11 +4549,11 @@ function App()
                                     onSubmit={handleChatSubmit}
                                     className="overflow-hidden rounded-xl border border-border-strong bg-raised shadow-[0_4px_20px_-10px_rgba(0,0,0,0.35)] transition-colors focus-within:border-muted/50"
                                 >
-                                    {editTarget && contextBar("pencil", "Editing", editTarget.text.split("\n")[0], stopEditing, "Cancel edit")}
+                                    {editTarget && contextBar("pencil", t("chat.editing"), editTarget.text.split("\n")[0], stopEditing, t("chat.cancel_edit"))}
 
                                     {replyTo && contextBar("reply", (
                                         <span style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
-                                    ), replyTo.image ? "Picture" : replyTo.text.split("\n")[0], () => setReplyTo(null), "Cancel reply")}
+                                    ), replyTo.image ? t("chat.picture") : replyTo.text.split("\n")[0], () => setReplyTo(null), t("chat.cancel_reply"))}
 
                                     <textarea
                                         ref={chatInputRef}
@@ -4432,7 +4562,7 @@ function App()
                                         value={chatInput}
                                         onChange={(event) => writeInput(event.currentTarget.value)}
                                         onKeyDown={handleChatKey}
-                                        placeholder={dm ? `Message ${dm.username}` : `Message #${channelLabel}`}
+                                        placeholder={t("chat.placeholder", { target: dm ? dm.username : `#${channelLabel}` })}
                                         className="composer-line block w-full bg-transparent px-4 pb-1 pt-3 text-[15px] outline-none placeholder:text-faint"
 
                                         //THE KEYBOARD OPENS ON A TAP, AND RETURN IS A NEWLINE THERE
@@ -4444,13 +4574,13 @@ function App()
                                     />
 
                                     <div className="flex items-center gap-0.5 px-2 pb-2">
-                                        <IconButton icon="paperclip" label="Attach a file" onClick={() => uploadFile(false)} />
-                                        <IconButton icon="image" label="Send a picture" onClick={() => uploadFile(true)} />
+                                        <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
+                                        <IconButton icon="image" label={t("chat.send_picture")} onClick={() => uploadFile(true)} />
 
                                         <button
                                             type="submit"
-                                            title="Send"
-                                            aria-label="Send"
+                                            title={t("chat.send")}
+                                            aria-label={t("chat.send")}
                                             disabled={!chatInput.trim()}
                                             className="touch-target ml-auto flex h-8 w-8 items-center justify-center rounded-lg bg-text text-chat transition hover:opacity-90 disabled:cursor-default disabled:bg-active disabled:text-faint"
                                         >

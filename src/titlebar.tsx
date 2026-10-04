@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Icon } from "./icons";
+import { t } from "./i18n";
 
 //WHAT THE WINDOW'S OWN FRAME IS, WHICH IS THE ONE THING ON THIS SIDE THAT HAS TO KNOW WHICH PLATFORM IT
 //IS ON - EVERYTHING ELSE IS ANSWERED BY WHAT THE BUILD CAN DO. "buttons" IS WINDOWS AND LINUX, WHERE
@@ -86,15 +87,15 @@ export function TitleBar({ chrome }: { chrome: WindowChrome })
 
                 {chrome === "buttons" && (
                     <div className="ml-auto flex h-full items-stretch">
-                        <WindowButton icon="win_minimize" label="Minimize" onClick={() => { win.minimize().catch(() => {}); }} />
+                        <WindowButton icon="win_minimize" label={t("window.minimize")} onClick={() => { win.minimize().catch(() => {}); }} />
 
                         <WindowButton
                             icon={maximized ? "win_restore" : "win_maximize"}
-                            label={maximized ? "Restore" : "Maximize"}
+                            label={maximized ? t("window.restore") : t("window.maximize")}
                             onClick={() => { win.toggleMaximize().catch(() => {}); }}
                         />
 
-                        <WindowButton icon="close" label="Close" close onClick={() => { win.close().catch(() => {}); }} />
+                        <WindowButton icon="close" label={t("window.close")} close onClick={() => { win.close().catch(() => {}); }} />
                     </div>
                 )}
             </header>

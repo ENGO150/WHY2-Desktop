@@ -1,0 +1,270 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "one-few-other"
+
+[bridge]
+login_ok = "Prihlásenie bolo úspešné. Napíšte / pre príkazy."
+identity_rejected = "Identita servera bola odmietnutá."
+invalid_usage = "Neplatné použitie!"
+invalid_command = "Neplatný príkaz!"
+invalid_action = "Neplatná akcia!"
+invalid_role = "Neplatná rola!"
+invalid_image = "Neplatný obrázok."
+not_connected = "Nepripojené."
+unknown_setting = "Neznáme nastavenie!"
+unknown_language = "Neznámy jazyk!"
+no_voice = "Hlas nie je na tejto platforme dostupný."
+no_route = "Na tejto platforme nie je čo presmerovať."
+usage = "Použitie: {usage}"
+unavailable = "{command} nie je v desktopovej aplikácii dostupný."
+clipboard_refused = "Schránka text odmietla."
+screen_decode = "Zdieľanú obrazovku nemožno dekódovať: {error}."
+nothing_to_answer = "Nie je na čo odpovedať."
+session_gone = "Relácia už skončila."
+no_picture_clipboard = "Tento systém nemá schránku na obrázky."
+not_a_picture = "To nie je obrázok."
+picture_undecodable = "Obrázok sa nepodarilo dekódovať."
+picture_copy_failed = "Kopírovanie obrázka zlyhalo."
+nowhere_to_save = "Nie je kam uložiť."
+picture_save_failed = "Uloženie obrázka zlyhalo."
+
+[android]
+channel_session = "Relácia"
+channel_messages = "Správy"
+connected = "Pripojené"
+connected_to = "Pripojené k {server}"
+in_call = "V hlasovom hovore"
+in_call_on = "V hlasovom hovore na {server}"
+mic_dialog = "Android neotvoril dialóg mikrofónu. Povoľte mikrofón pre WHY2 v nastaveniach aplikácie v Androide."
+mic_unreachable = "WHY2 sa nepodarilo spojiť s Androidom kvôli mikrofónu. Povoľte mikrofón pre WHY2 v nastaveniach aplikácie v Androide."
+mic_refused = "Mikrofón bol zamietnutý. Povoľte ho pre WHY2 v nastaveniach aplikácie v Androide."
+mic_needed = "Hovor potrebuje mikrofón."
+save_refused = "Android obrázok neuložil."
+unreachable = "WHY2 sa nepodarilo spojiť s Androidom."
+
+[tray]
+open = "Otvoriť WHY2"
+quit = "Ukončiť WHY2"
+
+[window]
+minimize = "Minimalizovať"
+maximize = "Maximalizovať"
+restore = "Obnoviť"
+close = "Zavrieť"
+
+[connect]
+add = "Pridať server"
+connect = "Pripojiť"
+back = "Späť"
+continue = "Pokračovať"
+create_account = "Vytvoriť účet"
+create_password = "Vytvorte heslo"
+other_servers = "Ďalšie servery"
+password_optional = "Heslo (nepovinné)"
+switch = "Prepnúť server"
+
+[trust]
+unknown = "Dôverovať tomuto serveru?"
+changed = "Kľúč servera sa zmenil"
+type_to_replace = "Napíšte „{word}“ na nahradenie kľúča"
+cancel = "Zrušiť"
+replace = "Nahradiť kľúč"
+trust = "Dôverovať"
+
+[acct]
+delete_warning = "Túto akciu nemožno vrátiť. Stlačte znova na potvrdenie."
+delete_for_good = "Zmazať natrvalo"
+send_failed = "Požiadavku sa nepodarilo odoslať."
+
+[chat]
+today = "Dnes"
+yesterday = "Včera"
+private = "súkromné"
+show = "Zobraziť"
+retry = "Skúsiť znova"
+unavailable = "nedostupné"
+picture = "Obrázok"
+message_number = "Správa #{id}"
+copied = "Správa skopírovaná."
+copy_failed = "Správu sa nepodarilo skopírovať."
+image_copied = "Obrázok skopírovaný."
+image_saved = "Obrázok uložený"
+saved_to = "Uložené do {path}"
+images = "Obrázky"
+online = "online"
+offline = "offline"
+join_call = "Pripojiť sa k hovoru"
+leave_call = "Opustiť hovor"
+members = "Členovia"
+back = "Späť ku konverzácii (esc)"
+screen_of = "Obrazovka používateľa {username}"
+decode_webview = "Okno dekóduje stream H.264 samo"
+decode_bridge = "Tento webview nemá dekodér H.264, takže sa snímky dekódujú zaň a posielajú sa ako obrázky"
+stop_watching = "Prestať sledovať"
+editing = "Úprava"
+cancel_edit = "Zrušiť úpravu"
+cancel_reply = "Zrušiť odpoveď"
+placeholder = "Správa pre {target}"
+attach = "Priložiť súbor"
+send_picture = "Poslať obrázok"
+send = "Odoslať"
+
+[chat.online_count]
+one = "{count} online"
+few = "{count} online"
+other = "{count} online"
+
+[chat.transfer]
+uploading = "Nahrávanie · {percent} % z {size}"
+downloading = "Sťahovanie · {percent} % z {size}"
+uploaded = "Nahrané · {size}"
+downloaded = "Stiahnuté · {size}"
+failed = "Zlyhalo"
+avatar = "Profilový obrázok"
+icon = "Ikona servera"
+
+[menu]
+heart = "Srdiečko"
+unheart = "Odobrať srdiečko"
+reply = "Odpovedať"
+copy = "Kopírovať"
+copy_text = "Kopírovať text"
+edit = "Upraviť"
+delete_message = "Zmazať správu"
+you = "Vy"
+copy_image = "Kopírovať obrázok"
+save_image = "Uložiť obrázok"
+delete_image = "Zmazať obrázok"
+remove_server = "Odobrať server"
+view_profile = "Zobraziť profil"
+send_message = "Poslať správu"
+kick = "Vyhodiť"
+kick_confirm = "Stlačte znova na vyhodenie"
+ban = "Zabanovať"
+ban_confirm = "Stlačte znova na ban"
+banip = "Zabanovať IP"
+banip_confirm = "Stlačte znova na ban IP"
+set_role = "Nastaviť rolu"
+make_role = "Udeliť rolu {role}?"
+
+[menu.hearts]
+one = "{count} srdiečko"
+few = "{count} srdiečka"
+other = "{count} srdiečok"
+
+[card]
+of = "Profil používateľa {username}"
+you = "vy"
+loading = "Načítava sa…"
+message = "Napísať správu"
+edit = "Upraviť profil"
+change_picture = "Zmeniť obrázok"
+uploading = "Nahrávanie…"
+remove = "Odobrať"
+bad_website = "Musí začínať http:// alebo https://"
+about = "O vás"
+saving = "Ukladá sa…"
+name_color = "Farba mena"
+message_color = "Farba správ"
+not_set = "Nenastavené"
+
+[members]
+in_channel = "{username} v #{channel}"
+
+[side]
+new_channel = "Nový kanál"
+channel_name = "Názov kanála"
+direct = "Súkromné správy"
+close_direct = "Zavrieť konverzáciu"
+earpiece = "Prehrávať do slúchadla"
+speaker = "Prehrávať do reproduktora"
+mute = "Stlmiť"
+unmute = "Zrušiť stlmenie"
+join = "Pripojiť"
+leave = "Odísť"
+share_other = "Zdieľať inú obrazovku"
+sharing = "Zdieľanie obrazovky"
+sharing_monitor = "Zdieľanie {monitor}"
+mic_mute = "Vypnúť mikrofón"
+mic_unmute = "Zapnúť mikrofón"
+disconnect = "Odpojiť"
+
+[files]
+title = "Súbory"
+refresh = "Obnoviť"
+search = "Hľadať"
+no_results = "Žiadne výsledky"
+none = "Žiadne súbory"
+download = "Stiahnuť {name}"
+
+[files.kind]
+image = "Obrázok"
+audio = "Zvuk"
+video = "Video"
+archive = "Archív"
+code = "Kód"
+document = "Dokument"
+file = "Súbor"
+extension = "Súbor {extension}"
+
+[screens]
+title = "Obrazovky"
+live = "Naživo"
+nobody = "Nikto nezdieľa"
+you = "{username} (vy)"
+stop = "Zastaviť"
+watch = "Sledovať"
+share = "Zdieľať"
+no_monitors = "Nenašli sa žiadne obrazovky"
+sharing = "Zdieľa sa"
+
+[prefs]
+appearance = "Vzhľad"
+icon = "Ikona servera"
+icon_change = "Zmeniť ikonu"
+general = "Všeobecné"
+account = "Účet"
+server = "Server"
+unsaved = "Neuložené zmeny"
+edited = "Upravené"
+restart_badge = "Reštart"
+restart_warning = "Všetci budú odpojení."
+restart_now = "Reštartovať teraz"
+none = "Žiadny"
+
+[prefs.section]
+startup = "Spustenie"
+
+[prefs.row]
+auto_connect = "Automaticky pripojiť k"
+
+[themes]
+why2 = "Čierny"
+dark = "Tmavý"
+midnight = "Polnoc"
+forest = "Les"
+plum = "Slivka"
+mocha = "Mocha"
+light = "Svetlý"
+paper = "Papier"
+sky = "Obloha"
+mint = "Mäta"
+rose = "Ruža"
+lavender = "Levanduľa"

@@ -1,0 +1,268 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "one-other"
+
+[bridge]
+login_ok = "Inloggen gelukt. Typ / voor opdrachten."
+identity_rejected = "Serveridentiteit geweigerd."
+invalid_usage = "Ongeldig gebruik!"
+invalid_command = "Ongeldige opdracht!"
+invalid_action = "Ongeldige actie!"
+invalid_role = "Ongeldige rol!"
+invalid_image = "Ongeldige afbeelding."
+not_connected = "Niet verbonden."
+unknown_setting = "Onbekende instelling!"
+unknown_language = "Onbekende taal!"
+no_voice = "Spraak is niet beschikbaar op dit platform."
+no_route = "Er valt op dit platform niets om te leiden."
+usage = "Gebruik: {usage}"
+unavailable = "{command} is niet beschikbaar in de desktop-app."
+clipboard_refused = "Het klembord weigerde de tekst."
+screen_decode = "Kan de schermdeling niet decoderen: {error}."
+nothing_to_answer = "Niets te beantwoorden."
+session_gone = "De sessie is al beëindigd."
+no_picture_clipboard = "Dit systeem heeft geen klembord voor afbeeldingen."
+not_a_picture = "Dat is geen afbeelding."
+picture_undecodable = "De afbeelding kon niet worden gedecodeerd."
+picture_copy_failed = "Kopiëren van de afbeelding is mislukt."
+nowhere_to_save = "Nergens om op te slaan."
+picture_save_failed = "Opslaan van de afbeelding is mislukt."
+
+[android]
+channel_session = "Sessie"
+channel_messages = "Berichten"
+connected = "Verbonden"
+connected_to = "Verbonden met {server}"
+in_call = "In een spraakoproep"
+in_call_on = "In een spraakoproep op {server}"
+mic_dialog = "Android opende het microfoonvenster niet. Sta de microfoon toe voor WHY2 in de app-instellingen van Android."
+mic_unreachable = "WHY2 kon Android niet bereiken om de microfoon te vragen. Sta de microfoon toe voor WHY2 in de app-instellingen van Android."
+mic_refused = "De microfoon is geweigerd. Sta hem toe voor WHY2 in de app-instellingen van Android."
+mic_needed = "De oproep heeft de microfoon nodig."
+save_refused = "Android heeft de afbeelding niet opgeslagen."
+unreachable = "WHY2 kon Android niet bereiken."
+
+[tray]
+open = "WHY2 openen"
+quit = "WHY2 afsluiten"
+
+[window]
+minimize = "Minimaliseren"
+maximize = "Maximaliseren"
+restore = "Herstellen"
+close = "Sluiten"
+
+[connect]
+add = "Server toevoegen"
+connect = "Verbinden"
+back = "Terug"
+continue = "Doorgaan"
+create_account = "Account aanmaken"
+create_password = "Kies een wachtwoord"
+other_servers = "Andere servers"
+password_optional = "Wachtwoord (optioneel)"
+switch = "Server wisselen"
+
+[trust]
+unknown = "Deze server vertrouwen?"
+changed = "Serversleutel gewijzigd"
+type_to_replace = "Typ \"{word}\" om de sleutel te vervangen"
+cancel = "Annuleren"
+replace = "Sleutel vervangen"
+trust = "Vertrouwen"
+
+[acct]
+delete_warning = "Dit kan niet ongedaan worden gemaakt. Druk nogmaals om te bevestigen."
+delete_for_good = "Definitief verwijderen"
+send_failed = "Het verzoek kon niet worden verzonden."
+
+[chat]
+today = "Vandaag"
+yesterday = "Gisteren"
+private = "privé"
+show = "Tonen"
+retry = "Opnieuw"
+unavailable = "niet beschikbaar"
+picture = "Afbeelding"
+message_number = "Bericht #{id}"
+copied = "Bericht gekopieerd."
+copy_failed = "Het bericht kon niet worden gekopieerd."
+image_copied = "Afbeelding gekopieerd."
+image_saved = "Afbeelding opgeslagen"
+saved_to = "Opgeslagen in {path}"
+images = "Afbeeldingen"
+online = "online"
+offline = "offline"
+join_call = "Deelnemen aan oproep"
+leave_call = "Oproep verlaten"
+members = "Leden"
+back = "Terug naar het gesprek (Esc)"
+screen_of = "Scherm van {username}"
+decode_webview = "Het venster decodeert de H.264-stream zelf"
+decode_bridge = "Deze webview heeft geen H.264-decoder, dus de frames worden voor hem gedecodeerd en als afbeeldingen doorgestuurd"
+stop_watching = "Stoppen met kijken"
+editing = "Bewerken"
+cancel_edit = "Bewerken annuleren"
+cancel_reply = "Antwoord annuleren"
+placeholder = "Bericht aan {target}"
+attach = "Bestand bijvoegen"
+send_picture = "Afbeelding sturen"
+send = "Verzenden"
+
+[chat.online_count]
+one = "{count} online"
+other = "{count} online"
+
+[chat.transfer]
+uploading = "Uploaden · {percent}% van {size}"
+downloading = "Downloaden · {percent}% van {size}"
+uploaded = "Geüpload · {size}"
+downloaded = "Gedownload · {size}"
+failed = "Mislukt"
+avatar = "Profielfoto"
+icon = "Serverpictogram"
+
+[menu]
+heart = "Hartje"
+unheart = "Hartje verwijderen"
+reply = "Beantwoorden"
+copy = "Kopiëren"
+copy_text = "Tekst kopiëren"
+edit = "Bewerken"
+delete_message = "Bericht verwijderen"
+you = "Jij"
+copy_image = "Afbeelding kopiëren"
+save_image = "Afbeelding opslaan"
+delete_image = "Afbeelding verwijderen"
+remove_server = "Server verwijderen"
+view_profile = "Profiel bekijken"
+send_message = "Bericht sturen"
+kick = "Verwijderen"
+kick_confirm = "Druk nogmaals om te verwijderen"
+ban = "Verbannen"
+ban_confirm = "Druk nogmaals om te verbannen"
+banip = "IP verbannen"
+banip_confirm = "Druk nogmaals om het IP te verbannen"
+set_role = "Rol instellen"
+make_role = "{role} maken?"
+
+[menu.hearts]
+one = "{count} hartje"
+other = "{count} hartjes"
+
+[card]
+of = "Profiel van {username}"
+you = "jij"
+loading = "Laden…"
+message = "Bericht"
+edit = "Profiel bewerken"
+change_picture = "Foto wijzigen"
+uploading = "Uploaden…"
+remove = "Verwijderen"
+bad_website = "Begint met http:// of https://"
+about = "Over jou"
+saving = "Opslaan…"
+name_color = "Naamkleur"
+message_color = "Berichtkleur"
+not_set = "Niet ingesteld"
+
+[members]
+in_channel = "{username} in #{channel}"
+
+[side]
+new_channel = "Nieuw kanaal"
+channel_name = "Kanaalnaam"
+direct = "Privéberichten"
+close_direct = "Gesprek sluiten"
+earpiece = "Afspelen via de oortelefoon"
+speaker = "Afspelen via de luidspreker"
+mute = "Dempen"
+unmute = "Dempen opheffen"
+join = "Deelnemen"
+leave = "Verlaten"
+share_other = "Een ander scherm delen"
+sharing = "Scherm wordt gedeeld"
+sharing_monitor = "{monitor} wordt gedeeld"
+mic_mute = "Microfoon dempen"
+mic_unmute = "Microfoon aanzetten"
+disconnect = "Verbinding verbreken"
+
+[files]
+title = "Bestanden"
+refresh = "Vernieuwen"
+search = "Zoeken"
+no_results = "Geen resultaten"
+none = "Geen bestanden"
+download = "{name} downloaden"
+
+[files.kind]
+image = "Afbeelding"
+audio = "Audio"
+video = "Video"
+archive = "Archief"
+code = "Code"
+document = "Document"
+file = "Bestand"
+extension = "{extension}-bestand"
+
+[screens]
+title = "Schermen"
+live = "Live"
+nobody = "Niemand deelt"
+you = "{username} (jij)"
+stop = "Stoppen"
+watch = "Kijken"
+share = "Delen"
+no_monitors = "Geen schermen gevonden"
+sharing = "Wordt gedeeld"
+
+[prefs]
+appearance = "Uiterlijk"
+icon = "Serverpictogram"
+icon_change = "Pictogram wijzigen"
+general = "Algemeen"
+account = "Account"
+server = "Server"
+unsaved = "Niet-opgeslagen wijzigingen"
+edited = "Bewerkt"
+restart_badge = "Herstart"
+restart_warning = "Iedereen wordt losgekoppeld."
+restart_now = "Nu herstarten"
+none = "Geen"
+
+[prefs.section]
+startup = "Opstarten"
+
+[prefs.row]
+auto_connect = "Automatisch verbinden met"
+
+[themes]
+why2 = "Zwart"
+dark = "Donker"
+midnight = "Middernacht"
+forest = "Bos"
+plum = "Pruim"
+mocha = "Mokka"
+light = "Licht"
+paper = "Papier"
+sky = "Lucht"
+mint = "Munt"
+rose = "Roos"
+lavender = "Lavendel"

@@ -1,0 +1,270 @@
+# This is part of WHY2
+# Copyright (C) 2026 Václav Šmejkal
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Machine-translated from en.toml.
+
+[meta]
+plurals = "one-few-many"
+
+[bridge]
+login_ok = "Вход выполнен. Введите / для списка команд."
+identity_rejected = "Идентичность сервера отклонена."
+invalid_usage = "Неверное использование!"
+invalid_command = "Неверная команда!"
+invalid_action = "Неверное действие!"
+invalid_role = "Неверная роль!"
+invalid_image = "Неверное изображение."
+not_connected = "Нет подключения."
+unknown_setting = "Неизвестная настройка!"
+unknown_language = "Неизвестный язык!"
+no_voice = "Голос недоступен на этой платформе."
+no_route = "На этой платформе нечего перенаправлять."
+usage = "Использование: {usage}"
+unavailable = "{command} недоступна в настольном приложении."
+clipboard_refused = "Буфер обмена отклонил текст."
+screen_decode = "Не удаётся декодировать демонстрацию экрана: {error}."
+nothing_to_answer = "Не на что отвечать."
+session_gone = "Сеанс уже завершён."
+no_picture_clipboard = "В этой системе нет буфера обмена для изображений."
+not_a_picture = "Это не изображение."
+picture_undecodable = "Не удалось декодировать изображение."
+picture_copy_failed = "Не удалось скопировать изображение."
+nowhere_to_save = "Некуда сохранить."
+picture_save_failed = "Не удалось сохранить изображение."
+
+[android]
+channel_session = "Сеанс"
+channel_messages = "Сообщения"
+connected = "Подключено"
+connected_to = "Подключено к {server}"
+in_call = "В голосовом звонке"
+in_call_on = "В голосовом звонке на {server}"
+mic_dialog = "Android не открыл диалог микрофона. Разрешите микрофон для WHY2 в настройках приложения Android."
+mic_unreachable = "WHY2 не удалось обратиться к Android за микрофоном. Разрешите микрофон для WHY2 в настройках приложения Android."
+mic_refused = "Доступ к микрофону отклонён. Разрешите его для WHY2 в настройках приложения Android."
+mic_needed = "Для звонка нужен микрофон."
+save_refused = "Android не сохранил изображение."
+unreachable = "WHY2 не удалось связаться с Android."
+
+[tray]
+open = "Открыть WHY2"
+quit = "Выйти из WHY2"
+
+[window]
+minimize = "Свернуть"
+maximize = "Развернуть"
+restore = "Восстановить"
+close = "Закрыть"
+
+[connect]
+add = "Добавить сервер"
+connect = "Подключиться"
+back = "Назад"
+continue = "Продолжить"
+create_account = "Создать аккаунт"
+create_password = "Придумайте пароль"
+other_servers = "Другие серверы"
+password_optional = "Пароль (необязательно)"
+switch = "Сменить сервер"
+
+[trust]
+unknown = "Доверять этому серверу?"
+changed = "Ключ сервера изменился"
+type_to_replace = "Введите «{word}», чтобы заменить ключ"
+cancel = "Отмена"
+replace = "Заменить ключ"
+trust = "Доверять"
+
+[acct]
+delete_warning = "Это нельзя отменить. Нажмите ещё раз для подтверждения."
+delete_for_good = "Удалить навсегда"
+send_failed = "Не удалось отправить запрос."
+
+[chat]
+today = "Сегодня"
+yesterday = "Вчера"
+private = "личное"
+show = "Показать"
+retry = "Повторить"
+unavailable = "недоступно"
+picture = "Изображение"
+message_number = "Сообщение #{id}"
+copied = "Сообщение скопировано."
+copy_failed = "Не удалось скопировать сообщение."
+image_copied = "Изображение скопировано."
+image_saved = "Изображение сохранено"
+saved_to = "Сохранено в {path}"
+images = "Изображения"
+online = "в сети"
+offline = "не в сети"
+join_call = "Присоединиться к звонку"
+leave_call = "Покинуть звонок"
+members = "Участники"
+back = "Назад к беседе (Esc)"
+screen_of = "Экран пользователя {username}"
+decode_webview = "Окно само декодирует поток H.264"
+decode_bridge = "В этом webview нет декодера H.264, поэтому кадры декодируются за него и отправляются как изображения"
+stop_watching = "Прекратить просмотр"
+editing = "Редактирование"
+cancel_edit = "Отменить редактирование"
+cancel_reply = "Отменить ответ"
+placeholder = "Сообщение для {target}"
+attach = "Прикрепить файл"
+send_picture = "Отправить изображение"
+send = "Отправить"
+
+[chat.online_count]
+one = "{count} в сети"
+few = "{count} в сети"
+many = "{count} в сети"
+
+[chat.transfer]
+uploading = "Загрузка · {percent}% из {size}"
+downloading = "Скачивание · {percent}% из {size}"
+uploaded = "Загружено · {size}"
+downloaded = "Скачано · {size}"
+failed = "Ошибка"
+avatar = "Фото профиля"
+icon = "Значок сервера"
+
+[menu]
+heart = "Сердечко"
+unheart = "Убрать сердечко"
+reply = "Ответить"
+copy = "Копировать"
+copy_text = "Копировать текст"
+edit = "Изменить"
+delete_message = "Удалить сообщение"
+you = "Вы"
+copy_image = "Копировать изображение"
+save_image = "Сохранить изображение"
+delete_image = "Удалить изображение"
+remove_server = "Удалить сервер"
+view_profile = "Открыть профиль"
+send_message = "Написать сообщение"
+kick = "Выгнать"
+kick_confirm = "Нажмите ещё раз, чтобы выгнать"
+ban = "Забанить"
+ban_confirm = "Нажмите ещё раз, чтобы забанить"
+banip = "Забанить IP"
+banip_confirm = "Нажмите ещё раз, чтобы забанить IP"
+set_role = "Назначить роль"
+make_role = "Сделать {role}?"
+
+[menu.hearts]
+one = "{count} сердечко"
+few = "{count} сердечка"
+many = "{count} сердечек"
+
+[card]
+of = "Профиль {username}"
+you = "вы"
+loading = "Загрузка…"
+message = "Написать"
+edit = "Редактировать профиль"
+change_picture = "Сменить фото"
+uploading = "Загрузка…"
+remove = "Удалить"
+bad_website = "Начинается с http:// или https://"
+about = "О себе"
+saving = "Сохранение…"
+name_color = "Цвет имени"
+message_color = "Цвет сообщений"
+not_set = "Не задан"
+
+[members]
+in_channel = "{username} в #{channel}"
+
+[side]
+new_channel = "Новый канал"
+channel_name = "Название канала"
+direct = "Личные сообщения"
+close_direct = "Закрыть беседу"
+earpiece = "Воспроизводить через динамик для разговора"
+speaker = "Воспроизводить через громкоговоритель"
+mute = "Заглушить"
+unmute = "Включить звук"
+join = "Войти"
+leave = "Выйти"
+share_other = "Показать другой экран"
+sharing = "Демонстрация экрана"
+sharing_monitor = "Демонстрация {monitor}"
+mic_mute = "Выключить микрофон"
+mic_unmute = "Включить микрофон"
+disconnect = "Отключиться"
+
+[files]
+title = "Файлы"
+refresh = "Обновить"
+search = "Поиск"
+no_results = "Ничего не найдено"
+none = "Нет файлов"
+download = "Скачать {name}"
+
+[files.kind]
+image = "Изображение"
+audio = "Аудио"
+video = "Видео"
+archive = "Архив"
+code = "Код"
+document = "Документ"
+file = "Файл"
+extension = "Файл {extension}"
+
+[screens]
+title = "Экраны"
+live = "В эфире"
+nobody = "Никто не показывает экран"
+you = "{username} (вы)"
+stop = "Остановить"
+watch = "Смотреть"
+share = "Показать"
+no_monitors = "Экраны не найдены"
+sharing = "Показывается"
+
+[prefs]
+appearance = "Оформление"
+icon = "Значок сервера"
+icon_change = "Сменить значок"
+general = "Общие"
+account = "Аккаунт"
+server = "Сервер"
+unsaved = "Несохранённые изменения"
+edited = "Изменено"
+restart_badge = "Перезапуск"
+restart_warning = "Все будут отключены."
+restart_now = "Перезапустить сейчас"
+none = "Нет"
+
+[prefs.section]
+startup = "Запуск"
+
+[prefs.row]
+auto_connect = "Автоматически подключаться к"
+
+[themes]
+why2 = "Чёрная"
+dark = "Тёмная"
+midnight = "Полночь"
+forest = "Лес"
+plum = "Слива"
+mocha = "Мокко"
+light = "Светлая"
+paper = "Бумага"
+sky = "Небо"
+mint = "Мята"
+rose = "Роза"
+lavender = "Лаванда"

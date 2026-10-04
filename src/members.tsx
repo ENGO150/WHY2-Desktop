@@ -26,6 +26,7 @@ import { messageColor } from "./messages";
 import { deviceIcon, rosterSections, sectionLabel } from "./roster";
 import { useHoldMenu, type HeldMenu } from "./servers";
 import type { People } from "./profile";
+import { t } from "./i18n";
 
 //HEADER, SIX ITEMS AND THE ROLES
 const MENU_HEIGHT = 360;
@@ -105,7 +106,7 @@ export function MemberColumn(
                                 <button
                                     key={user.id}
                                     type="button"
-                                    title={`${user.username} in #${user.channel ?? "lobby"}`}
+                                    title={t("members.in_channel", { username: user.username, channel: user.channel ?? "lobby" })}
                                     onClick={press(user.username)}
                                     {...bind({ username: user.username, user, role: user.role })}
                                     data-member={user.username}
@@ -142,7 +143,7 @@ export function MemberColumn(
                 {/* REGISTERED, NOT HERE */}
                 {offline && offline.length > 0 && (
                     <>
-                        <SectionLabel>Offline</SectionLabel>
+                        <SectionLabel>{t("sidebar.offline")}</SectionLabel>
 
                         {offline.map((user) =>
                         {
@@ -251,13 +252,13 @@ function MemberMenu(
         <MenuBox at={at} title={username}>
             <button type="button" onClick={() => { close(); profile(); }} className={MENU_ITEM}>
                 <Icon name="user" className="h-4 w-4 text-muted" />
-                View profile
+                {t("menu.view_profile")}
             </button>
 
             {target && (
                 <button type="button" onClick={() => { close(); message(target); }} className={MENU_ITEM}>
                     <Icon name="at" className="h-4 w-4 text-muted" />
-                    Send message
+                    {t("menu.send_message")}
                 </button>
             )}
 
@@ -266,35 +267,35 @@ function MemberMenu(
             {target && moderation.kick && (
                 <button type="button" onClick={() => moderate("kick")} className={danger("kick")}>
                     <Icon name="logout" className="h-4 w-4" />
-                    {armed === "kick" ? "Press again to kick" : "Kick"}
+                    {armed === "kick" ? t("menu.kick_confirm") : t("menu.kick")}
                 </button>
             )}
 
             {!own && moderation.ban && (
                 <button type="button" onClick={() => moderate("ban")} className={danger("ban")}>
                     <Icon name="ban" className="h-4 w-4" />
-                    {armed === "ban" ? "Press again to ban" : "Ban"}
+                    {armed === "ban" ? t("menu.ban_confirm") : t("menu.ban")}
                 </button>
             )}
 
             {target && moderation.banip && (
                 <button type="button" onClick={() => moderate("banip")} className={danger("banip")}>
                     <Icon name="globe" className="h-4 w-4" />
-                    {armed === "banip" ? "Press again to ban IP" : "Ban IP"}
+                    {armed === "banip" ? t("menu.banip_confirm") : t("menu.banip")}
                 </button>
             )}
 
             {!own && moderation.role && (
                 <button type="button" onClick={() => setPicking(!picking)} className={MENU_ITEM}>
                     <Icon name="shield" className="h-4 w-4 text-muted" />
-                    <span className="flex-1">Set role</span>
+                    <span className="flex-1">{t("menu.set_role")}</span>
                     <Icon name="chevron" className={`h-4 w-4 text-faint transition-transform ${picking ? "rotate-180" : ""}`} />
                 </button>
             )}
 
             {!own && moderation.role && picking && roles?.map((role) => (
                 <button key={role} type="button" disabled={role === held} onClick={() => grant(role)} className={`${MENU_ITEM} pl-10 ${armed === `role:${role}` ? "text-accent" : ""}`}>
-                    <span className="flex-1 capitalize">{armed === `role:${role}` ? `Make ${role}?` : role}</span>
+                    <span className="flex-1 capitalize">{armed === `role:${role}` ? t("menu.make_role", { role }) : role}</span>
                     {role === held && <Icon name="check" className="h-4 w-4" />}
                 </button>
             ))}
