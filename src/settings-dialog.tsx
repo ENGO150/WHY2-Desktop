@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SettingsBox, SettingsItem, AccountAction, IconSource } from "./types";
 import { Icon } from "./icons";
 import { Switch, Overlay, PanelHeader, PanelFooter, SpaceIcon } from "./components";
@@ -239,6 +240,58 @@ export function SettingsDialog(
 
     const current = groups.findIndex((group) => group.rows.some((row) => row.index === box.selected));
 
+    //THE HIGHLIGHTED ENTRY, AND WHETHER A CLICK OR THE SELECTION PINNED IT
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const pinnedRef = useRef(false);
+    const [active, setActive] = useState<string | null>(null);
+
+    //THE SECTION AT THE TOP OF THE VIEW
+    const spy = () =>
+    {
+        const scroller = scrollRef.current;
+
+        if (!scroller || pinnedRef.current || nav.length === 0) return;
+
+        const top = scroller.getBoundingClientRect().top;
+
+        let at = nav[0].key;
+
+        for (const entry of nav)
+        {
+            const element = document.getElementById(`settings-${entry.key}`);
+
+            if (element && element.getBoundingClientRect().top - top <= 32) at = entry.key;
+        }
+
+        //SCROLLED TO THE END
+        if (scroller.scrollTop > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) at = nav[nav.length - 1].key;
+
+        setActive(at);
+    };
+
+    //A HAND ON THE SCROLLBAR UNPINS IT
+    const unpin = () =>
+    {
+        pinnedRef.current = false;
+    };
+
+    useLayoutEffect(spy, [nav.length]);
+
+    //THE SELECTION MOVED
+    const selectedRef = useRef(box.selected);
+
+    useEffect(() =>
+    {
+        if (selectedRef.current === box.selected) return;
+
+        selectedRef.current = box.selected;
+
+        if (current < 0) return;
+
+        pinnedRef.current = true;
+        setActive(`group-${current}`);
+    }, [box.selected, current]);
+
     return (
         <Overlay
             narrow={narrow}
@@ -257,8 +310,14 @@ export function SettingsDialog(
                         <button
                             key={entry.key}
                             type="button"
-                            onClick={() => document.getElementById(`settings-${entry.key}`)?.scrollIntoView({ block: "start", behavior: "smooth" })}
-                            className={`rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors ${entry.key === `group-${current}` ? "bg-selected font-medium text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                            onClick={() =>
+                            {
+                                pinnedRef.current = true;
+                                setActive(entry.key);
+
+                                document.getElementById(`settings-${entry.key}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+                            }}
+                            className={`rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors ${entry.key === active ? "bg-selected font-medium text-text" : "text-muted hover:bg-hover hover:text-text"}`}
                         >
                             {entry.label}
                         </button>
@@ -275,7 +334,14 @@ export function SettingsDialog(
                 close={close}
             />
 
-            <div className="scroller h-[min(640px,70vh)] flex-1 px-6 pb-6 pt-0">
+            <div
+                ref={scrollRef}
+                onScroll={spy}
+                onWheel={unpin}
+                onTouchMove={unpin}
+                onMouseDown={(event) => { if (event.target === event.currentTarget) unpin(); }}
+                className="scroller h-[min(640px,70vh)] flex-1 px-6 pb-6 pt-0"
+            >
                 {/* THE WINDOW'S PALETTE */}
                 {theme !== null && section(t("prefs.appearance"), (
                     <div className="flex flex-col gap-4 px-4 py-4">

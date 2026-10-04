@@ -604,8 +604,13 @@ Because the bridge answers a frame or two after the page is up, the last palette
 `localStorage`** and put on the page in `main.tsx` before the first render; the file wins when it answers.
 `index.html`'s boot screen stays `#050405` whatever the theme, since the mark is what it is there to show.
 
-The settings dialog is a modal with a section nav down its left side (on a phone, just the sections); the
-nav entry of whichever section holds the selected row is highlighted, so the keyboard and the nav agree.
+The settings dialog is a modal with a section nav down its left side (on a phone, just the sections). The
+highlighted entry is the section **at the top of the view** (`spy`, on every scroll), and two things pin it
+instead: a click on an entry pins that entry for the length of the smooth scroll — which passes every
+section between — and moving the selected row pins that row's section, so the keyboard and the nav still
+agree. A hand on the scroller (wheel, touch, its scrollbar) unpins it. It used to follow the selected row
+alone, which a click on the nav never moves — so it sat on the first section with a row in it whatever was
+clicked, and the sections with no rows (`Appearance`, `Account`) could never be highlighted at all.
 
 **The component classes are layered.** `.btn`, `.field`, `.caption`, `.label`, `.group-box` and `.widget` live in
 `@layer components` in `widgets.css`, below Tailwind's utilities — written unlayered they beat every utility
