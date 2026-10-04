@@ -395,7 +395,6 @@ export function ServerSwitcher(
                 {/* A PICTURE IS WORTH THE ROOM */}
                 <SpaceIcon name={name} size={icon?.length ? 40 : 26} src={icon} />
                 <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold">{name}</span>
-                <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
 
             {open && (
