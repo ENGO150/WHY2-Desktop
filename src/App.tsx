@@ -2762,7 +2762,7 @@ function App()
     {
         setScreensOpen(true);
 
-        invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors" })
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "monitors", typed: "" })
             .then((values) => setMonitors(values.map((value) => value.value)))
             .catch(() => setMonitors([]));
 
@@ -4049,7 +4049,7 @@ function App()
     {
         if (!editing || colorChoices.length > 0) return;
 
-        invoke<VocabularyValue[]>("get_vocabulary", { values: "colors" }).then(setColorChoices).catch(console.error);
+        invoke<VocabularyValue[]>("get_vocabulary", { values: "colors", typed: "" }).then(setColorChoices).catch(console.error);
     }, [editing]);
 
     //SET A COLOR ON THE SERVER
