@@ -308,7 +308,7 @@ function App()
     //THE PICTURE BEING DRAGGED UNDER A ZOOM, WRITTEN STRAIGHT ONTO THE ELEMENT: A PINCH PUTS OUT SIXTY
     //POSITIONS A SECOND AND REACT OWNS WHERE THE PICTURE *IS*, NOT WHERE IT IS BEING MOVED TO (THE
     //DRAWERS ARE DRAGGED THE SAME WAY). WHAT THE FINGERS SETTLE ON IS WHAT BECOMES STATE
-    const pictureRef = useRef<HTMLImageElement | null>(null);
+    const zoomRef = useRef<HTMLDivElement | null>(null);
     const pinchRef = useRef<Pinch | null>(null);
 
     //THE TAP BEFORE THIS ONE, WHILE IT IS STILL RECENT ENOUGH TO BE HALF OF A PAIR, AND WHETHER TWO
@@ -2603,7 +2603,7 @@ function App()
     //POINTERS ACTUALLY ARRIVE AS - A TAP SYNTHESIZES ONE - SO THERE IS ONE PATH HERE AND NOT TWO
     const zoomPicture = (event: React.MouseEvent<HTMLImageElement>) =>
     {
-        const box = event.currentTarget.getBoundingClientRect();
+        const box = (zoomRef.current ?? event.currentTarget).getBoundingClientRect();
 
         //A PINCH IS NOT A TAP, AND NEITHER IS A DRAG - ANY CLICK EITHER OF THEM LEAVES BEHIND IS NOT ONE
         if (pinchedRef.current || pannedRef.current)
@@ -2651,16 +2651,16 @@ function App()
         };
     };
 
-    const onPinchStart = (event: React.TouchEvent<HTMLImageElement>) =>
+    const onPinchStart = (event: React.TouchEvent<HTMLDivElement>) =>
     {
-        if (event.touches.length !== 2)
+        if (event.touches.length !== 2 || !zoomRef.current)
         {
             pinchRef.current = null;
 
             return;
         }
 
-        const at = pinchAt(event.touches, event.currentTarget.getBoundingClientRect());
+        const at = pinchAt(event.touches, zoomRef.current.getBoundingClientRect());
 
         //A PINCH THAT STARTS ON AN ALREADY ZOOMED PICTURE CARRIES ON FROM WHERE IT IS, AND MOVES THE
         //ANCHOR TO WHERE THE FINGERS ACTUALLY ARE
@@ -2669,29 +2669,29 @@ function App()
         pinchRef.current = { span: at.span, scale, x: at.x, y: at.y, live: scale };
     };
 
-    const onPinchMove = (event: React.TouchEvent<HTMLImageElement>) =>
+    const onPinchMove = (event: React.TouchEvent<HTMLDivElement>) =>
     {
         const start = pinchRef.current;
+        const picture = zoomRef.current;
 
-        if (!start || event.touches.length !== 2) return;
+        if (!start || event.touches.length !== 2 || !picture) return;
 
-        const at = pinchAt(event.touches, event.currentTarget.getBoundingClientRect());
+        const first = event.touches[0];
+        const second = event.touches[1];
+        const span = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
 
-        const scale = Math.min(ZOOM_MAX, Math.max(1, start.scale * (at.span / start.span)));
+        const scale = Math.min(ZOOM_MAX, Math.max(1, start.scale * (span / start.span)));
 
         //STRAIGHT ONTO THE ELEMENT WHILE THE FINGERS ARE DOWN: SIXTY RENDERS A SECOND OF A TRANSFORM IS
         //WORK FOR NOTHING, AND WHAT REACT OWNS IS WHERE THE PICTURE ENDS UP
-        const picture = pictureRef.current;
-
-        if (!picture) return;
-
+        picture.style.transition = "none";
         picture.style.transformOrigin = `${start.x}% ${start.y}%`;
         picture.style.transform = `scale(${scale})`;
 
         pinchRef.current = { ...start, live: scale };
     };
 
-    const onPinchEnd = (event: React.TouchEvent<HTMLImageElement>) =>
+    const onPinchEnd = (event: React.TouchEvent<HTMLDivElement>) =>
     {
         const start = pinchRef.current;
 
@@ -2699,12 +2699,13 @@ function App()
 
         pinchRef.current = null;
 
-        const picture = pictureRef.current;
+        const picture = zoomRef.current;
 
         //WHAT WAS WRITTEN ONTO THE ELEMENT GOES BACK TO THE CLASSES, WHICH IS WHERE THE SAME NUMBERS
         //ARRIVE A RENDER LATER - THE DRAWERS HAND THEIRS BACK THE SAME WAY
         if (picture)
         {
+            picture.style.transition = "";
             picture.style.transform = "";
             picture.style.transformOrigin = "";
         }
@@ -2718,7 +2719,7 @@ function App()
     //IT IS THE *ANCHOR* THAT MOVES AND NOT A TRANSLATION BESIDE IT, SO WHERE SOMEBODY IS LOOKING STAYS
     //THE ONE THING THE ZOOM IS EVER SAID IN - A PERCENT OF THE PICTURE, WHICH SURVIVES THE WINDOW BEING
     //RESIZED UNDER IT. AN ANCHOR IS A FIXED POINT, SO MOVING IT BY d MOVES THE PICTURE BY -(scale - 1)d
-    const onPanStart = (event: React.TouchEvent<HTMLImageElement>) =>
+    const onPanStart = (event: React.TouchEvent<HTMLDivElement>) =>
     {
         const touch = event.touches[0];
 
@@ -2732,11 +2733,11 @@ function App()
         panRef.current = { x: touch.clientX, y: touch.clientY, ox: zoom.x, oy: zoom.y, live: zoom };
     };
 
-    const onPanMove = (event: React.TouchEvent<HTMLImageElement>) =>
+    const onPanMove = (event: React.TouchEvent<HTMLDivElement>) =>
     {
         const start = panRef.current;
         const touch = event.touches[0];
-        const picture = pictureRef.current;
+        const picture = zoomRef.current;
 
         if (!start || event.touches.length !== 1 || !touch || !picture) return;
 
@@ -2755,6 +2756,7 @@ function App()
         const y = Math.min(100, Math.max(0, start.oy - (dy / (reach * picture.offsetHeight)) * 100));
 
         //STRAIGHT ONTO THE ELEMENT WHILE THE FINGER IS DOWN, EXACTLY AS THE PINCH AND THE DRAWERS ARE
+        picture.style.transition = "none";
         picture.style.transformOrigin = `${x}% ${y}%`;
 
         panRef.current = { ...start, live: { ...start.live, x, y } };
@@ -2768,10 +2770,14 @@ function App()
 
         if (!start || !pannedRef.current) return;
 
-        const picture = pictureRef.current;
+        const picture = zoomRef.current;
 
         //BACK TO THE CLASSES AND TO THE STATE, WHERE THE SAME ANCHOR ARRIVES A RENDER LATER
-        if (picture) picture.style.transformOrigin = "";
+        if (picture)
+        {
+            picture.style.transition = "";
+            picture.style.transformOrigin = "";
+        }
 
         setZoom(start.live);
     };
@@ -4111,96 +4117,98 @@ function App()
         <div
             ref={roomRef}
             role="presentation"
-            onMouseDown={(event) => { if (event.button === 0) closeLightbox(); }}
+            onMouseDown={(event) =>
+            {
+                //NOT THE PRESS A GESTURE LEFT BEHIND
+                if (pinchedRef.current || pannedRef.current) return;
+                if (event.button === 0) closeLightbox();
+            }}
+            onTouchStart={(event) =>
+            {
+                //A NEW GESTURE
+                pinchedRef.current = event.touches.length > 1;
+                pannedRef.current = false;
+
+                onPinchStart(event);
+                onPanStart(event);
+            }}
+            onTouchMove={(event) =>
+            {
+                onPinchMove(event);
+                onPanMove(event);
+            }}
+            onTouchEnd={(event) =>
+            {
+                onPinchEnd(event);
+                onPanEnd();
+            }}
             className={`lightbox-room fixed inset-0 z-[60] overflow-hidden ${lightboxShut ? "shut" : ""}`}
         >
 
             <div className="safe-top safe-bottom relative flex h-full w-full items-center justify-center">
-                <div ref={lightboxCardRef} className="lightbox-card" onMouseDown={(event) => event.stopPropagation()}>
-                    <div className="lightbox-strip flex items-center gap-2.5 py-2 pl-3 pr-2">
-                        {shownAuthor !== null && (
-                            <Avatar
-                                name={shownAuthor}
-                                color={messageColor(config, shownLine?.username_color ?? null) ?? colorOf(shownAuthor)}
-                                size={30}
-                                src={people.avatar(shownAuthor)}
-                            />
-                        )}
+                {/* THE ZOOM TAKES THE WHOLE CARD */}
+                <div
+                    ref={zoomRef}
+                    className="lightbox-zoom"
+                    style={zoom ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` } : undefined}
+                >
+                    <div ref={lightboxCardRef} className="lightbox-card" onMouseDown={(event) => event.stopPropagation()}>
+                        <div className="lightbox-strip flex items-center gap-2.5 py-2 pl-3 pr-2">
+                            {shownAuthor !== null && (
+                                <Avatar
+                                    name={shownAuthor}
+                                    color={messageColor(config, shownLine?.username_color ?? null) ?? colorOf(shownAuthor)}
+                                    size={30}
+                                    src={people.avatar(shownAuthor)}
+                                />
+                            )}
 
-                        <div className="min-w-0 flex-1 leading-tight">
-                            <div className="truncate text-[13.5px] font-semibold text-white">{shownAuthor ?? shownImage.filename}</div>
+                            <div className="min-w-0 flex-1 leading-tight">
+                                <div className="truncate text-[13.5px] font-semibold text-white">{shownAuthor ?? shownImage.filename}</div>
 
-                            <div className="truncate text-[11.5px] text-white/50">
-                                {[
-                                    shownLine?.timestamp != null ? sentAt(shownLine.timestamp) : null,
-                                    shownImage.width > 0 ? `${shownImage.width}×${shownImage.height}` : null,
-                                ].filter(Boolean).join(" · ")}
+                                <div className="truncate text-[11.5px] text-white/50">
+                                    {[
+                                        shownLine?.timestamp != null ? sentAt(shownLine.timestamp) : null,
+                                        shownImage.width > 0 ? `${shownImage.width}×${shownImage.height}` : null,
+                                    ].filter(Boolean).join(" · ")}
+                                </div>
                             </div>
+
+                            {cardButton("close", t("window.close"), closeLightbox)}
                         </div>
 
-                        {cardButton("close", t("window.close"), closeLightbox)}
-                    </div>
-
-                    <div className="lightbox-frame">
-                        {/* CLICK OR TWO TAPS ZOOM, A HOLD IS THE MENU, TWO FINGERS PINCH */}
-                        <img
-                            ref={pictureRef}
-                            src={shownImage.source}
-                            alt={shownImage.filename}
-                            draggable={false}
-                            onContextMenu={holdPicture.onContextMenu}
-                            onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
-                            onTouchStart={(event) =>
-                            {
-                                //TWO FINGERS ARE NEVER A HOLD OR A TAP
-                                if (event.touches.length > 1)
+                        <div className="lightbox-frame">
+                            {/* CLICK OR TWO TAPS ZOOM, A HOLD IS THE MENU, TWO FINGERS PINCH */}
+                            <img
+                                src={shownImage.source}
+                                alt={shownImage.filename}
+                                draggable={false}
+                                onContextMenu={holdPicture.onContextMenu}
+                                onClick={(event) => { if (!pictureHold.held()) zoomPicture(event); }}
+                                onTouchStart={(event) =>
                                 {
-                                    pinchedRef.current = true;
-                                    pannedRef.current = false;
+                                    //TWO FINGERS ARE NEVER A HOLD
+                                    if (event.touches.length > 1) holdPicture.onTouchEnd();
+                                    else holdPicture.onTouchStart(event);
+                                }}
+                                onTouchMove={() => holdPicture.onTouchMove()}
+                                onTouchEnd={() => holdPicture.onTouchEnd()}
+                                className={`lightbox-picture object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+                            />
+                        </div>
 
-                                    holdPicture.onTouchEnd();
-                                }
-                                else
-                                {
-                                    pinchedRef.current = false;
-                                    pannedRef.current = false;
+                        <div className="lightbox-strip flex items-center gap-1 py-1.5 pl-3 pr-2">
+                            <span className="min-w-0 flex-1 truncate text-[12px] text-white/55" title={shownImage.filename}>{shownImage.filename}</span>
 
-                                    holdPicture.onTouchStart(event);
-                                }
+                            {!touchPointer && cardButton(zoom ? "zoom_out" : "zoom_in", t(zoom ? "menu.zoom_out" : "menu.zoom_in"),
+                                () => setZoom(zoom ? null : { scale: ZOOM, x: 50, y: 50 }))}
 
-                                onPinchStart(event);
-                                onPanStart(event);
-                            }}
-                            onTouchMove={(event) =>
-                            {
-                                holdPicture.onTouchMove();
-                                onPinchMove(event);
-                                onPanMove(event);
-                            }}
-                            onTouchEnd={(event) =>
-                            {
-                                holdPicture.onTouchEnd();
-                                onPinchEnd(event);
-                                onPanEnd();
-                            }}
-                            style={zoom
-                                ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.x}% ${zoom.y}%` }
-                                : undefined}
-                            className={`lightbox-picture object-contain ${zoom ? "cursor-zoom-out" : "cursor-zoom-in"}`}
-                        />
-                    </div>
+                            {reactable(shownLine) && cardButton("heart", t(shownHearted ? "menu.unheart" : "menu.heart"),
+                                () => heartMessage(shownLine!.message_id!), shownHearted ? "lightbox-hearted" : "")}
 
-                    <div className="lightbox-strip flex items-center gap-1 py-1.5 pl-3 pr-2">
-                        <span className="min-w-0 flex-1 truncate text-[12px] text-white/55" title={shownImage.filename}>{shownImage.filename}</span>
-
-                        {!touchPointer && cardButton(zoom ? "zoom_out" : "zoom_in", t(zoom ? "menu.zoom_out" : "menu.zoom_in"),
-                            () => setZoom(zoom ? null : { scale: ZOOM, x: 50, y: 50 }))}
-
-                        {reactable(shownLine) && cardButton("heart", t(shownHearted ? "menu.unheart" : "menu.heart"),
-                            () => heartMessage(shownLine!.message_id!), shownHearted ? "lightbox-hearted" : "")}
-
-                        {actions.copy && cardButton("copy", t("menu.copy_image"), () => copyPicture(shownImage))}
-                        {cardButton("download", t("menu.save_image"), () => void savePicture(shownImage))}
+                            {actions.copy && cardButton("copy", t("menu.copy_image"), () => copyPicture(shownImage))}
+                            {cardButton("download", t("menu.save_image"), () => void savePicture(shownImage))}
+                        </div>
                     </div>
                 </div>
             </div>

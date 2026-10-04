@@ -1090,7 +1090,13 @@ the middle of that fades it back from wherever it got to. The room is the chat, 
 blurred (`LIGHTBOX_BLUR`, 3 px) — enough to put it behind the picture, not so much that it stops being the
 conversation it was opened from. The blur is on `#root`, so **the lightbox is a portal into `body`**: inside
 `main` it would be blurred with everything else, and a `filter` also makes its element the containing
-block of every `fixed` thing inside it. The card itself is opaque, since text behind a translucent strip is
+block of every `fixed` thing inside it. That last half is also why **`#root` clips** (`overflow: clip`,
+`widgets.css`): while the blur is on, a narrow window's drawers stop being `fixed` and become ordinary
+content of `#root`, and the shut right drawer — translated a whole width past the edge — made the
+document wider than the glass. A phone's WebView then grows its layout viewport to fit, the room
+(`fixed inset-0`) centres the card on that bigger page, and the lightbox opened half off the bottom right
+with both scrollbars showing. Without the filter the clip touches nothing, since a `fixed` child is not
+clipped by an ancestor that is not its containing block. The card itself is opaque, since text behind a translucent strip is
 legible enough to read and too blurred to ignore.
 
 **Everything about the picture sits on the picture**, not on the edges of the glass: `lightbox-card` is the
@@ -1101,13 +1107,19 @@ a portrait photo in the middle of it. The card is as wide as the picture is draw
 the picture's ceiling is said in `vw`/`dvh` (`.lightbox-picture`) rather than in percent, so the card can
 shrink to it, and each strip is `width: 0; min-width: 100%` (`.lightbox-strip`), which fills the card
 without counting towards its width. A picture too small to carry its strips gets a card `320px` wide, and
-sits in the middle of it. The frame clips, so a zoom stays inside the card. The card puts its own
+sits in the middle of it. The card puts its own
 `mousedown` out, since a press on the room is the way out. The lightbox holds the line and not only the
 picture (`Viewed`), and `shownLine` reads it back out of the pane by `message_id`, so a heart landing
 while it is open redraws the button.
 
 **There is no previous/next.** It was tried and taken out: a pane is full of captions that were never
 loaded, and a gallery that walks only the pictures that happen to be here skips half of what is on screen.
+
+**A zoom is the whole card and not the picture inside it** — the strips grow with it and the room's edge
+is what clips it, the way zooming a page works, rather than the picture growing inside a frame the size
+it was. The transform is on `.lightbox-zoom`, a wrapper round the card (the fade owns the card's own
+`transform`), and the touch gestures are the **room's**, so two fingers anywhere zoom and one finger
+anywhere pans; only the hold menu and the click/double tap stay on the picture.
 
 **A picture in it is zoomed**, and the two platforms ask for that the way they each already do. A **click**
 is one step in and the next click is the way back — the cursor is the magnifying glass and then the other
@@ -1126,7 +1138,7 @@ arrived and `ZOOM_MAX`; the
 floor is 1 because the lightbox already fits the picture to the glass and there is nothing below all of it.
 While the fingers are down the transform is written **straight onto the element** and handed back to React
 when they leave, exactly as a dragged drawer is — a pinch puts out sixty positions a second. `touch-action:
-none` on the picture is what keeps the page itself out of the gesture (React's own `touchmove` is passive,
+none` on the room is what keeps the page itself out of the gesture (React's own `touchmove` is passive,
 so a `preventDefault` there would only warn), and esc and the back gesture take the zoom off before they
 take the picture away.
 
@@ -1134,11 +1146,12 @@ take the picture away.
 has no scrollbars, and zooming back out to pick a different corner is not what anybody means by a zoom.
 One finger on a picture that is already zoomed moves it (`onPanStart`/`onPanMove`/`onPanEnd`), and what it
 moves is the **anchor** rather than a translation beside it — the zoom is said in one thing, a percent of
-the picture, and it stays said in that one thing (`PAN_SLOP` is how far the finger travels before this is a
+the card, and it stays said in that one thing (`PAN_SLOP` is how far the finger travels before this is a
 drag and not a tap or a hold). An anchor is a fixed point, so moving it by *d* moves the picture by
-`-(scale - 1)d`, which is where the arithmetic comes from; it is a percent of the picture's **layout** size
+`-(scale - 1)d`, which is where the arithmetic comes from; it is a percent of the card's **layout** size
 (`offsetWidth`), since `getBoundingClientRect` already has the scale in it. Clamping the anchor to 0–100%
-is exactly what keeps the picture covering the frame, so there is no edge to drag a hole in from. The
+brings either edge of the card back to where it stood unzoomed, which is on the glass, so every part of
+it can be reached and none dragged away. The
 origin is written straight onto the element while the finger is down and handed back on the way up, as the
 pinch and the drawers are, and `pannedRef` drops the click a drag leaves behind — otherwise letting go
 would zoom back out.
