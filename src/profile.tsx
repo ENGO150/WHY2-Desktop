@@ -20,12 +20,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { ProfileInfo, OnlineUser, ClientConfig, VocabularyValue } from "./types";
+import type { ProfileInfo, OnlineUser, ClientConfig } from "./types";
 import { Icon } from "./icons";
 import { Avatar, Overlay, PanelHeader } from "./components";
 import { linked } from "./messages";
 import { deviceIcon } from "./roster";
-import { ANSI_TRUE } from "./theme";
 
 //WHAT A NAME ANYWHERE IN THE WINDOW CAN ASK FOR
 export interface People
@@ -211,84 +210,15 @@ function same(one: ProfileFields, other: ProfileFields): boolean
         && one.website === other.website && one.status === other.status;
 }
 
-const colorName = (choice: VocabularyValue) => choice.value.replace(/_/g, " ");
-
-//ONE COLOR, AND THE MENU OF THE OTHERS
-function ColorRow({ label, colors, current, pick }: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
-{
-    const [open, setOpen] = useState(false);
-    const boxRef = useRef<HTMLDivElement>(null);
-    const chosen = colors.find((choice) => choice.color !== null && choice.color === current);
-
-    //A PRESS OUTSIDE CLOSES IT
-    useEffect(() =>
-    {
-        if (!open) return;
-
-        const away = (event: MouseEvent) =>
-        {
-            if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
-        };
-
-        document.addEventListener("mousedown", away);
-
-        return () => document.removeEventListener("mousedown", away);
-    }, [open]);
-
-    return (
-        <div
-            ref={boxRef}
-            className="relative"
-            onKeyDown={(event) => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}
-        >
-            <button
-                type="button"
-                aria-expanded={open}
-                onClick={() => setOpen(!open)}
-                className="field flex w-full items-center gap-3 text-left"
-            >
-                <span className="flex-1 truncate">{label}</span>
-                <span
-                    className="h-4 w-4 shrink-0 rounded-full ring-1 ring-border-strong"
-                    style={{ backgroundColor: chosen?.color != null ? ANSI_TRUE[chosen.color] : "transparent" }}
-                />
-                <span className="text-[13px] text-muted">{chosen ? colorName(chosen) : "Not set"}</span>
-                <Icon name="chevron" className={`h-4 w-4 shrink-0 text-faint ${open ? "rotate-180" : ""}`} />
-            </button>
-
-            {open && (
-                <div className="absolute right-0 top-full z-10 mt-1.5 grid grid-cols-8 gap-1.5 rounded-xl border border-border-strong bg-overlay p-2.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.45)]">
-                    {colors.map((choice) => choice.color !== null && (
-                        <button
-                            key={choice.value}
-                            type="button"
-                            title={colorName(choice)}
-                            aria-label={colorName(choice)}
-                            aria-pressed={choice.color === current}
-                            onClick={() => { pick(choice); setOpen(false); }}
-                            className={`h-6 w-6 rounded-full ring-1 ring-border-strong ${choice.color === current ? "ring-2 ring-text ring-offset-2 ring-offset-overlay" : "hover:ring-muted"}`}
-                            style={{ backgroundColor: ANSI_TRUE[choice.color] }}
-                        />
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
 //OUR OWN PROFILE, EDITABLE
 export function ProfileEditor(
 {
-    username, profile, avatar, color, colors, nameColor, messageColor, pickColor, uploading, narrow, save, pickAvatar, dropAvatar, close,
+    username, profile, avatar, color, uploading, narrow, save, pickAvatar, dropAvatar, close,
 }: {
     username: string;
     profile: ProfileInfo | null;
     avatar: string | undefined;
     color: string | undefined;
-    colors: VocabularyValue[];
-    nameColor: number | null;
-    messageColor: number | null;
-    pickColor: (name: boolean, choice: VocabularyValue) => void;
     uploading: boolean;
     narrow: boolean;
     save: (fields: ProfileFields) => Promise<unknown>;
@@ -360,14 +290,7 @@ export function ProfileEditor(
                     </div>
                 </div>
 
-                {colors.length > 0 && (
-                    <div className="mt-5 flex flex-col gap-3">
-                        <ColorRow label="Name color" colors={colors} current={nameColor} pick={(choice) => pickColor(true, choice)} />
-                        <ColorRow label="Message color" colors={colors} current={messageColor} pick={(choice) => pickColor(false, choice)} />
-                    </div>
-                )}
-
-                <div className="mt-5 flex flex-col gap-3">
+                <div className="mt-4 flex flex-col gap-3">
                     <input aria-label="Status" value={draft.status} onChange={set("status")} placeholder="Status" className="field" />
                     <input aria-label="Pronouns" value={draft.pronouns} onChange={set("pronouns")} placeholder="Pronouns" className="field" spellCheck={false} />
                     <input aria-label="Website" value={draft.website} onChange={set("website")} placeholder="Website" className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />
