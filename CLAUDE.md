@@ -32,13 +32,14 @@ why2-chat = { path = "../../WHY2/chat" }
 `client_voice` pulls in `cpal`, `audiopus` and `nnnoiseless`, so the build also wants the
 system's audio development libraries (opus, and PulseAudio/ALSA) — a missing one fails in a `*-sys` build
 script, not in this code. On Linux `client_screen` wants **pipewire's headers and a `libclang`** as well:
-`xcap` pulls `libspa-sys`, which runs `bindgen` over them, and bindgen loads `libclang.so` at build time.
+`xcap` pulls `libspa-sys`, and since 2.3.1 the crate's own Wayland portal recorder pulls `pipewire` (and so
+`pipewire-sys`) directly; both run `bindgen` over them, and bindgen loads `libclang.so` at build time.
 Where the system's `llvm-config` points at a release that ships no `libclang` — a distribution with several
 LLVM slots installed does exactly this — the build script panics with *Unable to find libclang*, and the
 answer is `LIBCLANG_PATH` pointed at a slot that has one (`/usr/lib/llvm/<version>/lib64` on Gentoo). It
 bites a fresh profile rather than a fresh checkout: a `target/debug` that was built once keeps the answer,
 so the first `--release` build is usually where it shows up. It is on for **both** targets; what a phone does about the opus it cannot find is
-in **Android**. `client_screen` adds `xcap`/`libwayshot` (capture), `openh264` (which builds its
+in **Android**. `client_screen` adds `xcap`/`libwayshot`/`pipewire`+`zbus` (capture, the last two Linux-only), `openh264` (which builds its
 own C library in a build script) and `winit`/`wgpu`, which this app never runs — see **Screen sharing**,
 which also documents the one change this app needs in that crate. When behaviour looks wrong, the cause is often in that crate, not here — read
 its `chat/src/` (`network/client/`, which is `mod.rs`, `handshake.rs` and `image.rs` since 2.2.0,
@@ -1243,7 +1244,10 @@ change in the sibling crate**, described below, without which this app will not 
 `/screen [MONITOR]` behaves exactly as it does in the terminal. The monitor is picked on this machine and
 never leaves it — the server only ever knows *that* we are sharing — so `emit_screen` reads both halves back
 out of the crate's globals (`screen_options::get_use_screen`, `screen_capture::current_monitor`) rather than
-keeping state of its own, and the window draws itself from one `UiEvent::Screen`. A bare `/screen` toggles; a
+keeping state of its own, and the window draws itself from one `UiEvent::Screen`. On a Wayland compositor with no
+screencopy (KWin, mutter) the crate falls through to the screencast portal since 2.3.1, and there the
+**portal's own picker** chooses the output — a monitor row in the **Screens** window starts the share but
+does not decide what it shows, exactly as in the TUI. A bare `/screen` toggles; a
 named monitor starts on it, or, **while a share is already running, swaps the capture over without telling
 the server anything at all** — that is the one case where `send_command_code` returns `None` for this
 command, and the pane's line comes from us.
