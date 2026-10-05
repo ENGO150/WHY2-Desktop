@@ -31,6 +31,11 @@ import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.webkit.ScriptHandler
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 class MainActivity : TauriActivity() {
   companion object {
@@ -102,6 +107,7 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     web = webView
+    watchInsets(webView)
 
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
@@ -125,6 +131,34 @@ class MainActivity : TauriActivity() {
         isEnabled = true
       }
     })
+  }
+
+  // SYSTEM BARS INTO THE PAGE
+  private var insetScript: ScriptHandler? = null
+
+  private fun watchInsets(view: WebView) {
+    ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+      val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      val density = resources.displayMetrics.density
+      val top = bars.top / density
+      val bottom = maxOf(bars.bottom - ime.bottom, 0) / density
+
+      val set = "var r=document.documentElement;if(r){r.style.setProperty('--inset-top','${top}px');" +
+        "r.style.setProperty('--inset-bottom','${bottom}px')}"
+
+      // EVERY LOAD
+      if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        insetScript?.remove()
+        insetScript = WebViewCompat.addDocumentStartJavaScript(v as WebView,
+          "(function(){var s=function(){$set};s();document.addEventListener('DOMContentLoaded',s)})()", setOf("*"))
+      }
+
+      // THIS LOAD
+      (v as WebView).evaluateJavascript("(function(){$set})()", null)
+
+      ViewCompat.onApplyWindowInsets(v, insets)
+    }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -155,6 +189,7 @@ class MainActivity : TauriActivity() {
   override fun onDestroy() {
     if (current === this) current = null
     web = null
+    insetScript = null
     super.onDestroy()
   }
 

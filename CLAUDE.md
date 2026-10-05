@@ -1650,6 +1650,20 @@ chat app has settled on:
   `h-dvh` for the same reason, and pays the safe-area insets back once (`.safe-top`/`.safe-bottom`) so every
   column inside is already clear of the notch. A `fixed` drawer is positioned against the viewport and not
   against `<main>`, so it pays its own.
+- **The insets are not `env()` alone.** `MainActivity` calls `enableEdgeToEdge()`, so the page is drawn under
+  the status bar and the navigation bar, and most Android WebViews answer `env(safe-area-inset-*)` with the
+  display cutout and nothing else — the bars are not in it. With gesture navigation that costs a thin
+  handle over the composer and goes unnoticed; with the **three-button bar** it is 48dp of buttons sitting
+  on the send button. So `MainActivity.watchInsets` listens on the WebView itself and writes the system bars
+  (and the cutout) into the page as `--inset-top`/`--inset-bottom` on `<html>`, in CSS pixels, and
+  `mobile.css` takes `--safe-top`/`--safe-bottom` as the **larger** of that and `env()` — a WebView that
+  does report the bars is not padded twice. Everything that paid the insets uses those two. The bottom
+  one is **0 while the keyboard is up** (`bars.bottom - ime.bottom`), since the bar is then under the keys
+  and a viewport resized to the keyboard already clears it. It reaches the page twice: an
+  `evaluateJavascript` for the document that is there, and a **document-start script** (`androidx.webkit`,
+  replaced on every change) for the one that is not yet — the first insets arrive seconds before the bundle
+  does, and a reload would otherwise lose them. The listener hands the insets on to the WebView's own
+  `onApplyWindowInsets`, which is what keeps its keyboard handling.
 
 **Where the config lives.** The crate expands `{HOME}` into every path it keeps `client.toml`, `server.toml`
 and the TOFU pins in, through `dirs::home_dir()` — which is `None` on Android, because an app process has no

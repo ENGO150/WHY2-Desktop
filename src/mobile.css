@@ -16,9 +16,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-/* NOTCH AND GESTURE BAR */
-.safe-top    { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+/* NOTCH AND SYSTEM BARS */
+:root
+{
+    --safe-top: max(env(safe-area-inset-top), var(--inset-top, 0px));
+    --safe-bottom: max(env(safe-area-inset-bottom), var(--inset-bottom, 0px));
+}
+
+.safe-top    { padding-top: var(--safe-top); }
+.safe-bottom { padding-bottom: var(--safe-bottom); }
 
 /* DRAWERS (translate, WHICH IS WHAT TAILWIND SETS) */
 .drawer

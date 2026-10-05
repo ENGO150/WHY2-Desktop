@@ -398,7 +398,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     .lightbox-picture
     {
         max-width: calc(100vw - 2rem);
-        max-height: calc(100dvh - 9rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 9rem - var(--safe-top) - var(--safe-bottom));
     }
 }
 
