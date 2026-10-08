@@ -113,6 +113,7 @@ pub(crate) struct ScreenState
 {
     pub(crate) sharing: bool,
     pub(crate) monitor: Option<String>,
+    pub(crate) sound: bool, //SHARING ITS SOUND
 }
 
 //ONE USER WHOSE SCREEN IS UP. THE LIST IS ASKED FOR AND NEVER PUSHED - THE SERVER ANSWERS /screens AND
@@ -445,6 +446,7 @@ pub(crate) enum UiEvent
     Screen { screen: ScreenState },                               //OUR OWN SHARE, WHOLE
     Screens { users: Vec<ScreenUserInfo> },                       //WHO ELSE IS SHARING, AS OF WHEN IT WAS ASKED
     Watching { username: Option<String> },                        //WHOSE SCREEN THE PANE IS DRAWING, IF ANY
+    ScreenMuted { muted: bool },                                  //THE WATCHED SHARE'S SOUND MUTED
     OpenSettings,                                                 //  /settings - OUR OWN CONFIG, NOT THE SERVER'S
     OpenAccount { action: AccountAction },                        //  /account - THE FORM FOR ONE ACTION
     Passwd { ok: bool },                                          //A PASSWORD CHANGE ANSWERED

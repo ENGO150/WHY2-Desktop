@@ -540,15 +540,25 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     Command::MessageColor => color_handler(&app, &state, &write_stream, false, parameters).await,
 
                     //NOTHING WENT TO THE SERVER BECAUSE NOTHING HAD TO: THE SHARE IS ALREADY UP AND ONLY
-                    //THE MONITOR UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
+                    //THE MONITOR OR THE SOUND UNDER IT CHANGED, WHICH THE RUNNING CAPTURE PICKS UP ON ITS OWN
                     #[cfg(screen)]
                     Command::Screen =>
                     {
-                        say(&app, ChatMessage::ok(match screen_capture::current_monitor()
+                        let (monitor, sound) = command::screen_parameters(parameters.as_deref());
+
+                        if monitor.is_some()
                         {
-                            Some(monitor) => tr!("screen.swapped_to", monitor),
-                            None => tr!("screen.swapped"),
-                        }));
+                            say(&app, ChatMessage::ok(match screen_capture::current_monitor()
+                            {
+                                Some(monitor) => tr!("screen.swapped_to", monitor),
+                                None => tr!("screen.swapped"),
+                            }));
+                        }
+
+                        if let Some(sound) = sound
+                        {
+                            say(&app, ChatMessage::ok(if sound { tr!("screen.sound_on") } else { tr!("screen.sound_off") }));
+                        }
 
                         emit_screen(&app);
                     },

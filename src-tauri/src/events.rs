@@ -695,8 +695,15 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //IS THE Screens WINDOW'S TO BADGE, AND THE TUI SAYS NO MORE THAN THIS EITHER
         ClientEvent::Screen(enabled) =>
         {
+            //A SHARE WITHOUT SOUND SAYS SO
+            #[cfg(screen)]
+            let silent = !why2_chat::network::screen::client::options::get_share_audio();
+            #[cfg(not(screen))]
+            let silent = false;
+
             say(app, ChatMessage::ok(match enabled
             {
+                true if silent => tr!("event.screen.started_silent"),
                 true => tr!("event.screen.started"),
                 false => tr!("event.screen.stopped"),
             }));
@@ -738,6 +745,13 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::plain(tr!("event.screen.deattach", username)));
 
             emit(app, UiEvent::Watching { username: None });
+        },
+
+        ClientEvent::MuteScreen(muted) =>
+        {
+            say(app, ChatMessage::plain(if muted { tr!("event.screen.muted") } else { tr!("event.screen.unmuted") }));
+
+            emit(app, UiEvent::ScreenMuted { muted });
         },
 
         //BROADCAST TO EVERYBODY, US INCLUDED - ClientEvent::Screen ALREADY SAID IT ON THIS END, WHICH IS

@@ -74,7 +74,7 @@ import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
 import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
 import { TofuDialog, challenge } from "./tofu";
-import { ScreensBox } from "./screens";
+import { ScreensBox, ScreenMenu } from "./screens";
 import { FilesBox } from "./files";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
@@ -263,7 +263,7 @@ function App()
     const [vocabulary, setVocabulary] = useState<{ kind: ArgValues; values: VocabularyValue[] }>({ kind: "free", values: [] });
     const [unread, setUnread] = useState(0);
     const [voice, setVoice] = useState<VoiceState>({ enabled: false, mic: false, users: [], speaker: null });
-    const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null });
+    const [screen, setScreen] = useState<ScreenState>({ sharing: false, monitor: null, sound: false });
 
     //WHOSE THE WINDOW'S FRAME IS - THE ONE THING THE PAGE IS TOLD ABOUT WHAT IT IS RUNNING ON. IT STARTS
     //AS THE ANSWER THAT DRAWS NOTHING, WHICH IS ALSO WHAT A BROWSER (WHERE THERE IS NO invoke) KEEPS
@@ -277,9 +277,16 @@ function App()
     const [monitors, setMonitors] = useState<string[]>([]);
     const [sharers, setSharers] = useState<ScreenUser[]>([]);
 
+    //WHETHER THE NEXT SHARE CARRIES SOUND
+    const [shareSound, setShareSound] = useState(true);
+
     //WHOSE SCREEN THE PANE IS DRAWING, AND WHAT STOPPED IT FROM DRAWING ONE
     const [watching, setWatching] = useState<string | null>(null);
     const [viewerError, setViewerError] = useState("");
+
+    //THE WATCHED SHARE'S SOUND MUTED, AND ITS MENU
+    const [screenMuted, setScreenMuted] = useState(false);
+    const screenHold = useHoldMenu<null>("pointer");
 
     //WHICH OF THE TWO THE MIDDLE COLUMN IS SHOWING WHILE A SCREEN IS BEING WATCHED, AND WHO IS DECODING IT
     const [view, setView] = useState<"chat" | "screen">("chat");
@@ -981,12 +988,13 @@ function App()
         setRole("user");
         setUnread(0);
         setVoice({ enabled: false, mic: false, users: [], speaker: null });
-        setScreen({ sharing: false, monitor: null });
+        setScreen({ sharing: false, monitor: null, sound: false });
         setScreensOpen(false);
         setMonitors([]);
         setSharers([]);
         setWatching(null);
         setViewerError("");
+        setScreenMuted(false);
         setView("chat");
         setDecoding("");
         setCreating(null);
@@ -1651,7 +1659,14 @@ function App()
                 {
                     setWatching(payload.data.username);
                     setViewerError("");
+                    setScreenMuted(false);
                     setView(payload.data.username ? "screen" : "chat");
+                    break;
+                }
+
+                case "screen_muted":
+                {
+                    setScreenMuted(payload.data.muted);
                     break;
                 }
 
@@ -4231,6 +4246,10 @@ function App()
     );
 
     //A LINE'S MENU
+    const screenMenu = screenHold.menu && watching && (
+        <ScreenMenu at={screenHold.menu} muted={screenMuted} send={send} close={screenHold.close} />
+    );
+
     const messageMenu = lineHold.menu && (
         <MessageMenu
             at={lineHold.menu}
@@ -4383,6 +4402,8 @@ function App()
             username={username}
             screen={screen}
             narrow={narrow}
+            sound={shareSound}
+            setSound={setShareSound}
             send={send}
             askScreens={askScreens}
             close={() => setScreensOpen(false)}
@@ -4611,7 +4632,7 @@ function App()
 
                         {/* SOMEBODY'S SCREEN, HIDDEN AND NEVER UNMOUNTED WHILE WATCHED */}
                         <div className={`min-h-0 flex-1 flex-col bg-black ${watching && view === "screen" ? "flex" : "hidden"}`}>
-                            <div className="relative min-h-0 flex-1">
+                            <div {...screenHold.bind(null)} className="relative min-h-0 flex-1">
                                 <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
                                 {viewerError && (
@@ -4641,6 +4662,12 @@ function App()
                                         ? <span key={at} className="font-semibold text-text">{watching}</span>
                                         : <span key={at}>{part}</span>))}
                                 </span>
+
+                                {screenMuted && (
+                                    <span title={t("chat.screen_muted")} className="shrink-0 text-muted">
+                                        <Icon name="speaker_off" className="h-4 w-4" />
+                                    </span>
+                                )}
 
                                 {decoding && (
                                     <span
@@ -4795,6 +4822,7 @@ function App()
             {profileEditor}
             {pictureMenu}
             {messageMenu}
+            {screenMenu}
             {heartsMenu}
             {settingsBox}
             {filesBox}

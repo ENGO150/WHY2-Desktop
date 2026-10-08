@@ -56,6 +56,7 @@ pub(crate) fn command_args(args: &'static [command::CommandArg]) -> Vec<CommandA
             ArgValues::Images => "images",
             ArgValues::Monitors => "monitors",
             ArgValues::Roles => "roles",
+            ArgValues::Bools => "bools",
         }.to_string(),
     }).collect()
 }
@@ -177,6 +178,8 @@ pub(crate) fn get_vocabulary(values: String, typed: String) -> Vec<VocabularyVal
         //THE ROLES ARE THE ONE VOCABULARY THAT IS ALSO A PROTOCOL VALUE - THE SERVER STORES THE POSITION IN
         //THIS LIST, SO OFFERING THE NAMES IS THE ONLY WAY THE TWO CANNOT DRIFT
         "roles" => Role::ALL.iter().map(|role| VocabularyValue { value: role.to_string(), color: None }).collect(),
+
+        "bools" => ["true", "false"].into_iter().map(|value| VocabularyValue { value: value.to_string(), color: None }).collect(),
 
         //THE CRATE'S OWN LIST AND NOT TAURI'S: THESE ARE THE NAMES /screen RESOLVES AGAINST, AND A WINDOW
         //MANAGER'S IDEA OF WHAT A MONITOR IS CALLED IS NOT ALWAYS THE CAPTURE BACKEND'S

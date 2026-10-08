@@ -1358,6 +1358,21 @@ exactly what the server calls spam. And every answer opens the window, since not
 more — a `screens` event is either the window's own ask or somebody typing `/screens`, and both of them
 belong in it.
 
+**Sound is half of a share, both ways** (2.3.2). `/screen` takes a last `true`/`false` (`ArgValues::Bools`,
+`bools` in `get_vocabulary`), split off by the crate's own `command::screen_parameters`: on a new share it
+says whether the share carries sound (the default is yes), and on a running one it changes that without
+telling the server, like a monitor swap — which is why `send_input`'s `None` arm now says the swap line,
+the sound line, or both, as the TUI's `submit` does. `ScreenState::sound` is `get_share_audio`, and a share
+started without it says `event.screen.started_silent`. The **Screens** window carries it as a `Share
+sound` switch over the monitors: while a share runs it sends `/screen <bool>`, and otherwise it is a
+window-side preference (`shareSound`, not stored) that puts `false` behind the monitor's name. Watching is
+the other direction: `/mutescreen` asks the **server** to stop forwarding the watched share's audio to us,
+and the `MuteScreen { muted }` it answers with is a pane line and `UiEvent::ScreenMuted`. The crate holds no
+such flag, so `screenMuted` in `App.tsx` is the only copy; an attach starts unmuted on the server, so the
+`watching` event clears it. It is asked for with a **right-click on the watched screen, or a hold**
+(`ScreenMenu` in `screens.tsx`, `useHoldMenu` at the pointer), and the theater's footer shows a struck
+speaker while it holds.
+
 `reset_session` clears `set_use_screen`, `set_attach_screen` and `set_monitor(None)`, exactly what
 `tui/state.rs::reset_session` clears: the pick lasts as long as the share does. The session teardown also
 drops the frame channel, so a picture cannot outlive the socket it came from.

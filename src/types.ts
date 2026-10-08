@@ -139,6 +139,7 @@ export interface ScreenState
 {
     sharing: boolean;
     monitor: string | null;
+    sound: boolean;
 }
 
 //ONE USER WHOSE SCREEN IS UP FOR WATCHING
@@ -210,7 +211,7 @@ export interface OfflineUser
 }
 
 //THE NAME OF THE SET A PARAMETER ACCEPTS - "free" IS EVERYTHING ELSE, AND HAS NOTHING TO OFFER
-export type ArgValues = "free" | "colors" | "paths" | "images" | "monitors" | "roles";
+export type ArgValues = "free" | "colors" | "paths" | "images" | "monitors" | "roles" | "bools";
 
 export interface CommandArgInfo
 {
@@ -453,6 +454,7 @@ export type BridgeEvent =
     | { event: "screen"; data: { screen: ScreenState } }
     | { event: "screens"; data: { users: ScreenUser[] } }
     | { event: "watching"; data: { username: string | null } }
+    | { event: "screen_muted"; data: { muted: boolean } }
     | { event: "server_settings"; data: { settings: SettingRow[]; saved: boolean } }
     | { event: "channel_changed"; data: { channel: string | null } }
     | { event: "channel_created"; data: { name: string } }

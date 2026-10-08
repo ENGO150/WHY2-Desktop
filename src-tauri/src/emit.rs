@@ -182,6 +182,7 @@ pub(crate) fn emit_screen(app: &AppHandle)
 
             //WHAT THE CAPTURE IS POINTED AT ONLY MEANS ANYTHING WHILE THERE IS ONE
             monitor: sharing.then(screen_capture::current_monitor).flatten(),
+            sound: screen_options::get_share_audio(),
         },
     });
 }
@@ -216,7 +217,7 @@ pub(crate) fn speaker() -> Option<bool>
 #[cfg(not(screen))]
 pub(crate) fn emit_screen(app: &AppHandle)
 {
-    emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None } });
+    emit(app, UiEvent::Screen { screen: ScreenState { sharing: false, monitor: None, sound: false } });
 }
 
 //THE MARK BESIDE THE LINE, AND THE ONE THING A DESKTOP NOTIFICATION NEEDS SAYING ABOUT. A LINUX
