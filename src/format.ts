@@ -150,3 +150,11 @@ export function sentAt(timestamp: number, short = false): string
 
     return `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())} ${clock}`;
 }
+
+//A LENGTH AS M:SS (theme.rs::clock)
+export function clock(ms: number): string
+{
+    const seconds = Math.floor(ms / 1000);
+
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}

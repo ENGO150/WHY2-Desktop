@@ -60,6 +60,7 @@ export interface ChatMessage
     message_color: number | null;
     direct: DirectPeer | null; //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
     image: MessageImage | null; //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
+    voice: MessageVoice | null; //A VOICE MESSAGE
     reply: number | null;       //THE MESSAGE IT ANSWERS
     hearts: string[];           //WHO HEARTED IT
     edited: boolean;            //REWORDED SINCE SENT
@@ -77,6 +78,17 @@ export interface MessageImage
     width: number;
     height: number;
 }
+
+//A VOICE MESSAGE'S CLIP
+export interface MessageVoice
+{
+    hash: string;
+    duration: number;   //MS
+    state: PictureState; //WHEN ITS WAVEFORM IS LOADED
+}
+
+//A CLIP'S BARS, OR GONE FROM THE SERVER
+export type Waveform = number[] | "gone";
 
 //WHAT THIS PLATFORM CAN DO WITH A PICTURE SOMEBODY IS KEEPING (picture_actions): WHETHER THERE IS A
 //CLIPBOARD THAT TAKES PIXELS, AND WHETHER THERE IS A FILE DIALOG TO ASK "WHERE" WITH. A PHONE HAS
@@ -434,6 +446,10 @@ export type BridgeEvent =
     | { event: "transfer_progress"; data: { uid: string; done: number } }
     | { event: "transfer_done"; data: { uid: string; ok: boolean } }
     | { event: "image_data"; data: { hash: string; image: MessageImage | null } }
+    | { event: "voice_waveform"; data: { hash: string; waveform: number[] | null } }
+    | { event: "playback"; data: { hash: string | null; ms: number; loading: boolean } }
+    | { event: "recording"; data: { ms: number | null } }
+    | { event: "play_voice"; data: { message_id: number } }
     | { event: "popup"; data: { text: string } }
     | { event: "server_icon"; data: { hash: string | null } }
     | { event: "server_icon_image"; data: { hash: string; sources: IconSource[] } }

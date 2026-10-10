@@ -455,6 +455,13 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                 return Ok(());
             }
 
+            //AND BEFORE A RECORDING
+            #[cfg(target_os = "android")]
+            if matches!(command, Command::Record) && !crate::voice_message::recording() && !crate::android::ensure_microphone(&app).await
+            {
+                return Ok(());
+            }
+
             //SEND THE CODE ON A SIMPLE COMMAND, HANDLE IT HERE OTHERWISE
             let sent = command::send_command_code(&mut *write_stream.lock().await, &command, &parameters).await;
 
@@ -534,6 +541,19 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                             //THE PANEL IS BUILT, SO THERE IS NOTHING HERE TO GO BACK AND PATCH
                             emit_voice(&app);
                         },
+                    },
+
+                    //START, OR SEND WHAT WAS RECORDED
+                    #[cfg(voice)]
+                    Command::Record => crate::voice_message::record(&app, &state, &write_stream).await,
+
+                    //THE PANE KNOWS WHICH CLIP AN ID IS
+                    #[cfg(voice)]
+                    Command::Play => match parameters.as_deref().map(|id| id.trim().parse::<u64>())
+                    {
+                        None => crate::voice_message::stop(&app),
+                        Some(Ok(message_id)) => emit(&app, UiEvent::PlayVoice { message_id }),
+                        Some(Err(_)) => popup(&app, tr!("bridge.usage", usage = format!("/play [{}]", i18n::text("arg.id")))),
                     },
 
                     Command::UsernameColor => color_handler(&app, &state, &write_stream, true, parameters).await,

@@ -156,7 +156,10 @@ pub(crate) fn reset_session()
 
     //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
     #[cfg(voice)]
-    voice_options::set_use_voice(false);
+    {
+        voice_options::set_use_voice(false);
+        crate::voice_message::reset();
+    }
 
     //AND ON A PHONE, WHAT WAS HOLDING THE PROCESS OPEN FOR THE WHOLE SESSION - THE NOTIFICATION IS THE
     //ONLY THING THE USER CAN SEE OF THE SERVICE, AND ONE LEFT STANDING OVER A DEAD SOCKET IS A LIE

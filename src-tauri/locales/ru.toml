@@ -128,6 +128,11 @@ placeholder = "Сообщение для {target}"
 attach = "Прикрепить файл"
 send_picture = "Отправить изображение"
 send = "Отправить"
+record = "Записать голосовое сообщение"
+discard = "Удалить"
+voice_message = "Голосовое сообщение"
+play = "Воспроизвести"
+stop = "Остановить"
 
 [chat.online_count]
 one = "{count} в сети"

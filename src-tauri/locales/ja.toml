@@ -128,6 +128,11 @@ placeholder = "{target} にメッセージ"
 attach = "ファイルを添付"
 send_picture = "画像を送信"
 send = "送信"
+record = "ボイスメッセージを録音"
+discard = "破棄"
+voice_message = "ボイスメッセージ"
+play = "再生"
+stop = "停止"
 
 [chat.online_count]
 other = "{count} 人がオンライン"

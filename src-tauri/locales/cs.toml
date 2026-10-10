@@ -128,6 +128,11 @@ placeholder = "Zpráva pro {target}"
 attach = "Připojit soubor"
 send_picture = "Poslat obrázek"
 send = "Odeslat"
+record = "Nahrát hlasovou zprávu"
+discard = "Zahodit"
+voice_message = "Hlasová zpráva"
+play = "Přehrát"
+stop = "Zastavit"
 
 [chat.online_count]
 one = "{count} online"

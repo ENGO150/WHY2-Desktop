@@ -128,6 +128,11 @@ placeholder = "发送消息给 {target}"
 attach = "附加文件"
 send_picture = "发送图片"
 send = "发送"
+record = "录制语音消息"
+discard = "丢弃"
+voice_message = "语音消息"
+play = "播放"
+stop = "停止"
 
 [chat.online_count]
 other = "{count} 人在线"

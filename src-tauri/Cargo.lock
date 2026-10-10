@@ -2520,7 +2520,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.20",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -8446,6 +8446,7 @@ dependencies = [
 name = "why2-desktop"
 version = "1.2.2"
 dependencies = [
+ "audiopus",
  "base64 0.23.1",
  "dirs 7.0.0",
  "glib",

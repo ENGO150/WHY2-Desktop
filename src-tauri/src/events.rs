@@ -190,6 +190,39 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say_in(app, caption(username, filename, message_id, timestamp, hash, state, color), Some(channel));
         },
 
+        //A VOICE MESSAGE, FILED BY CHANNEL
+        ClientEvent::VoiceMessage(username, message_id, timestamp, voice, color, channel) =>
+        {
+            let message = ChatMessage::new(MessageKind::User, username, "").named(color).with_message_id(message_id).at(timestamp).spoken(&voice);
+
+            say_in(app, message, channel.map(Option::unwrap_or_default));
+
+            //PUSHED WHOLE, SO USUALLY CACHED
+            #[cfg(voice)]
+            crate::voice_message::shape(app, voice.hash).await;
+        },
+
+        //A CLIP ASKED FOR TO PLAY
+        ClientEvent::VoiceData(hash, valid) =>
+        {
+            picture_arrived(&state, &hash).await;
+
+            #[cfg(voice)]
+            crate::voice_message::delivered(app, hash, valid);
+
+            #[cfg(not(voice))]
+            let _ = valid;
+        },
+
+        //RECORDING OR PLAYING FAILED
+        ClientEvent::VoiceMessageFailed(reason) =>
+        {
+            #[cfg(voice)]
+            crate::voice_message::failed(app);
+
+            say(app, ChatMessage::error(reason));
+        },
+
         //A CLICKED CAPTION THE CACHE COULD NOT ANSWER, SO THE SERVER IS ASKED AFTER ALL
         ClientEvent::ImageRequest(hash) => request_picture(&state, hash).await,
 
@@ -204,6 +237,10 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         ClientEvent::ImageData(hash, image) =>
         {
             picture_arrived(&state, &hash).await;
+
+            //A CLIP FETCHED FOR ITS WAVEFORM
+            #[cfg(voice)]
+            if crate::voice_message::fetched(app, hash).await { return }
 
             //AN AVATAR THAT DID NOT COME MAY BE ASKED FOR AGAIN
             if image.is_none() { state.avatars.lock().unwrap().remove(&hash); }
@@ -259,10 +296,12 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts, edited }| match image
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts, edited, voice }| match (image, voice)
             {
-                Some(hash) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts),
-                None => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors)
+                (_, Some(voice)) => ChatMessage::new(MessageKind::User, username, text).named(colors.username_color).with_message_id(message_id)
+                    .at(timestamp).spoken(&voice).hearted(hearts),
+                (Some(hash), None) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts),
+                (None, None) => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors)
                     .replying(reply).hearted(hearts).reworded(edited),
             }).collect::<Vec<ChatMessage>>();
 

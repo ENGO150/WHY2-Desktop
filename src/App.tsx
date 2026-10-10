@@ -62,6 +62,7 @@ import type
     PaletteShape,
     PaletteState,
     BridgeEvent,
+    Waveform,
 } from "./types";
 
 import { ANSI_TRUE } from "./theme";
@@ -69,7 +70,8 @@ import { Icon, IconButton } from "./icons";
 import { isKeyFrame, h264Config } from "./video";
 import { PALETTE_ROWS, analyze, entryTyped, formatArg, mentions } from "./palette";
 import { hasMarkup } from "./markup";
-import { sentAt } from "./format";
+import { clock, sentAt } from "./format";
+import { setPlayback, type Voices } from "./voice";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
 import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_SLOP, DRAWER_MS } from "./narrow";
@@ -126,6 +128,9 @@ const LIGHTBOX_BLUR = 3;
 //PAIR - CLOSE ENOUGH IN TIME AND IN PLACE TO BE THE SAME GESTURE, WHICH IS WHAT EVERY PHONE GALLERY DOES
 const TAP_AGAIN = 300;
 const TAP_SLOP = 32;
+
+//A SHORTER PRESS OF THE RECORD BUTTON IS A TAP (tui/consts.rs)
+const KEY_TAP = 400;
 
 //AND HOW FAR A FINGER TRAVELS BEFORE IT IS MOVING THE PICTURE RATHER THAN TAPPING IT: A TAP IS NEVER
 //PERFECTLY STILL, AND A PAN THAT STARTED AT THE FIRST PIXEL WOULD EAT THE SECOND HALF OF EVERY ZOOM
@@ -211,7 +216,7 @@ function localLine(kind: MessageKind, text: string): ChatMessage
 {
     return {
         kind, prefix: null, username: "", text, id: null, message_id: null, timestamp: null,
-        username_color: null, message_color: null, direct: null, image: null, reply: null, hearts: [], edited: false,
+        username_color: null, message_color: null, direct: null, image: null, voice: null, reply: null, hearts: [], edited: false,
     };
 }
 
@@ -615,6 +620,7 @@ function App()
     const hasVoice = commands.some((command) => command.name === "voice");
     const hasAccount = commands.some((command) => command.name === "account");
     const hasScreens = commands.some((command) => command.name === "screens");
+    const hasRecord = commands.some((command) => command.name === "record");
 
     //AND NO DRAWER SURVIVES THE PICTURE TAKING THE WHOLE SCREEN
     useEffect(() => { if (theater) setDrawer(null); }, [theater]);
@@ -635,6 +641,14 @@ function App()
     const draftRef = useRef("");
 
     editRef.current = editTarget;
+
+    //CLIPS' WAVEFORMS, AND OUR RECORDING SO FAR (MS)
+    const [waveforms, setWaveforms] = useState<Record<string, Waveform>>({});
+    const [recording, setRecording] = useState<number | null>(null);
+    const recordingRef = useRef<number | null>(null);
+    const recordPressRef = useRef<number | null>(null);
+
+    recordingRef.current = recording;
 
     //ONLY IN THE PANE IT WAS PICKED IN
     useEffect(() =>
@@ -903,7 +917,8 @@ function App()
         //RATHER THAN STACKING FIVE OF THEM
         const key = peer ? `dm:${peer.id}` : `channel:${room}`;
         const title = peer ? peer.username : `#${channel}`;
-        const body = peer ? message.text : `${message.username}: ${message.text}`;
+        const said = message.voice ? t("message.voice", { username: message.username, duration: clock(message.voice.duration) }) : message.text;
+        const body = peer || message.voice ? said : `${message.username}: ${said}`;
 
         invoke("notify_message", { key, title, body }).catch(() => {});
     };
@@ -995,6 +1010,9 @@ function App()
         setWatching(null);
         setViewerError("");
         setScreenMuted(false);
+        setRecording(null);
+        setWaveforms({});
+        setPlayback(null, 0, false);
         setView("chat");
         setDecoding("");
         setCreating(null);
@@ -1523,6 +1541,43 @@ function App()
                     const source = image?.source;
 
                     if (source && avatarHashRef.current.has(hash)) setAvatars((previous) => ({ ...previous, [hash]: source }));
+                    break;
+                }
+
+                //A CLIP'S BARS, OR GONE
+                case "voice_waveform":
+                {
+                    const { hash, waveform } = payload.data;
+
+                    setWaveforms((previous) => ({ ...previous, [hash]: waveform ?? "gone" }));
+                    break;
+                }
+
+                case "playback":
+                {
+                    const { hash, ms, loading } = payload.data;
+
+                    setPlayback(hash, ms, loading);
+                    break;
+                }
+
+                case "recording":
+                {
+                    setRecording(payload.data.ms);
+                    break;
+                }
+
+                //  /play ID - THE PANE KNOWS WHICH CLIP IT IS
+                case "play_voice":
+                {
+                    const { message_id } = payload.data;
+
+                    const panes = panesRef.current;
+                    const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
+
+                    if (!message) push(entryFor(localLine("error", t("voice_message.not_loaded", { message_id }))));
+                    else if (!message.voice) push(entryFor(localLine("error", t("voice_message.not_voice", { message_id }))));
+                    else playVoice(message.voice.hash);
                     break;
                 }
 
@@ -2114,7 +2169,7 @@ function App()
     };
 
     //ONLY OUR OWN TEXT CAN BE REWORDED
-    const editable = (message: ChatMessage | null) => reactable(message) && !message!.image && message!.username === username;
+    const editable = (message: ChatMessage | null) => reactable(message) && !message!.image && !message!.voice && message!.username === username;
 
     //THE LINE GOES INTO THE COMPOSER
     const editMessage = (message: ChatMessage) =>
@@ -2824,6 +2879,49 @@ function App()
         held: pictureHold.held,
     };
 
+    //A CLIP, PLAYED BY THE CRATE
+    function playVoice(hash: string)
+    {
+        setPlayback(hash, 0, true);
+
+        invoke("play_voice", { hash }).catch((error: unknown) =>
+        {
+            setPlayback(null, 0, false);
+            setPopupMessage(String(error));
+        });
+    }
+
+    const voices: Voices =
+    {
+        waveform: (hash: string) => waveforms[hash],
+        play: playVoice,
+        stop: () => { invoke("play_voice", { hash: null }).catch(() => {}); },
+        load: (hash: string) => { invoke("voice_waveform", { hash }).catch(() => {}); },
+    };
+
+    const discardRecording = () => { invoke("discard_recording").catch(() => {}); };
+
+    //PUSH-TO-TALK: HELD SENDS ON RELEASE, A TAP TOGGLES (tui/voice_message.rs)
+    const pressRecord = () =>
+    {
+        //A FRESH PRESS ENDS A TAPPED ONE
+        if (recordingRef.current !== null) return send("/record");
+
+        recordPressRef.current = performance.now();
+        send("/record");
+    };
+
+    const releaseRecord = () =>
+    {
+        const pressed = recordPressRef.current;
+        recordPressRef.current = null;
+
+        if (pressed === null || recordingRef.current === null) return;
+        if (performance.now() - pressed < KEY_TAP) return;
+
+        send("/record");
+    };
+
     const lines: Lines =
     {
         copy: copyMessage,
@@ -3200,6 +3298,43 @@ function App()
         return () => window.removeEventListener("keydown", onKey);
     }, [theater, lightbox, zoom]);
 
+    //Ctrl+R IS PUSH-TO-TALK, ESC DISCARDS
+    useEffect(() =>
+    {
+        if (!connected || !hasRecord) return;
+
+        const down = (event: KeyboardEvent) =>
+        {
+            if (event.key === "Escape" && recordingRef.current !== null)
+            {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+
+                return discardRecording();
+            }
+
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "r") return;
+
+            event.preventDefault();
+
+            if (!event.repeat) pressRecord();
+        };
+
+        const up = (event: KeyboardEvent) =>
+        {
+            if (event.key.toLowerCase() === "r") releaseRecord();
+        };
+
+        window.addEventListener("keydown", down, true);
+        window.addEventListener("keyup", up, true);
+
+        return () =>
+        {
+            window.removeEventListener("keydown", down, true);
+            window.removeEventListener("keyup", up, true);
+        };
+    }, [connected, hasRecord]);
+
     //A PANE THAT WAS display:none WHILE THE SCREEN WAS IN FRONT COMES BACK WITH ITS SCROLL WHERE THE BROWSER
     //LEFT IT, WHICH IS NOT NECESSARILY THE BOTTOM IT WAS PINNED TO
     useEffect(() =>
@@ -3308,6 +3443,7 @@ function App()
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
             else if (drawer !== null) setDrawer(null);
+            else if (recording !== null) discardRecording();
             else if (editTarget) stopEditing();
             else if (replyTo) setReplyTo(null);
             else return false;
@@ -4045,7 +4181,7 @@ function App()
             if (message.kind !== "user" && message.kind !== "private") { nodes.push(renderNotice(message, index)); return; }
 
             nodes.push(renderChat(message, index, step.grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
-                lines, people, narrow));
+                lines, people, narrow, voices));
         });
 
         return nodes;
@@ -4750,7 +4886,14 @@ function App()
 
                                     {replyTo && contextBar("reply", (
                                         <span style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
-                                    ), replyTo.image ? t("chat.picture") : replyTo.text.split("\n")[0], () => setReplyTo(null), t("chat.cancel_reply"))}
+                                    ), replyTo.image ? t("chat.picture") : replyTo.voice ? t("chat.voice_message") : replyTo.text.split("\n")[0],
+                                        () => setReplyTo(null), t("chat.cancel_reply"))}
+
+                                    {recording !== null && (
+                                        <div className="px-4 pb-1 pt-3 text-[15px] leading-6 tabular-nums text-error">
+                                            {t("voice_message.recording", { duration: clock(recording) })}
+                                        </div>
+                                    )}
 
                                     <textarea
                                         ref={chatInputRef}
@@ -4760,7 +4903,7 @@ function App()
                                         onChange={(event) => writeInput(event.currentTarget.value)}
                                         onKeyDown={handleChatKey}
                                         placeholder={t("chat.placeholder", { target: dm ? dm.username : `#${channelLabel}` })}
-                                        className="composer-line block w-full bg-transparent px-4 pb-1 pt-3 text-[15px] outline-none placeholder:text-faint"
+                                        className={`composer-line block w-full bg-transparent px-4 pb-1 pt-3 text-[15px] outline-none placeholder:text-faint ${recording !== null ? "hidden" : ""}`}
 
                                         //THE KEYBOARD OPENS ON A TAP, AND RETURN IS A NEWLINE THERE
                                         autoFocus={!narrow}
@@ -4771,14 +4914,46 @@ function App()
                                     />
 
                                     <div className="flex items-center gap-0.5 px-2 pb-2">
-                                        <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
-                                        <IconButton icon="image" label={t("chat.send_picture")} onClick={() => uploadFile(true)} />
+                                        {recording !== null
+                                            ? <IconButton icon="trash" label={t("chat.discard")} onClick={discardRecording} />
+                                            : (
+                                                <>
+                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
+                                                    <IconButton icon="image" label={t("chat.send_picture")} onClick={() => uploadFile(true)} />
+                                                </>
+                                            )}
+
+                                        {/* HELD TO TALK, OR TAPPED */}
+                                        {hasRecord && (!dm || recording !== null) && (
+                                            <button
+                                                type="button"
+                                                title={t("chat.record")}
+                                                aria-label={t("chat.record")}
+                                                onPointerDown={(event) =>
+                                                {
+                                                    if (event.button !== 0) return;
+
+                                                    event.preventDefault();
+                                                    event.currentTarget.setPointerCapture(event.pointerId);
+
+                                                    pressRecord();
+                                                }}
+                                                onPointerUp={releaseRecord}
+                                                onPointerCancel={releaseRecord}
+                                                className={`touch-target flex h-8 w-8 shrink-0 touch-none items-center justify-center rounded-lg transition-colors ${recording !== null
+                                                    ? "bg-error/15 text-error"
+                                                    : "text-muted hover:bg-hover hover:text-text"}`}
+                                            >
+                                                <Icon name="mic" className="h-[18px] w-[18px]" />
+                                            </button>
+                                        )}
 
                                         <button
-                                            type="submit"
+                                            type={recording !== null ? "button" : "submit"}
+                                            onClick={recording !== null ? () => send("/record") : undefined}
                                             title={t("chat.send")}
                                             aria-label={t("chat.send")}
-                                            disabled={!chatInput.trim()}
+                                            disabled={recording === null && !chatInput.trim()}
                                             className="touch-target ml-auto flex h-8 w-8 items-center justify-center rounded-lg bg-text text-chat transition hover:opacity-90 disabled:cursor-default disabled:bg-active disabled:text-faint"
                                         >
                                             <Icon name="arrow_down" className="h-4 w-4 rotate-180" />

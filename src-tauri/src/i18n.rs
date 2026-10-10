@@ -101,6 +101,7 @@ const CRATE_KEYS: &[&str] =
     "login.username_rules",
     "login.waiting",
     "message.edited",
+    "message.voice",
     "palette.commands",
     "palette.mentions",
     "palette.parameters",
@@ -127,6 +128,9 @@ const CRATE_KEYS: &[&str] =
     "tofu.challenge",
     "typing.one",
     "typing.two",
+    "voice_message.not_loaded",
+    "voice_message.not_voice",
+    "voice_message.recording",
 ];
 
 //THE CRATE'S PLURAL TABLES THE WEBVIEW READS

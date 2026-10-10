@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.3.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.4.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.3.0", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.4.0", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -50,12 +50,16 @@ cargo fetched under `~/.cargo/git`. This app is a thin presentation layer over i
 That `wgpu` is also the one place a `cargo update` can break the build without a line of this code
 changing, and it breaks **Windows only**: `wgpu-hal`'s dx12 backend asks for `windows` `0.62`, while the
 `gpu-allocator` it hands its device to asks for `>=0.53, <=0.62` — a range that also matches the `0.61`
-half the rest of the graph is on, and which excludes `0.62.1` and up, `<=0.62` meaning `0.62.0`. Resolved
-either way but the same way for both, the two see one `ID3D12Device`; resolved apart, `wgpu-hal` will not
-compile. So **`windows` is pinned to `0.62.0` in `Cargo.lock`**, which is the only version both requirements
-accept, and `gpu-allocator`'s entry is pointed at it rather than at `0.61.3`. A `cargo update` that takes
-`windows` to `0.62.2` again is a green Linux, macOS and Android build and a wall of mismatched-types errors
-out of `wgpu-hal` on the Windows runner.
+half the rest of the graph is on. Resolved the same way for both, the two see one `ID3D12Device`; resolved
+apart, `wgpu-hal` will not compile — and the resolver, left to itself, **does** resolve them apart, putting
+`gpu-allocator` on `0.61.3`. So **`gpu-allocator`'s entry in `Cargo.lock` is pointed at `0.62.2` by hand**,
+the version `wgpu-hal`, `cpal`, `xcap` and why2-chat itself are on (the crate's Media Foundation encoder asks
+for `^0.62.2` since 2.4.0, which is what ended the older pin to `0.62.0`). `<=0.62` admits any `0.62.x`, so
+the edit is a valid lock and not a forced one. Anything that rewrites the lock — a `cargo update`, a version
+bump — can quietly put it back on `0.61.3`, which is a green Linux, macOS and Android build and a wall of
+mismatched-types errors out of `wgpu-hal` on the Windows runner. It is checked without a Windows machine:
+`cargo metadata --locked --filter-platform x86_64-pc-windows-msvc` accepts the lock, and
+`cargo tree --target x86_64-pc-windows-msvc -i windows@0.62.2` lists `gpu-allocator` beside `wgpu-hal`.
 
 `chat/src/bin/client/` is the crate's own terminal client (ratatui). **It is the reference implementation for
 everything this app does** — `tui/event.rs` maps every `ClientEvent` to UI state, `mod.rs::submit` handles every
@@ -133,7 +137,9 @@ wire and the webview both speak, `UiEvent` included), `state.rs` (`AppState`, th
 `input.rs` (`send_input` — the command path, mirroring the TUI's `submit`), `events.rs` (`handle_event` and
 `pump_events`), `screen.rs` (the frame sink, the JPEG fallback, `watch_frames`), `picture.rs` (a decoded
 image on its way to the webview, and the hash it is asked for by), `profile.rs` (the quiet profile queue,
-`save_profile`, `set_avatar` — see **Profiles and avatars**), `tray.rs` (where the window goes when it
+`save_profile`, `set_avatar` — see **Profiles and avatars**), `voice_message.rs` (the recorder and the
+player followed, and a clip's waveform — see **Voice messages**; `voice_message_off.rs` is its three commands
+with no bodies, for a build without the `voice` cfg), `tray.rs` (where the window goes when it
 is closed — see **The tray**), `i18n.rs` (the window's own words and the `tr!` that reads them — see
 **Languages**), plus `settings.rs`, `palette.rs`, `color.rs` and `servers.rs` for the four things that are
 their own vocabulary. `src-tauri/locales/` is the window's locales, one file per language.
@@ -146,7 +152,8 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 `PanelFooter`, `MenuBox`), `i18n.ts` (`t`/`tn`, the page's half of **Languages**), `video.ts` (the H.264 probe and `isKeyFrame`), `palette.ts` (`analyze`, the TS rewrite of
 `palette::update`), `settings.ts` (the row model), `history.ts`, `pictures.ts` (which caption an arriving
 picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
-`narrow.ts` — and the views that take props
+`narrow.ts`, `voice.tsx` (`VoiceNote`, and the playback store it reads — see **Voice messages**) — and the
+views that take props
 and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
 `servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`, `profile.tsx` (the card a name opens and the editor
 for our own profile), `account.tsx` (the `/account` form — see **Account**).
@@ -858,7 +865,7 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
   `Username`, `PasswordL` or `PasswordR` packet. Commands do not exist yet.
 - After it, a line starting with `/` goes to `command::get_command`, then `command::send_command_code`, which
   returns `Some(true)` (sent), `Some(false)` (invalid usage) or `None` (ours to run: `/upload`, `/image`,
-  `/server`, `/ucolor`, `/color`, `/mute`).
+  `/server`, `/ucolor`, `/color`, `/mute`, `/record`, `/play`).
 
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
 `send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
@@ -1234,6 +1241,78 @@ nothing to pick between, so no button is drawn — and the whole of how it is an
 `reset_session` clears `voice_options::set_use_voice(false)`: the voice client follows that flag, so a lost
 session takes its streams with it.
 
+### Voice messages
+
+2.4.0's `/record` and `/play`. **The crate does all of the audio** — the recorder taps the call's capture when
+there is one and opens the configured microphone when there is not, encodes 48 kHz stereo Opus into a `Clip`,
+and plays a clip on the configured output device one packet at a time — and the clip itself travels the
+pictures' road: uploaded, kept by the history, pushed whole on its first broadcast, cached by content and
+fetched back with `ImageDataRequest`. What is this app's is the line, the player on it and the button that
+records one.
+
+**A voice message is a line somebody said**, like a picture: `ClientEvent::VoiceMessage` and a history entry
+with `voice` both become a `user` line carrying `MessageVoice` (the hash, the server's measured duration, and
+a `PictureState`), filed by channel the way a message is. Its text is empty. It takes hearts, replies and
+`/delete` like any lobby line, and not an edit or a copy; its hold menu is `MessageMenu` without the copy
+item, headed `Voice message · 0:12`.
+
+**The player is play/stop and nothing more**, because that is the whole of what the crate's player offers:
+`voice_message::play(hash)` starts from the top and `stop()` ends it, one clip at a time — there is no pause
+and no seek, and a button pretending otherwise would be a lie about the crate. `play_voice` is a command of
+ours rather than a `send_input` line, for the reason `request_image` is: the line carries the hash and
+`/play` takes a message id. `/play ID` typed still works — the bridge answers it with `UiEvent::PlayVoice`
+and the window finds the line in the pane in front or the lobby (`tui/state.rs::voice_of`), saying
+`not_loaded`/`not_voice` where it cannot; a bare `/play` stops. The crate says nothing when playback starts,
+moves or ends, so the bridge **polls** `message::playing()` every `TICK` (100 ms) while there is anything to
+follow (`watch_playback`), and emits `UiEvent::Playback` when the position moves; a play still being fetched
+is `loading`, and `VoiceData(_, false)`, `VoiceMessageFailed` or a stop end it. The position is **not window
+state**: `App.tsx` owns everything and a tick would re-render the whole pane ten times a second, so it lives
+in a module store in `voice.tsx` (`setPlayback`, read with `useSyncExternalStore`) and only the line that is
+playing redraws — and that one runs its own `requestAnimationFrame` between ticks, writing the played half's
+`clip-path` and the clock straight onto the elements, capped `AHEAD` of the last tick so a stalled device does
+not run the bar away. No CSS transition, for the reason in **The window**.
+
+**The waveform is the real audio, decoded here.** The protocol carries no waveform, so `voice_message.rs`
+reads the clip out of the crate's cache, decodes every Opus packet (`audiopus`, at the crate's version), and
+keeps the loudest frame RMS per bar — `BARS` (48), square-rooted against the loudest bar so a quiet clip is
+not a flat line — as one byte each (`UiEvent::VoiceWaveform`). It is computed once per hash per process
+(`WAVEFORMS`). Where the clip comes from is the subtle part:
+
+- A live voice message is pushed whole and the crate caches it **before** it raises the event, so the
+  `VoiceMessage` arm shapes it at once.
+- A history entry names a hash and nothing else. Its line is `deferred` with `auto_show_images` on and
+  `absent` with it off — the same policy a picture caption has, since a clip is the bigger download — and a
+  deferred one asks `voice_waveform` when it comes within `PRELOAD_SCREENS` of the view. A cache miss is
+  fetched **through the picture queue** (`WANTED` + `request_picture`): the crate's `ImageData` arm caches
+  any answer whose hash checks out before it tries to decode it as a picture, so the `ImageData(hash, None)`
+  that comes back for a clip finds it in the cache, and `voice_message::fetched` turns it into a waveform
+  ahead of the picture path. An empty answer is `waveform: None`, which the line draws as `unavailable`.
+- A clip played before its waveform was loaded is fetched by the crate's own `AWAITED` path, which raises
+  `VoiceData` **before** it caches — so the waveform is taken when `watch_playback` first sees it playing,
+  by which point it is on the disk. `VoiceData` also frees the fetch slot (`picture_arrived`), which the TUI
+  does with `fetched`.
+
+Until there is a waveform the bars are drawn flat and dim; a line that has one draws the played part in
+`text` over the unplayed `faint`.
+
+**Recording is the composer's.** The microphone button sits beside the two upload buttons and is
+`tui/voice_message.rs`'s push-to-talk: a press starts (`/record`), a release after `KEY_TAP` (400 ms) sends,
+a shorter press is a tap that leaves it recording, and the next press sends — pointer capture keeps the
+release on the button, and `touch-none` keeps a held finger from scrolling. `Ctrl+R` is the same gesture on a
+keyboard, `Esc` and the back gesture discard (`discard_recording`). The release only sends while the
+recording is actually up, so a press that sat behind Android's permission dialog is a tap rather than a
+recording ended the instant it began. While recording, the line is replaced by the crate's own `● Recording
+0:05` in `error`, the upload buttons by a discard, and the send button sends the clip. The bridge polls
+`message::recording()` (`watch_recording`) for the clock and for the recorder giving up or filling up — a
+full one, or one whose call ended under it, is sent with the crate's `full` popup, as the TUI does. Sending
+is the TUI's `send_voice`: hash the clip, write it to `misc::voice_temp`, park it in `ACTIVE_UPLOADS` and ask
+with `VoiceMessageRequest`; the upload carries no transfer row (`UploadKind::Voice` raises no `Upload`
+event), and the line appears when the server broadcasts it back. The button is not drawn in a conversation:
+the server files a voice message under the channel, and a DM pane is not one.
+
+`reset_session` cancels a recording and stops playback, and `resetSession` clears the window's waveforms, so
+a hash one server no longer has is not `unavailable` on the next.
+
 ### Screen sharing
 
 `client_screen` is on **in the desktop build** (see **Android**, which is compiled without it and draws no
@@ -1251,6 +1330,12 @@ does not decide what it shows, exactly as in the TUI. A bare `/screen` toggles; 
 named monitor starts on it, or, **while a share is already running, swaps the capture over without telling
 the server anything at all** — that is the one case where `send_command_code` returns `None` for this
 command, and the pane's line comes from us.
+
+Since 2.4.0 the crate **encodes on the GPU** where it can (Vulkan Video on Linux, Media Foundation on
+Windows, VideoToolbox on macOS, openh264 as the fallback) and **adapts its bitrate** to the sharer's uplink and
+to the server's reports on the slowest viewer. None of it reaches this side: the wire stays Constrained
+Baseline H.264, so both watching paths below decode it unchanged, and Vulkan is loaded at runtime, so the
+build wants nothing new — the one thing it did move is the Windows `windows` pin (see **What this is**).
 
 **Watching** used to be impossible here: `screen::client::attach` handed its frames to a `winit` event loop
 through `SCREEN_SHARE_PROXY`, and that loop has to own the main thread, which in this process is Tauri's.
@@ -1420,7 +1505,9 @@ this app that speaks JNI:
 - **The microphone.** `RECORD_AUDIO` is a runtime permission and only an `Activity` can ask for it, so
   `MainActivity` carries three statics (`microphoneGranted`, `requestMicrophone`, `microphoneDenied`) and
   `ensure_microphone` calls them. It is asked **when the call is started and not at launch** — `send_input`
-  holds the `/voice` packet back until the answer is in, so saying yes to the dialog is also joining. The
+  holds the `/voice` packet back until the answer is in, so saying yes to the dialog is also joining. A
+  `/record` that would **start** a recording waits on the same answer (`voice_message::recording` is what
+  tells starting from sending), so the first press of the microphone button is the dialog. The
   refusal is watched for beside the grant because Android answers for the user once they have said no twice,
   and answers instantly. `prepare()` is also where the activity's class is looked up, and it goes through the
   application's own class loader: a tokio worker is attached with the system one, which knows nothing this

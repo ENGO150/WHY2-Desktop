@@ -22,7 +22,7 @@ use why2_chat::
 {
     options,
     role::Role,
-    network::codes::{ MessageColors, Device, UserProfile },
+    network::codes::{ MessageColors, Device, UserProfile, VoiceNote },
 };
 
 
@@ -43,6 +43,7 @@ pub(crate) struct ChatMessage
     pub(crate) message_color: Option<u8>,
     pub(crate) direct: Option<DirectPeer>, //SET ON A PRIVATE MESSAGE, AND ON NOTHING ELSE
     pub(crate) image: Option<MessageImage>, //SET ON A LINE THAT IS A PICTURE, AND ON NOTHING ELSE
+    pub(crate) voice: Option<MessageVoice>, //A VOICE MESSAGE
     pub(crate) reply: Option<u64>,          //THE MESSAGE IT ANSWERS
     pub(crate) hearts: Vec<String>,         //WHO HEARTED IT
     pub(crate) edited: bool,                //REWORDED SINCE SENT
@@ -61,6 +62,15 @@ pub(crate) struct MessageImage
     pub(crate) state: PictureState,    //WHAT THE CAPTION OFFERS WHILE THERE IS NO PICTURE UNDER IT
     pub(crate) width: u32,
     pub(crate) height: u32,
+}
+
+//A VOICE MESSAGE'S CLIP
+#[derive(Serialize, Clone)]
+pub(crate) struct MessageVoice
+{
+    pub(crate) hash: String,       //CONTENT HASH AS HEX
+    pub(crate) duration: u32,      //MS, THE SERVER'S MEASUREMENT
+    pub(crate) state: PictureState, //WHEN ITS WAVEFORM IS LOADED
 }
 
 //THE SERVER'S ICON AT ONE SIZE
@@ -425,6 +435,10 @@ pub(crate) enum UiEvent
     TransferProgress { uid: String, done: u64 },                  //AND MOVED
     TransferDone { uid: String, ok: bool },                       //AND ENDED
     ImageData { hash: String, image: Option<MessageImage> },      //A CAPTION'S PICTURE, ASKED FOR (None = IT IS GONE)
+    VoiceWaveform { hash: String, waveform: Option<Vec<u8>> },    //A CLIP'S BARS (None = IT IS GONE)
+    Playback { hash: Option<String>, ms: u32, loading: bool },    //WHAT PLAYS, AND HOW FAR IN
+    Recording { ms: Option<u32> },                                //OUR RECORDING (None = NONE)
+    PlayVoice { message_id: u64 },                                //  /play ID
     Popup { text: String },                                       //A TOAST, GONE IN A MOMENT
     Locale { locale: crate::i18n::LocaleInfo },                   //THE LANGUAGE CHANGED
     OwnColors { username_color: Option<u8>, message_color: Option<u8> }, //WHAT THE SERVER HOLDS FOR US
@@ -478,6 +492,7 @@ impl ChatMessage
             message_color: None,
             direct: None,
             image: None,
+            voice: None,
             reply: None,
             hearts: Vec::new(),
             edited: false,
@@ -530,6 +545,12 @@ impl ChatMessage
         self
     }
 
+    pub(crate) fn spoken(mut self, voice: &VoiceNote) -> Self //THE LINE IS A VOICE MESSAGE
+    {
+        self.voice = Some(MessageVoice::new(voice));
+        self
+    }
+
     pub(crate) fn direct(mut self, peer: DirectPeer) -> Self
     {
         self.direct = Some(peer);
@@ -570,6 +591,21 @@ impl ChatMessage
     {
         self.edited = edited;
         self
+    }
+}
+
+impl MessageVoice
+{
+    pub(crate) fn new(voice: &VoiceNote) -> Self
+    {
+        //LOADED IN VIEW, OR ONLY WHEN PLAYED
+        let state = match why2_chat::network::client::image::auto_show_images()
+        {
+            true => PictureState::Deferred,
+            false => PictureState::Absent,
+        };
+
+        Self { hash: crate::picture::hex(&voice.hash), duration: voice.duration, state }
     }
 }
 

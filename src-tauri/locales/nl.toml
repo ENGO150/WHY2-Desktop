@@ -128,6 +128,11 @@ placeholder = "Bericht aan {target}"
 attach = "Bestand bijvoegen"
 send_picture = "Afbeelding sturen"
 send = "Verzenden"
+record = "Spraakbericht opnemen"
+discard = "Verwerpen"
+voice_message = "Spraakbericht"
+play = "Afspelen"
+stop = "Stoppen"
 
 [chat.online_count]
 one = "{count} online"

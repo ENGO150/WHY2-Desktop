@@ -36,6 +36,10 @@ mod picture;
 mod profile;
 mod clipboard;
 
+//RECORDING AND PLAYING VOICE MESSAGES
+#[cfg_attr(not(voice), path = "voice_message_off.rs")]
+mod voice_message;
+
 //THE PROGRAM GOING ON WITHOUT ITS WINDOW, WHICH IS A DESKTOP QUESTION ONLY - A PHONE HAS NO TRAY, AND
 //KEEPS ITS SESSION ALIVE WITH A FOREGROUND SERVICE INSTEAD
 #[cfg(desktop)]
@@ -262,6 +266,9 @@ pub fn run()
             answer_tofu,
             upload_file_from_path,
             request_image,
+            voice_message::voice_waveform,
+            voice_message::play_voice,
+            voice_message::discard_recording,
             request_history,
             typing,
             request_profiles,

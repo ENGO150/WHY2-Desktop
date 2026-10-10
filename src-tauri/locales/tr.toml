@@ -128,6 +128,11 @@ placeholder = "{target} için mesaj"
 attach = "Dosya ekle"
 send_picture = "Görsel gönder"
 send = "Gönder"
+record = "Sesli mesaj kaydet"
+discard = "Vazgeç"
+voice_message = "Sesli mesaj"
+play = "Oynat"
+stop = "Durdur"
 
 [chat.online_count]
 other = "{count} çevrimiçi"

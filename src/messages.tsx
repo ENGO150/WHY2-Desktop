@@ -23,7 +23,7 @@ import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar, MenuBox, MENU_ITEM } from "./components";
-import { branches, linkParts, sentAt } from "./format";
+import { branches, clock, linkParts, sentAt } from "./format";
 import { mentions } from "./palette";
 import { deviceIcon } from "./roster";
 import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, type Shape } from "./markup";
@@ -32,6 +32,7 @@ import katex from "katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { HeldMenu } from "./servers";
 import { t, tn, language } from "./i18n";
+import { VoiceNote, type Voices } from "./voice";
 
 //SCREENS ABOVE AND BELOW THE VIEW WHOSE PICTURES AND HISTORY ARE LOADED (tui/consts.rs)
 export const PRELOAD_SCREENS = 1;
@@ -131,13 +132,15 @@ export function MessageMenu(
     const message = at.value;
 
     return (
-        <MenuBox at={at} title={message.text}>
+        <MenuBox at={at} title={message.voice ? `${t("chat.voice_message")} · ${clock(message.voice.duration)}` : message.text}>
             <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} />
 
-            <button type="button" onClick={() => { close(); copy(message.text); }} className={MENU_ITEM}>
-                <Icon name="copy" className="h-4 w-4 text-muted" />
-                {t("menu.copy_text")}
-            </button>
+            {!message.voice && (
+                <button type="button" onClick={() => { close(); copy(message.text); }} className={MENU_ITEM}>
+                    <Icon name="copy" className="h-4 w-4 text-muted" />
+                    {t("menu.copy_text")}
+                </button>
+            )}
 
             {edit && (
                 <button type="button" onClick={() => { close(); edit(message); }} className={MENU_ITEM}>
@@ -705,7 +708,7 @@ function Caption({ image, status, pictures }: { image: MessageImage; status: Pic
 
 //SOMETHING SOMEBODY SAID. grouped CONTINUES A RUN
 export function renderChat(message: ChatMessage, key: number, grouped: boolean, config: ClientConfig, username: string, dm: boolean,
-    picture: PictureStatus, pictures: Pictures, lines: Lines, people: People, compact: boolean)
+    picture: PictureStatus, pictures: Pictures, lines: Lines, people: People, compact: boolean, voices: Voices)
 {
     //OUR OWN PM ECHO IS OURS
     const author = message.direct?.outgoing ? username : message.username;
@@ -717,8 +720,11 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
 
     const color = messageColor(config, message.username_color);
 
-    //A PICTURE IS NOT TEXT TO COPY
-    const copyable = !message.image;
+    //A PICTURE OR A CLIP IS NOT TEXT TO COPY
+    const copyable = !message.image && !message.voice;
+
+    //A PICTURE HAS ITS OWN MENU
+    const holdable = !message.image;
 
     //THE BODY'S COLOR, ALSO FOR HEADINGS
     const body = messageColor(config, message.message_color);
@@ -747,9 +753,9 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
     return (
         <div
             key={key}
-            {...(copyable ? lines.hold(message) : {})}
+            {...(holdable ? lines.hold(message) : {})}
             data-message-id={message.message_id ?? undefined}
-            onClickCapture={copyable ? swallowHeld : undefined}
+            onClickCapture={holdable ? swallowHeld : undefined}
             onClick={reacts ? (event) => lines.tap(event, message) : undefined}
             className={`group msg ${grouped ? "" : "first"} ${mentioned ? "mention" : whisper ? "whisper" : ""}`}
         >
@@ -793,7 +799,11 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         className="message-body min-w-0 flex-1 select-text whitespace-pre-wrap break-words text-[15px] leading-[1.6]"
                         style={{ color: body, "--msg-color": body } as React.CSSProperties}
                     >
-                        {message.image ? renderPicture(message, message.image, picture, pictures) : markup(message.text, config.render_math)}
+                        {message.image
+                            ? renderPicture(message, message.image, picture, pictures)
+                            : message.voice
+                                ? <VoiceNote voice={message.voice} voices={voices} />
+                                : markup(message.text, config.render_math)}
                     </div>
 
                     {(messageId || message.edited) && (
@@ -873,7 +883,7 @@ function rowButton(label: string, icon: string, onClick: () => void, tone = "")
 //THE LINE A REPLY ANSWERS, ONE ROW
 function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
 {
-    const text = target?.image ? t("chat.picture") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: reply });
+    const text = target?.image ? t("chat.picture") : target?.voice ? t("chat.voice_message") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: reply });
 
     return (
         <button
