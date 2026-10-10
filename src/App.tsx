@@ -2211,7 +2211,7 @@ function App()
     const tapLine = (event: React.MouseEvent, message: ChatMessage) =>
     {
         if (!touchPointer || lineHold.held() || message.message_id === null) return;
-        if ((event.target as HTMLElement).closest("button, a, img")) return;
+        if ((event.target as HTMLElement).closest("button, a, img, canvas")) return;
 
         const now = performance.now();
         const last = lineTapRef.current;
@@ -2897,6 +2897,17 @@ function App()
         play: playVoice,
         stop: () => { invoke("play_voice", { hash: null }).catch(() => {}); },
         load: (hash: string) => { invoke("voice_waveform", { hash }).catch(() => {}); },
+
+        seek: (hash: string, ms: number) =>
+        {
+            setPlayback(hash, ms, true);
+
+            invoke("seek_voice", { hash, ms }).catch((error: unknown) =>
+            {
+                setPlayback(null, 0, false);
+                setPopupMessage(String(error));
+            });
+        },
     };
 
     const discardRecording = () => { invoke("discard_recording").catch(() => {}); };

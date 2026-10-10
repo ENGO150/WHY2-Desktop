@@ -1256,11 +1256,23 @@ a `PictureState`), filed by channel the way a message is. Its text is empty. It 
 `/delete` like any lobby line, and not an edit or a copy; its hold menu is `MessageMenu` without the copy
 item, headed `Voice message · 0:12`.
 
-**The player is play/stop and nothing more**, because that is the whole of what the crate's player offers:
-`voice_message::play(hash)` starts from the top and `stop()` ends it, one clip at a time — there is no pause
-and no seek, and a button pretending otherwise would be a lie about the crate. `play_voice` is a command of
-ours rather than a `send_input` line, for the reason `request_image` is: the line carries the hash and
-`/play` takes a message id. `/play ID` typed still works — the bridge answers it with `UiEvent::PlayVoice`
+**The player is play/stop, and a click on the waveform plays from there.** The crate's player has no seek:
+`voice_message::play(hash)` starts from the top and `stop()` ends it, one clip at a time. What it does have
+is `play_data(hash, bytes, generation, tx)`, which plays whatever clip it is handed — so `seek_voice` takes
+the clip out of the cache, cuts it at the frame the click landed on (`frames.split_off`), and hands the crate
+the rest, adding that offset back onto every position the player reports (`Playing::offset`). The
+`generation` is the catch: `play_data` keeps its stream only while it equals the crate's private
+`PLAY_GENERATION`, which nothing reads. That counter moves in `play()` and `stop()` and nowhere else, so
+**`GENERATION` counts it along** — every call into either goes through `start()`/`halt()`, which bump ours
+in the same breath, and nothing else in this process calls them. A crate that moved it anywhere else would
+break seeking silently (a seek that never starts), and the honest fix is a `seek` in the crate itself. The
+step that reads the player (`step_playback`) holds `PLAYING` while it does, the same lock a seek replaces
+the clip under, so a tick cannot see the old stream with the new offset. A clip that is not in the cache
+cannot be cut, so a click there plays it from the top, fetching it the crate's way. A second play of a clip
+that is still being fetched is ignored rather than asked again: the fetch queue deduplicates, so the second
+`AWAITED` entry would never be answered.
+`play_voice` and `seek_voice` are commands of ours rather than `send_input` lines, for the reason
+`request_image` is: the line carries the hash and `/play` takes a message id. `/play ID` typed still works — the bridge answers it with `UiEvent::PlayVoice`
 and the window finds the line in the pane in front or the lobby (`tui/state.rs::voice_of`), saying
 `not_loaded`/`not_voice` where it cannot; a bare `/play` stops. The crate says nothing when playback starts,
 moves or ends, so the bridge **polls** `message::playing()` every `TICK` (100 ms) while there is anything to
@@ -1268,14 +1280,19 @@ follow (`watch_playback`), and emits `UiEvent::Playback` when the position moves
 is `loading`, and `VoiceData(_, false)`, `VoiceMessageFailed` or a stop end it. The position is **not window
 state**: `App.tsx` owns everything and a tick would re-render the whole pane ten times a second, so it lives
 in a module store in `voice.tsx` (`setPlayback`, read with `useSyncExternalStore`) and only the line that is
-playing redraws — and that one runs its own `requestAnimationFrame` between ticks, writing the played half's
-`clip-path` and the clock straight onto the elements, capped `AHEAD` of the last tick so a stalled device does
-not run the bar away. No CSS transition, for the reason in **The window**.
+playing redraws — and that one runs its own `requestAnimationFrame` between ticks, redrawing its canvas and
+writing the clock straight onto the element, capped `AHEAD` of the last tick so a stalled device does not
+run the bar away. No CSS transition, for the reason in **The window**.
 
 **The waveform is the real audio, decoded here.** The protocol carries no waveform, so `voice_message.rs`
 reads the clip out of the crate's cache, decodes every Opus packet (`audiopus`, at the crate's version), and
-keeps the loudest frame RMS per bar — `BARS` (48), square-rooted against the loudest bar so a quiet clip is
-not a flat line — as one byte each (`UiEvent::VoiceWaveform`). It is computed once per hash per process
+keeps the loudest frame RMS per point — `POINTS` (256), square-rooted against the loudest one so a quiet clip
+is not a flat line — as one byte each (`UiEvent::VoiceWaveform`). The bridge does not decide how many bars
+that is: `VoiceNote` draws on a `<canvas>` sized to its own device-pixel box, as many 2 px bars as its width
+takes, each the loudest point under it — so a wide window shows more of the clip than a phone does, and
+neither is resampled twice. The colours are the theme's own custom properties, read off the canvas at every
+draw, so a theme switch repaints it with the next render. A mouse over it lightens the bars up to the
+pointer, which is where a click will start. It is computed once per hash per process
 (`WAVEFORMS`). Where the clip comes from is the subtle part:
 
 - A live voice message is pushed whole and the crate caches it **before** it raises the event, so the
@@ -1292,8 +1309,8 @@ not a flat line — as one byte each (`UiEvent::VoiceWaveform`). It is computed 
   by which point it is on the disk. `VoiceData` also frees the fetch slot (`picture_arrived`), which the TUI
   does with `fetched`.
 
-Until there is a waveform the bars are drawn flat and dim; a line that has one draws the played part in
-`text` over the unplayed `faint`.
+Until there is a waveform the bars are drawn flat; a line that has one draws the played part in `text` over
+the unplayed `faint`. The canvas is out of `tapLine`'s double tap, since a tap there is a seek.
 
 **Recording is the composer's.** The microphone button sits beside the two upload buttons and is
 `tui/voice_message.rs`'s push-to-talk: a press starts (`/record`), a release after `KEY_TAP` (400 ms) sends,

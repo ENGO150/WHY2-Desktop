@@ -34,4 +34,12 @@ pub(crate) async fn play_voice(hash: Option<String>) -> Result<(), String>
 }
 
 #[tauri::command]
+pub(crate) async fn seek_voice(hash: String, ms: u32) -> Result<(), String>
+{
+    let _ = (hash, ms);
+
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn discard_recording() {}

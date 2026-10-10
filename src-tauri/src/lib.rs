@@ -268,6 +268,7 @@ pub fn run()
             request_image,
             voice_message::voice_waveform,
             voice_message::play_voice,
+            voice_message::seek_voice,
             voice_message::discard_recording,
             request_history,
             typing,
