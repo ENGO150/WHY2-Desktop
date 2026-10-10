@@ -1325,7 +1325,16 @@ seek.
 **Recording is the composer's.** The microphone button sits beside the two upload buttons and is
 `tui/voice_message.rs`'s push-to-talk: a press starts (`/record`), a release after `KEY_TAP` (400 ms) sends,
 a shorter press is a tap that leaves it recording, and the next press sends — pointer capture keeps the
-release on the button, and `touch-none` keeps a held finger from scrolling. `Ctrl+R` is the same gesture on a
+release on the button, and `touch-none` keeps a held finger from scrolling. **A hold on a phone is also
+Android's long press**, which starts a text selection on whatever is under the finger and takes the gesture
+for itself — that arrived as a `pointercancel`, which used to count as the release and sent a clip a few
+hundred milliseconds long (`too short`). So the button is kept out of it three ways: a **non-passive**
+`touchstart` listener that `preventDefault`s (`holdRecord`, a ref callback — React's own `onTouchStart` is
+passive, so a `preventDefault` there does nothing; the pointer events still arrive, only the selection and
+the synthesized mouse events do not), `select-none` and `-webkit-touch-callout: none`, and a menu prevented
+on it as well. And a `pointercancel` is **not** a release any more (`cancelRecord`): a press the system took
+away leaves the recording running as a tap, with the strip's send and discard in front of it, since a
+recording ended by somebody else's gesture is worse than one still waiting for a press. `Ctrl+R` is the same gesture on a
 keyboard, `Esc` and the back gesture discard (`discard_recording`). The release only sends while the
 recording is actually up, so a press that sat behind Android's permission dialog is a tap rather than a
 recording ended the instant it began. While recording, the line is replaced by the crate's own `● Recording

@@ -2934,6 +2934,20 @@ function App()
         send("/record");
     };
 
+    //A CANCELLED PRESS KEEPS RECORDING, AS A TAP
+    const cancelRecord = () => { recordPressRef.current = null; };
+
+    //NO LONG-PRESS SELECTION ON THE BUTTON
+    const holdRecord = useCallback((node: HTMLButtonElement | null) =>
+    {
+        if (!node) return;
+
+        const keep = (event: TouchEvent) => event.preventDefault();
+        node.addEventListener("touchstart", keep, { passive: false });
+
+        return () => node.removeEventListener("touchstart", keep);
+    }, []);
+
     const lines: Lines =
     {
         copy: copyMessage,
@@ -4938,6 +4952,7 @@ function App()
                                         {/* HELD TO TALK, OR TAPPED */}
                                         {hasRecord && (!dm || recording !== null) && (
                                             <button
+                                                ref={holdRecord}
                                                 type="button"
                                                 title={t("chat.record")}
                                                 aria-label={t("chat.record")}
@@ -4951,8 +4966,9 @@ function App()
                                                     pressRecord();
                                                 }}
                                                 onPointerUp={releaseRecord}
-                                                onPointerCancel={releaseRecord}
-                                                className={`touch-target flex h-8 w-8 shrink-0 touch-none items-center justify-center rounded-lg transition-colors ${recording !== null
+                                                onPointerCancel={cancelRecord}
+                                                onContextMenu={(event) => event.preventDefault()}
+                                                className={`touch-target flex h-8 w-8 shrink-0 touch-none select-none [-webkit-touch-callout:none] items-center justify-center rounded-lg transition-colors ${recording !== null
                                                     ? "bg-error/15 text-error"
                                                     : "text-muted hover:bg-hover hover:text-text"}`}
                                             >
