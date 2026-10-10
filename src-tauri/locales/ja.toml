@@ -262,6 +262,7 @@ startup = "起動"
 
 [prefs.row]
 auto_connect = "自動接続先"
+auto_load_voice = "ボイスメッセージを自動で読み込む"
 
 [themes]
 why2 = "ブラック"

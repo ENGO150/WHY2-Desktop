@@ -264,6 +264,7 @@ startup = "Opstarten"
 
 [prefs.row]
 auto_connect = "Automatisch verbinden met"
+auto_load_voice = "Spraakberichten automatisch laden"
 
 [themes]
 why2 = "Zwart"

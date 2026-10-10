@@ -68,9 +68,8 @@ pub(crate) struct MessageImage
 #[derive(Serialize, Clone)]
 pub(crate) struct MessageVoice
 {
-    pub(crate) hash: String,       //CONTENT HASH AS HEX
-    pub(crate) duration: u32,      //MS, THE SERVER'S MEASUREMENT
-    pub(crate) state: PictureState, //WHEN ITS WAVEFORM IS LOADED
+    pub(crate) hash: String,  //CONTENT HASH AS HEX
+    pub(crate) duration: u32, //MS, THE SERVER'S MEASUREMENT
 }
 
 //THE SERVER'S ICON AT ONE SIZE
@@ -211,6 +210,7 @@ pub(crate) struct ClientConfig
 {
     pub(crate) show_id: bool,
     pub(crate) show_message_ids: bool,
+    pub(crate) auto_load_voice: bool,
     pub(crate) show_timestamps: bool,
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
@@ -598,14 +598,7 @@ impl MessageVoice
 {
     pub(crate) fn new(voice: &VoiceNote) -> Self
     {
-        //LOADED IN VIEW, OR ONLY WHEN PLAYED
-        let state = match why2_chat::network::client::image::auto_show_images()
-        {
-            true => PictureState::Deferred,
-            false => PictureState::Absent,
-        };
-
-        Self { hash: crate::picture::hex(&voice.hash), duration: voice.duration, state }
+        Self { hash: crate::picture::hex(&voice.hash), duration: voice.duration }
     }
 }
 

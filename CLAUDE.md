@@ -587,11 +587,11 @@ fingerprints, the list-block rows and their branch glyphs, and code.
 
 There is no ASCII logo anywhere — the terminal client's watermark was the last thing in here drawn in
 characters, and a window has a title and a name to say what it is. `disable_logo` is therefore neither in
-`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the five keys that still change
-how the pane looks (`show_id`, `show_message_ids`, `show_timestamps`, `disable_colors`, `render_math`),
-which the TUI re-reads on every redraw — four out of `client.toml`, and `show_message_ids` out of our own
-file (see **Message IDs**).
-`auto_show_images` is a row like any other and is **not** one of those two: nothing here reads it, since it
+`ClientConfig` nor in `CLIENT_SETTINGS`; `get_client_config` hands over the keys that change how a line
+already in the pane is drawn or loaded (`show_id`, `show_message_ids`, `show_timestamps`, `disable_colors`,
+`render_math`, `auto_load_voice`) — four out of `client.toml`, which the TUI re-reads on every redraw, and
+`show_message_ids` and `auto_load_voice` out of our own file (see **Message IDs** and **Voice messages**).
+`auto_show_images` is a row like any other and is **not** one of those: nothing here reads it, since it
 decides what the crate does with a picture as it arrives rather than how a line already in the pane is
 drawn (see **Images**).
 
@@ -1251,8 +1251,8 @@ fetched back with `ImageDataRequest`. What is this app's is the line, the player
 records one.
 
 **A voice message is a line somebody said**, like a picture: `ClientEvent::VoiceMessage` and a history entry
-with `voice` both become a `user` line carrying `MessageVoice` (the hash, the server's measured duration, and
-a `PictureState`), filed by channel the way a message is. Its text is empty. It takes hearts, replies and
+with `voice` both become a `user` line carrying `MessageVoice` (the hash and the server's measured duration),
+filed by channel the way a message is. Its text is empty. It takes hearts, replies and
 `/delete` like any lobby line, and not an edit or a copy; its hold menu is `MessageMenu` without the copy
 item, headed `Voice message · 0:12`.
 
@@ -1301,9 +1301,14 @@ needs nothing. The clip ids come from `useId`, stripped to characters a `url(#�
 
 - A live voice message is pushed whole and the crate caches it **before** it raises the event, so the
   `VoiceMessage` arm shapes it at once.
-- A history entry names a hash and nothing else. Its line is `deferred` with `auto_show_images` on and
-  `absent` with it off — the same policy a picture caption has, since a clip is the bigger download — and a
-  deferred one asks `voice_waveform` when it comes within `PRELOAD_SCREENS` of the view. A cache miss is
+- A history entry names a hash and nothing else. With **`auto_load_voice`** on, the line asks
+  `voice_waveform` when it comes within `PRELOAD_SCREENS` of the view, the way a deferred picture caption
+  does; with it off, nothing is fetched until the clip is played. It is **the window's key and not
+  `client.toml`'s** — the TUI draws no waveform and has nothing to fetch one for — so it is an `Own` row
+  under `Interface`, beside `auto_show_images`, kept in `desktop_servers.toml` the way `show_message_ids` is,
+  and **on** by default: an absent key is `None` in the file and reads as on. It is handed over in
+  `get_client_config` and decided in `VoiceNote` rather than baked into the line, so flipping the row fetches
+  the clips already on screen without a reconnect. A cache miss is
   fetched **through the picture queue** (`WANTED` + `request_picture`): the crate's `ImageData` arm caches
   any answer whose hash checks out before it tries to decode it as a picture, so the `ImageData(hash, None)`
   that comes back for a clip finds it in the cache, and `voice_message::fetched` turns it into a waveform

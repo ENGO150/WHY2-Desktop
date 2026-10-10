@@ -266,6 +266,7 @@ startup = "Spustenie"
 
 [prefs.row]
 auto_connect = "Automaticky pripojiť k"
+auto_load_voice = "Automaticky načítavať hlasové správy"
 
 [themes]
 why2 = "Čierny"

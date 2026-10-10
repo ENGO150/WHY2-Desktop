@@ -262,6 +262,7 @@ startup = "启动"
 
 [prefs.row]
 auto_connect = "自动连接到"
+auto_load_voice = "自动加载语音消息"
 
 [themes]
 why2 = "纯黑"

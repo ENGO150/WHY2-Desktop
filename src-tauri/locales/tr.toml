@@ -262,6 +262,7 @@ startup = "Başlangıç"
 
 [prefs.row]
 auto_connect = "Otomatik olarak bağlan"
+auto_load_voice = "Sesli mesajları otomatik yükle"
 
 [themes]
 why2 = "Siyah"

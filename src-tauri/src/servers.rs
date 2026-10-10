@@ -79,6 +79,9 @@ struct ServerFile
     show_message_ids: bool, //DESKTOP ONLY
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto_load_voice: Option<bool>, //FETCH CLIPS IN VIEW (None = ON)
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     theme: Option<String>, //THE WINDOW'S PALETTE
 
     #[serde(default)]
@@ -232,6 +235,7 @@ pub(crate) fn read_own(key: &str) -> bool
     match key
     {
         "show_message_ids" => read_file().show_message_ids,
+        "auto_load_voice" => read_file().auto_load_voice.unwrap_or(true),
         _ => false,
     }
 }
@@ -243,6 +247,7 @@ pub(crate) fn write_own(key: &str, on: bool) -> Result<(), String>
     match key
     {
         "show_message_ids" => file.show_message_ids = on,
+        "auto_load_voice" => file.auto_load_voice = Some(on),
         _ => return Err(tr!("bridge.unknown_setting")),
     }
 

@@ -264,6 +264,7 @@ startup = "Avvio"
 
 [prefs.row]
 auto_connect = "Connetti automaticamente a"
+auto_load_voice = "Carica automaticamente i messaggi vocali"
 
 [themes]
 why2 = "Nero"

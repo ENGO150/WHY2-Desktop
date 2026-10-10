@@ -262,6 +262,7 @@ startup = "시작"
 
 [prefs.row]
 auto_connect = "자동 연결 대상"
+auto_load_voice = "음성 메시지 자동으로 불러오기"
 
 [themes]
 why2 = "블랙"

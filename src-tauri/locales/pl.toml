@@ -266,6 +266,7 @@ startup = "Uruchamianie"
 
 [prefs.row]
 auto_connect = "Łącz automatycznie z"
+auto_load_voice = "Automatycznie wczytuj wiadomości głosowe"
 
 [themes]
 why2 = "Czarny"

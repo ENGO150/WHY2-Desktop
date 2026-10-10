@@ -48,6 +48,7 @@ export interface Playback
 export interface Voices
 {
     waveform: (hash: string) => Waveform | undefined;
+    auto: boolean; //FETCH NEAR THE VIEW
     play: (hash: string) => void;
     stop: () => void;
     load: (hash: string) => void;
@@ -154,12 +155,12 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
         return at;
     };
 
-    //LOADED ONCE NEAR THE VIEW
+    //FETCHED ONCE NEAR THE VIEW
     React.useEffect(() =>
     {
         const node = row.current;
 
-        if (voice.state !== "deferred" || waveform !== undefined || !node || asked.current) return;
+        if (!voices.auto || waveform !== undefined || !node || asked.current) return;
 
         const observer = new IntersectionObserver((entries) =>
         {
@@ -172,7 +173,7 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
         observer.observe(node);
 
         return () => observer.disconnect();
-    }, [voice.state, waveform]);
+    }, [voices.auto, waveform]);
 
     React.useLayoutEffect(() => { follow(); });
 

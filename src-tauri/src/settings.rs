@@ -76,6 +76,9 @@ pub(crate) const INTERFACE_SETTINGS: &[SettingsKey] =
     //RATHER THAN BEING DECODED AND DRAWN AS IT ARRIVES
     ("settings.section.interface", "settings.row.auto_show_images", "auto_show_images", ClientKind::Toggle { invert: false }),
 
+    //ON, A VOICE MESSAGE IS FETCHED NEAR THE VIEW FOR ITS WAVEFORM
+    ("settings.section.interface", "prefs.row.auto_load_voice", "auto_load_voice", ClientKind::Own),
+
     //OFF, A DOLLAR SIGN IS A DOLLAR SIGN: NOTHING BETWEEN A PAIR OF THEM IS TAKEN FOR A FORMULA, AND
     //THE LINE IS SHOWN AS IT WAS TYPED. THE CODE MARKUP HAS NO SUCH SWITCH - A FENCED BLOCK IS WHAT THE
     //SENDER MEANT EITHER WAY, WHILE MATH IS A MATTER OF TASTE
@@ -122,6 +125,7 @@ pub(crate) fn get_client_config() -> ClientConfig
     {
         show_id: config::read_config("show_id"),
         show_message_ids: servers::read_own("show_message_ids"),
+        auto_load_voice: servers::read_own("auto_load_voice"),
         show_timestamps: config::read_config("show_timestamps"),
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),

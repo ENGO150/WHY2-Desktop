@@ -83,8 +83,7 @@ export interface MessageImage
 export interface MessageVoice
 {
     hash: string;
-    duration: number;   //MS
-    state: PictureState; //WHEN ITS WAVEFORM IS LOADED
+    duration: number; //MS
 }
 
 //A CLIP'S BARS, OR GONE FROM THE SERVER
@@ -387,6 +386,7 @@ export interface ClientConfig
 {
     show_id: boolean;
     show_message_ids: boolean;
+    auto_load_voice: boolean;
     show_timestamps: boolean;
     disable_colors: boolean;
     render_math: boolean;

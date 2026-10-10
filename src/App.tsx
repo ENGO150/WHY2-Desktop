@@ -246,7 +246,7 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, show_timestamps: true, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, show_timestamps: true, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
@@ -2894,6 +2894,7 @@ function App()
     const voices: Voices =
     {
         waveform: (hash: string) => waveforms[hash],
+        auto: config.auto_load_voice,
         play: playVoice,
         stop: () => { invoke("play_voice", { hash: null }).catch(() => {}); },
         load: (hash: string) => { invoke("voice_waveform", { hash }).catch(() => {}); },
