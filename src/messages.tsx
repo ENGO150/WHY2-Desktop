@@ -802,7 +802,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                         {message.image
                             ? renderPicture(message, message.image, picture, pictures)
                             : message.voice
-                                ? <VoiceNote voice={message.voice} voices={voices} />
+                                ? <VoiceNote voice={message.voice} voices={voices} message={message} />
                                 : markup(message.text, config.render_math)}
                     </div>
 

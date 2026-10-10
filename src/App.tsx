@@ -334,6 +334,7 @@ function App()
 
     //AND ON A PICTURE, WITH ITS PENDING OPEN
     const pictureTapRef = useRef<{ at: number; x: number; y: number; id: number; timer: number } | null>(null);
+    const waveTapRef = useRef<{ at: number; x: number; y: number; id: number; timer: number } | null>(null);
 
     //AND THE ONE FINGER MOVING A PICTURE THAT IS ALREADY ZOOMED, WITH THE ANCHOR IT STARTED FROM AND THE
     //ONE IT HAS GOT TO. A ZOOM IS ONLY HALF THE GESTURE - THE OTHER HALF IS LOOKING AROUND WHAT IT WENT
@@ -2899,17 +2900,49 @@ function App()
         stop: () => { invoke("play_voice", { hash: null }).catch(() => {}); },
         load: (hash: string) => { invoke("voice_waveform", { hash }).catch(() => {}); },
 
-        seek: (hash: string, ms: number) =>
-        {
-            setPlayback(hash, ms, true);
-
-            invoke("seek_voice", { hash, ms }).catch((error: unknown) =>
-            {
-                setPlayback(null, 0, false);
-                setPopupMessage(String(error));
-            });
-        },
+        seek: (hash: string, ms: number, event: React.MouseEvent, message: ChatMessage) => tapWave(event, message, () => seekVoice(hash, ms)),
     };
+
+    function seekVoice(hash: string, ms: number)
+    {
+        setPlayback(hash, ms, true);
+
+        invoke("seek_voice", { hash, ms }).catch((error: unknown) =>
+        {
+            setPlayback(null, 0, false);
+            setPopupMessage(String(error));
+        });
+    }
+
+    //ONE TAP ON A WAVEFORM SEEKS, TWO HEART IT
+    function tapWave(event: React.MouseEvent, message: ChatMessage, seek: () => void)
+    {
+        if (!touchPointer || !reactable(message)) return seek();
+
+        const id = message.message_id!;
+        const now = performance.now();
+        const last = waveTapRef.current;
+
+        if (last && last.id === id && now - last.at <= TAP_AGAIN
+            && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= TAP_SLOP)
+        {
+            window.clearTimeout(last.timer);
+            waveTapRef.current = null;
+
+            return heartMessage(id);
+        }
+
+        if (last) window.clearTimeout(last.timer);
+
+        const timer = window.setTimeout(() =>
+        {
+            if (waveTapRef.current?.timer === timer) waveTapRef.current = null;
+
+            seek();
+        }, TAP_AGAIN);
+
+        waveTapRef.current = { at: now, x: event.clientX, y: event.clientY, id, timer };
+    }
 
     const discardRecording = () => { invoke("discard_recording").catch(() => {}); };
 

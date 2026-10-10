@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import React from "react";
 
-import type { MessageVoice, Waveform } from "./types";
+import type { ChatMessage, MessageVoice, Waveform } from "./types";
 import { Icon } from "./icons";
 import { clock } from "./format";
 import { t } from "./i18n";
@@ -52,7 +52,7 @@ export interface Voices
     play: (hash: string) => void;
     stop: () => void;
     load: (hash: string) => void;
-    seek: (hash: string, ms: number) => void;
+    seek: (hash: string, ms: number, event: React.MouseEvent, message: ChatMessage) => void;
 }
 
 //KEPT OUT OF THE WINDOW'S STATE, SINCE IT TICKS
@@ -123,7 +123,7 @@ function envelope(levels: number[] | null): string
 }
 
 //ONE VOICE MESSAGE: THE BUTTON, THE WAVEFORM AND THE TIME
-export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voices })
+export function VoiceNote({ voice, voices, message }: { voice: MessageVoice; voices: Voices; message: ChatMessage })
 {
     const now = React.useSyncExternalStore(subscribe, playback);
     const waveform = voices.waveform(voice.hash);
@@ -234,7 +234,7 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
                 aria-valuenow={mine ? now.ms : 0}
                 viewBox={`0 0 ${WIDE} ${HIGH}`}
                 preserveAspectRatio="none"
-                onClick={(event) => voices.seek(voice.hash, Math.round(under(event) * voice.duration))}
+                onClick={(event) => voices.seek(voice.hash, Math.round(under(event) * voice.duration), event, message)}
                 onPointerMove={(event) =>
                 {
                     if (event.pointerType === "mouse") hovered.current?.setAttribute("width", (under(event) * WIDE).toFixed(1));

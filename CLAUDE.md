@@ -1320,7 +1320,7 @@ needs nothing. The clip ids come from `useId`, stripped to characters a `url(#�
 
 Until there is a waveform the envelope is a thin flat band; a line that has one draws the played part in `text` over
 the unplayed `faint`. The waveform (`.voice-wave`) is out of `tapLine`'s double tap, since a tap there is a
-seek.
+seek — and takes the picture's own pair instead (`tapWave`, see **Hearts and replies**).
 
 **Recording is the composer's.** The microphone button sits beside the two upload buttons and is
 `tui/voice_message.rs`'s push-to-talk: a press starts (`/record`), a release after `KEY_TAP` (400 ms) sends,
@@ -2124,7 +2124,10 @@ asked for three ways: the heart in the row's **hover bar** (beside reply and cop
 phone **two taps on the line** (`tapLine`, the lightbox's `TAP_AGAIN`/`TAP_SLOP`, never on a button or a
 link, which have taps of their own). **A picture takes the same two taps** (`tapPicture`): its single tap
 is the lightbox, so on a finger that open waits `TAP_AGAIN` and a second tap inside it is a heart
-instead — a picture that opened on the first tap hid the second one behind the lightbox. The set is drawn as a chip under the line, `♥ N`, in
+instead — a picture that opened on the first tap hid the second one behind the lightbox. **A voice
+message's waveform is the same case** (`tapWave`): its single tap is a seek, which started playback before
+the second tap could land, so on a finger the seek waits `TAP_AGAIN` and a second tap inside it hearts the
+line; a pointer seeks at once, and so does a line that cannot take a heart. The set is drawn as a chip under the line, `♥ N`, in
 `--heart` where it includes us, the names in its tooltip; pressing it toggles ours. A **right-click on the
 chip, or a hold on a phone**, opens `HeartsMenu` (`messages.tsx`, its own `useHoldMenu` at the pointer): who
 hearted it, face and name, each opening their profile card, with the toggle under them. The menu reads the
