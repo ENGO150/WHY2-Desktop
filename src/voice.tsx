@@ -24,13 +24,13 @@ import { clock } from "./format";
 import { t } from "./i18n";
 import { PRELOAD_SCREENS } from "./messages";
 
-//A BAR AND THE GAP AFTER IT, IN CSS PIXELS
-const BAR = 2;
-const GAP = 1.5;
+//THE WAVEFORM'S DRAWING SPACE, STRETCHED TO THE LINE'S WIDTH
+const WIDE = 1000;
+const HIGH = 100;
 
-//THE HEIGHT OF A BAR WITH NO WAVEFORM YET, AND THE LOWEST ONE WITH
-const FLAT = 0.18;
-const FLOOR = 0.1;
+//THE HALF-HEIGHT OF A FLAT ENVELOPE, AND OF A SILENT POINT
+const FLAT = 0.08;
+const FLOOR = 0.03;
 
 //HOW FAR AHEAD OF THE LAST TICK THE BAR MAY RUN
 const AHEAD = 250;
@@ -87,6 +87,40 @@ function position(hash: string, duration: number): number
     return Math.min(duration, now.ms + Math.min(performance.now() - now.at, AHEAD));
 }
 
+//A SMOOTH EDGE THROUGH THE POINTS (CATMULL-ROM)
+function edge(points: [number, number][]): string
+{
+    let path = "";
+
+    for (let index = 0; index < points.length - 1; index++)
+    {
+        const [x0, y0] = points[index - 1] ?? points[index];
+        const [x1, y1] = points[index];
+        const [x2, y2] = points[index + 1];
+        const [x3, y3] = points[index + 2] ?? points[index + 1];
+
+        const c1 = `${(x1 + (x2 - x0) / 6).toFixed(1)},${(y1 + (y2 - y0) / 6).toFixed(1)}`;
+        const c2 = `${(x2 - (x3 - x1) / 6).toFixed(1)},${(y2 - (y3 - y1) / 6).toFixed(1)}`;
+
+        path += ` C${c1} ${c2} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+    }
+
+    return path;
+}
+
+//THE ENVELOPE, MIRRORED ABOUT THE MIDDLE
+function envelope(levels: number[] | null): string
+{
+    const heights = levels && levels.length > 1 ? levels.map((level) => Math.max(FLOOR, level / 255)) : [FLAT, FLAT];
+    const step = WIDE / (heights.length - 1);
+    const middle = HIGH / 2;
+
+    const top = heights.map((height, index): [number, number] => [index * step, middle - height * middle * 0.96]);
+    const bottom = heights.map((height, index): [number, number] => [index * step, middle + height * middle * 0.96]).reverse();
+
+    return `M${top[0][0]},${top[0][1].toFixed(1)}${edge(top)} L${bottom[0][0]},${bottom[0][1].toFixed(1)}${edge(bottom)} Z`;
+}
+
 //ONE VOICE MESSAGE: THE BUTTON, THE WAVEFORM AND THE TIME
 export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voices })
 {
@@ -94,72 +128,30 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
     const waveform = voices.waveform(voice.hash);
 
     const row = React.useRef<HTMLDivElement>(null);
-    const canvas = React.useRef<HTMLCanvasElement>(null);
+    const played = React.useRef<SVGRectElement>(null);
+    const hovered = React.useRef<SVGRectElement>(null);
     const time = React.useRef<HTMLSpanElement>(null);
-    const hover = React.useRef<number | null>(null);
     const asked = React.useRef(false);
+
+    const id = `wave${React.useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
+    const playedClip = `${id}-played`;
+    const hoverClip = `${id}-hover`;
 
     const mine = now.hash === voice.hash;
     const playing = mine && !now.loading;
     const gone = waveform === "gone";
     const levels = Array.isArray(waveform) ? waveform : null;
 
-    //AS MANY BARS AS FIT, PLAYED PART IN text
-    const draw = () =>
+    const shape = React.useMemo(() => envelope(levels), [levels]);
+
+    //THE PLAYED PART, AS A CLIP WIDTH
+    const follow = () =>
     {
-        const node = canvas.current;
-        if (!node) return;
-
-        const width = node.clientWidth;
-        const height = node.clientHeight;
-        const ratio = window.devicePixelRatio || 1;
-
-        if (!width || !height) return;
-
-        if (node.width !== Math.round(width * ratio) || node.height !== Math.round(height * ratio))
-        {
-            node.width = Math.round(width * ratio);
-            node.height = Math.round(height * ratio);
-        }
-
-        const context = node.getContext("2d");
-        if (!context) return;
-
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
-        context.clearRect(0, 0, width, height);
-
-        const style = getComputedStyle(node);
-        const tone = (name: string) => style.getPropertyValue(name).trim();
-        const [played, hovered, rest] = [tone("--text"), tone("--muted"), tone("--faint")];
-
         const at = position(voice.hash, voice.duration) / Math.max(voice.duration, 1);
-        const bars = Math.max(8, Math.floor((width + GAP) / (BAR + GAP)));
 
-        for (let bar = 0; bar < bars; bar++)
-        {
-            //LOUDEST POINT UNDER THE BAR
-            let level = FLAT;
+        played.current?.setAttribute("width", (at * WIDE).toFixed(1));
 
-            if (levels && levels.length)
-            {
-                const first = Math.floor((bar * levels.length) / bars);
-                const last = Math.max(first + 1, Math.floor(((bar + 1) * levels.length) / bars));
-
-                level = Math.max(FLOOR, Math.max(...levels.slice(first, last)) / 255);
-            }
-
-            const x = bar * (BAR + GAP);
-            const middle = (x + BAR / 2) / width;
-            const tall = level * height;
-
-            context.fillStyle = middle <= at ? played : hover.current !== null && middle <= hover.current ? hovered : rest;
-            context.beginPath();
-
-            if (context.roundRect) context.roundRect(x, (height - tall) / 2, BAR, tall, BAR / 2);
-            else context.rect(x, (height - tall) / 2, BAR, tall);
-
-            context.fill();
-        }
+        return at;
     };
 
     //LOADED ONCE NEAR THE VIEW
@@ -182,19 +174,7 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
         return () => observer.disconnect();
     }, [voice.state, waveform]);
 
-    //EVERY RENDER, AND EVERY RESIZE
-    React.useLayoutEffect(draw);
-
-    React.useEffect(() =>
-    {
-        const node = canvas.current;
-        if (!node) return;
-
-        const observer = new ResizeObserver(() => draw());
-        observer.observe(node);
-
-        return () => observer.disconnect();
-    }, [levels]);
+    React.useLayoutEffect(() => { follow(); });
 
     //THE PLAYHEAD, BETWEEN TICKS
     React.useEffect(() =>
@@ -205,7 +185,7 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
 
         const tick = () =>
         {
-            draw();
+            follow();
 
             if (time.current) time.current.textContent = clock(position(voice.hash, voice.duration));
 
@@ -215,7 +195,7 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
         tick();
 
         return () => cancelAnimationFrame(frame);
-    }, [playing, now, levels]);
+    }, [playing, now]);
 
     //THE PART OF THE CLIP UNDER THE POINTER
     const under = (event: React.PointerEvent | React.MouseEvent) =>
@@ -245,28 +225,31 @@ export function VoiceNote({ voice, voices }: { voice: MessageVoice; voices: Voic
             </button>
 
             {/* A CLICK PLAYS FROM THERE */}
-            <canvas
-                ref={canvas}
+            <svg
                 role="slider"
                 aria-label={t("chat.voice_message")}
                 aria-valuemin={0}
                 aria-valuemax={voice.duration}
                 aria-valuenow={mine ? now.ms : 0}
+                viewBox={`0 0 ${WIDE} ${HIGH}`}
+                preserveAspectRatio="none"
                 onClick={(event) => voices.seek(voice.hash, Math.round(under(event) * voice.duration))}
                 onPointerMove={(event) =>
                 {
-                    if (event.pointerType !== "mouse") return;
+                    if (event.pointerType === "mouse") hovered.current?.setAttribute("width", (under(event) * WIDE).toFixed(1));
+                }}
+                onPointerLeave={() => hovered.current?.setAttribute("width", "0")}
+                className={`voice-wave block h-8 min-w-0 flex-1 cursor-pointer ${gone ? "opacity-40" : ""}`}
+            >
+                <defs>
+                    <clipPath id={playedClip}><rect ref={played} x="0" y="0" width="0" height={HIGH} /></clipPath>
+                    <clipPath id={hoverClip}><rect ref={hovered} x="0" y="0" width="0" height={HIGH} /></clipPath>
+                </defs>
 
-                    hover.current = under(event);
-                    draw();
-                }}
-                onPointerLeave={() =>
-                {
-                    hover.current = null;
-                    draw();
-                }}
-                className={`block h-8 min-w-0 flex-1 cursor-pointer ${gone ? "opacity-40" : ""}`}
-            />
+                <path d={shape} style={{ fill: "var(--faint)" }} />
+                <path d={shape} clipPath={`url(#${hoverClip})`} style={{ fill: "var(--muted)" }} />
+                <path d={shape} clipPath={`url(#${playedClip})`} style={{ fill: "var(--text)" }} />
+            </svg>
 
             {gone
                 ? <span className="shrink-0 text-[12px] text-error">{t("chat.unavailable")}</span>

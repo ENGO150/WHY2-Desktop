@@ -1280,19 +1280,23 @@ follow (`watch_playback`), and emits `UiEvent::Playback` when the position moves
 is `loading`, and `VoiceData(_, false)`, `VoiceMessageFailed` or a stop end it. The position is **not window
 state**: `App.tsx` owns everything and a tick would re-render the whole pane ten times a second, so it lives
 in a module store in `voice.tsx` (`setPlayback`, read with `useSyncExternalStore`) and only the line that is
-playing redraws — and that one runs its own `requestAnimationFrame` between ticks, redrawing its canvas and
-writing the clock straight onto the element, capped `AHEAD` of the last tick so a stalled device does not
+playing redraws — and that one runs its own `requestAnimationFrame` between ticks, moving the played clip's
+edge and writing the clock straight onto the elements, capped `AHEAD` of the last tick so a stalled device does not
 run the bar away. No CSS transition, for the reason in **The window**.
 
 **The waveform is the real audio, decoded here.** The protocol carries no waveform, so `voice_message.rs`
 reads the clip out of the crate's cache, decodes every Opus packet (`audiopus`, at the crate's version), and
 keeps the loudest frame RMS per point — `POINTS` (256), square-rooted against the loudest one so a quiet clip
-is not a flat line — as one byte each (`UiEvent::VoiceWaveform`). The bridge does not decide how many bars
-that is: `VoiceNote` draws on a `<canvas>` sized to its own device-pixel box, as many 2 px bars as its width
-takes, each the loudest point under it — so a wide window shows more of the clip than a phone does, and
-neither is resampled twice. The colours are the theme's own custom properties, read off the canvas at every
-draw, so a theme switch repaints it with the next render. A mouse over it lightens the bars up to the
-pointer, which is where a click will start. It is computed once per hash per process
+is not a flat line — as one byte each (`UiEvent::VoiceWaveform`). `VoiceNote` draws them as **an envelope
+and not as bars**: one closed SVG path, the points joined by a Catmull-Rom curve along the top and mirrored
+along the bottom (`envelope`), in a `viewBox` stretched to the line's width (`preserveAspectRatio="none"`),
+so it is built once per clip and never again for a resize. The same path is drawn three times — `faint`,
+then `muted` clipped to the pointer, then `text` clipped to the playhead — and **moving either is one
+`width` attribute on a `<clipPath>` rectangle**, written straight onto the element. It was a `<canvas>`
+first, and WebKitGTK blinked it on every redraw made outside an animation frame — which is every hover and
+every seek; an SVG attribute is painted like any other, which is the same lesson **The window** learned with
+the lightbox. The colours are the theme's custom properties (`var(--text)` and the rest), so a theme switch
+needs nothing. The clip ids come from `useId`, stripped to characters a `url(#…)` can carry. It is computed once per hash per process
 (`WAVEFORMS`). Where the clip comes from is the subtle part:
 
 - A live voice message is pushed whole and the crate caches it **before** it raises the event, so the
@@ -1309,8 +1313,9 @@ pointer, which is where a click will start. It is computed once per hash per pro
   by which point it is on the disk. `VoiceData` also frees the fetch slot (`picture_arrived`), which the TUI
   does with `fetched`.
 
-Until there is a waveform the bars are drawn flat; a line that has one draws the played part in `text` over
-the unplayed `faint`. The canvas is out of `tapLine`'s double tap, since a tap there is a seek.
+Until there is a waveform the envelope is a thin flat band; a line that has one draws the played part in `text` over
+the unplayed `faint`. The waveform (`.voice-wave`) is out of `tapLine`'s double tap, since a tap there is a
+seek.
 
 **Recording is the composer's.** The microphone button sits beside the two upload buttons and is
 `tui/voice_message.rs`'s push-to-talk: a press starts (`/record`), a release after `KEY_TAP` (400 ms) sends,

@@ -2211,7 +2211,7 @@ function App()
     const tapLine = (event: React.MouseEvent, message: ChatMessage) =>
     {
         if (!touchPointer || lineHold.held() || message.message_id === null) return;
-        if ((event.target as HTMLElement).closest("button, a, img, canvas")) return;
+        if ((event.target as HTMLElement).closest("button, a, img, .voice-wave")) return;
 
         const now = performance.now();
         const last = lineTapRef.current;
