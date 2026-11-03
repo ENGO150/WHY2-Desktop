@@ -8413,7 +8413,6 @@ dependencies = [
  "image",
  "jni 0.22.4",
  "jpeg-encoder",
- "ndk-context",
  "openh264",
  "serde",
  "sha2 0.11.1",

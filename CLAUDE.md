@@ -1537,10 +1537,12 @@ Five things the platform itself has to be asked for, and `src-tauri/src/android.
 this app that speaks JNI:
 
 - **A context.** `cpal` asks `ndk_context` for one whenever it enumerates devices and **panics** where
-  nobody set one — Tauri's Android side is Kotlin and has no use for it, so nothing does. `JNI_OnLoad` is
-  where the `JavaVM` is handed to us (it runs on `Rust.kt`'s `System.loadLibrary`), and the `Application` is
-  reached from there through `ActivityThread.currentApplication()` — no activity needed. Without this the
-  settings dialog's device rows abort the process.
+  nobody set one. Since Tauri 2.12 the runtime sets it: tao 0.37 calls
+  `ndk_context::initialize_android_context` in the activity's `onCreate`, and `ndk-context` asserts it is
+  initialized **once**, so making that call here as well aborted the process at launch. `JNI_OnLoad` is
+  still where the `JavaVM` is handed to us (it runs on `Rust.kt`'s `System.loadLibrary`), and the
+  `Application` is reached from there through `ActivityThread.currentApplication()` — no activity needed —
+  because the permission check, the service, the notifier and the store are ours to call.
 - **The microphone.** `RECORD_AUDIO` is a runtime permission and only an `Activity` can ask for it, so
   `MainActivity` carries three statics (`microphoneGranted`, `requestMicrophone`, `microphoneDenied`) and
   `ensure_microphone` calls them. It is asked **when the call is started and not at launch** — `send_input`

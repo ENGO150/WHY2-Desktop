@@ -25,7 +25,7 @@ use std::
     ffi::c_void,
     sync::
     {
-        Mutex, Once, OnceLock,
+        Mutex, OnceLock,
         atomic::{ AtomicBool, AtomicU8, Ordering },
     },
     time::Duration,
@@ -72,7 +72,6 @@ static STORE_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static NOTIFIER_CLASS: OnceLock<Global<JClass<'static>>> = OnceLock::new();
 static APPLICATION: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static VM: OnceLock<JavaVM> = OnceLock::new();
-static CONTEXT: Once = Once::new();
 static PREPARED: OnceLock<()> = OnceLock::new();
 
 //THE TWO THINGS WORTH HOLDING THE PROCESS OPEN FOR, KEPT APART BECAUSE THEY ARE SET FROM TWO PLACES AND
@@ -128,7 +127,7 @@ pub(crate) fn prepare()
 
     //AND IT IS *NOT* REMEMBERED AS DONE UNLESS IT WAS: A LOOKUP THAT FAILED ONCE - BECAUSE IT WAS ASKED
     //TOO EARLY, OR FROM A THREAD THAT COULD NOT ATTACH - IS A MICROPHONE THAT NEVER OPENS AGAIN, WHICH IS
-    //TOO MUCH TO HANG ON ONE ATTEMPT. EVERY STEP INSIDE IS A OnceLock OR A Once, SO A SECOND RUN IS FREE
+    //TOO MUCH TO HANG ON ONE ATTEMPT. EVERY STEP INSIDE IS A OnceLock, SO A SECOND RUN IS FREE
     if ready().is_some() { let _ = PREPARED.set(()); }
 }
 
@@ -138,23 +137,17 @@ fn ready() -> Option<()>
 
     let missing = vm.attach_current_thread(|env| -> jni::errors::Result<Vec<&'static str>>
     {
-        //cpal ASKS ndk_context FOR THE CONTEXT WHENEVER IT ENUMERATES DEVICES, AND PANICS WHERE NOBODY
-        //SET ONE - TAURI DOES NOT, SINCE ITS ANDROID SIDE IS KOTLIN AND HAS NO USE FOR IT. THE
-        //APPLICATION OBJECT IS REACHED WITHOUT AN ACTIVITY IN HAND, WHICH IS WHY IT IS THIS ONE
+        //tao HANDS ndk_context THE APPLICATION WHEN THE ACTIVITY IS CREATED, WHICH IS WHAT cpal READS;
+        //THIS ONE IS KEPT FOR OUR OWN CALLS AND IS REACHED WITHOUT AN ACTIVITY IN HAND
         let thread = env.find_class(JNIString::new("android/app/ActivityThread"))?;
 
         let application = env.call_static_method(&thread, JNIString::new("currentApplication"),
             jni_sig!("()Landroid/app/Application;"), &[])?.l()?;
 
-        //THE CONTEXT OUTLIVES EVERYTHING THAT READS IT - cpal ASKS FOR IT ON EVERY ENUMERATION, AND THE
-        //PERMISSION CHECK BELOW IS A METHOD ON IT - SO THE REFERENCE IS KEPT FOR THE LIFE OF THE PROCESS
+        //THE APPLICATION OUTLIVES EVERYTHING THAT READS IT - THE PERMISSION CHECK BELOW IS A METHOD ON IT -
+        //SO THE REFERENCE IS KEPT FOR THE LIFE OF THE PROCESS
         let application = APPLICATION.get_or_init(|| env.new_global_ref(&application)
             .expect("the application object could not be kept"));
-
-        CONTEXT.call_once(||
-        {
-            unsafe { ndk_context::initialize_android_context(vm.get_raw().cast(), application.as_raw().cast()) };
-        });
 
         //AND OUR OWN CLASSES THROUGH THE APP'S OWN CLASS LOADER RATHER THAN THROUGH FindClass: A TOKIO
         //WORKER IS ATTACHED WITH THE SYSTEM LOADER, WHICH KNOWS NOTHING THIS APP WROTE
