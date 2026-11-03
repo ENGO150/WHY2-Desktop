@@ -50,14 +50,13 @@ cargo fetched under `~/.cargo/git`. This app is a thin presentation layer over i
 That `wgpu` is also the one place a `cargo update` can break the build without a line of this code
 changing, and it breaks **Windows only**: `wgpu-hal`'s dx12 backend asks for `windows` `0.62`, while the
 `gpu-allocator` it hands its device to asks for `>=0.53, <=0.62` — a range that also matches the `0.61`
-half the rest of the graph is on. Resolved the same way for both, the two see one `ID3D12Device`; resolved
-apart, `wgpu-hal` will not compile — and the resolver, left to itself, **does** resolve them apart, putting
-`gpu-allocator` on `0.61.3`. So **`gpu-allocator`'s entry in `Cargo.lock` is pointed at `0.62.2` by hand**,
-the version `wgpu-hal`, `cpal`, `xcap` and why2-chat itself are on (the crate's Media Foundation encoder asks
-for `^0.62.2` since 2.4.0, which is what ended the older pin to `0.62.0`). `<=0.62` admits any `0.62.x`, so
-the edit is a valid lock and not a forced one. Anything that rewrites the lock — a `cargo update`, a version
-bump — can quietly put it back on `0.61.3`, which is a green Linux, macOS and Android build and a wall of
-mismatched-types errors out of `wgpu-hal` on the Windows runner. It is checked without a Windows machine:
+half a dependency can drag in. Resolved the same way for both, the two see one `ID3D12Device`; resolved
+apart, `wgpu-hal` will not compile — and the resolver, left to itself, can resolve them apart, putting
+`gpu-allocator` on `0.61.3`. So the lock has to keep **one** `windows`, `0.62.2`, the version `wgpu-hal`,
+`cpal`, `xcap` and why2-chat itself are on (the crate's Media Foundation encoder asks for `^0.62.2` since
+2.4.0). The 2.4.1 dependency update left nothing in the graph asking for `0.61` any more, so the lock
+resolves it by itself; a `cargo update` that brings a `0.61` requirement back is the case to edit the lock
+for. It is checked without a Windows machine:
 `cargo metadata --locked --filter-platform x86_64-pc-windows-msvc` accepts the lock, and
 `cargo tree --target x86_64-pc-windows-msvc -i windows@0.62.2` lists `gpu-allocator` beside `wgpu-hal`.
 
@@ -805,7 +804,9 @@ only — the module gate and the feature are one answer spelled twice, the same 
 phone has no tray and answers this question its own way already, with the foreground service that holds the
 session while the app is off screen (see **Android**). On Linux the icon is an appindicator, so a desktop
 with no `libayatana-appindicator` on it shows nothing in its bar — the program still runs, and its window is
-then only reachable from wherever it was launched.
+then only reachable from wherever it was launched. The library logs a deprecation notice when the icon is
+created; `quiet_appindicator` drops exactly that line and forwards the domain's other warnings to GLib's
+default handler.
 
 **What it says on hover is `WHY2 Desktop`, and it is said twice** because Linux does not read the first one.
 `tooltip` is the answer on Windows and macOS; an appindicator has no tooltip at all (`tray-icon`'s
@@ -1529,6 +1530,8 @@ be one library rather than a wall:
   `tauri android build` compiles all four ABIs in one process and a single path would hand the arm library
   to the x86 one. `LIBOPUS_STATIC` is set with it, since `audiopus_sys` decides static-or-shared from the
   machine it is *compiled on* and would otherwise link the phone against a `libopus.so` that is not there.
+  The build sets `ac_tool_warned=yes` for autoconf's unprefixed cross-tool notice and appends
+  `-Wno-cast-align` to the generated `Makefile`, since opus turns that warning back on after `CFLAGS`.
 
 Five things the platform itself has to be asked for, and `src-tauri/src/android.rs` is the only place in
 this app that speaks JNI:
@@ -1708,6 +1711,13 @@ The service element is **rewritten and not skipped when present** (matched by cl
 included), so a change here reaches a `gen/android` that was patched by an earlier version — the manifest is
 then parsed back as XML before it is written, because a half-removed element fails several steps later, in
 the manifest merger, saying nothing about where it came from.
+
+The same patch quiets the template's own build noise: `gradle.properties` gets
+`android.javaCompile.suppressSourceTargetDeprecationWarning` and
+`android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE,DEPRECATED_DSL`, and the root
+`build.gradle.kts` gets `-Xlint:-options` on every `JavaCompile`, since the template still targets Java 8
+and sets AGP options the current AGP deprecates. Each is written only when absent, so a second run changes
+nothing; the Kotlin deprecations inside Tauri's and the plugins' own modules are theirs and stay.
 
 It also writes **`scripts/android/why2.pro`** into the project as `app/proguard-why2.pro`, package
 substituted, which is what keeps those five classes in a **release** build: `isMinifyEnabled` is on there,

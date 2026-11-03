@@ -41,6 +41,55 @@ if [ ! -f "$MANIFEST" ]; then
     exit 1
 fi
 
+# THE TEMPLATE STILL COMPILES AT JAVA 8, WHICH JDK 21 WARNS ABOUT
+GRADLE_PROPERTIES="$PROJECT/gradle.properties"
+
+if [ ! -f "$GRADLE_PROPERTIES" ]; then
+    echo "android-patch: no gradle.properties at $GRADLE_PROPERTIES" >&2
+    exit 1
+fi
+
+if ! grep -q '^android.javaCompile.suppressSourceTargetDeprecationWarning=' "$GRADLE_PROPERTIES"; then
+    printf '\nandroid.javaCompile.suppressSourceTargetDeprecationWarning=true\n' >> "$GRADLE_PROPERTIES"
+fi
+
+# AND THE AGP OPTIONS THE TEMPLATE ITSELF STILL SETS
+if ! grep -q '^android.sync.suppressAgpWarnings=' "$GRADLE_PROPERTIES"; then
+    printf '\nandroid.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE,DEPRECATED_DSL\n' >> "$GRADLE_PROPERTIES"
+fi
+
+echo "android-patch: the generated Gradle stops warning about Java 8"
+
+# THE TEMPLATE COMPILES ITS JAVA AT 8, WHICH JAVAC ITSELF WARNS ABOUT
+GRADLE_ROOT="$PROJECT/build.gradle.kts"
+
+if [ ! -f "$GRADLE_ROOT" ]; then
+    echo "android-patch: no build.gradle.kts at $GRADLE_ROOT" >&2
+    exit 1
+fi
+
+if ! grep -q 'Xlint:-options' "$GRADLE_ROOT"; then
+    python3 - "$GRADLE_ROOT" <<'GRADLE'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+anchor = "allprojects {\n"
+
+if anchor not in text:
+    sys.exit("android-patch: no allprojects block in build.gradle.kts")
+
+addition = (
+    '    tasks.withType<JavaCompile>().configureEach {\n'
+    '        options.compilerArgs.add("-Xlint:-options")\n'
+    '    }\n\n'
+)
+
+path.write_text(text.replace(anchor, anchor + addition, 1), encoding="utf-8")
+GRADLE
+fi
+
 # THE CALL RECORDS, IT ASKS THE SYSTEM TO ROUTE ITSELF THROUGH THE EARPIECE OR A HEADSET, AND THE SESSION
 # GOES ON WHILE THE WINDOW IS AWAY - WHICH IS A FOREGROUND SERVICE, ITS TWO TYPED PERMISSIONS (14+), AND
 # THE NOTIFICATION THAT PAYS FOR IT (13+). THE SERVICE ELEMENT GOES WITH THEM, TYPES AND ALL: FROM 10

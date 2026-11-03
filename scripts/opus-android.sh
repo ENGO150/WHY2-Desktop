@@ -113,14 +113,17 @@ for TARGET in "${TARGETS[@]}"; do
     rm -rf "$BUILD_DIR"
     mkdir -p "$BUILD_DIR"
 
+    # silence autoconf's unprefixed cross-tool warning
     (
         cd "$BUILD_DIR"
 
+        ac_tool_warned=yes \
         CC="$CLANG" \
         AR="$TOOLCHAIN/bin/llvm-ar" \
         RANLIB="$TOOLCHAIN/bin/llvm-ranlib" \
         STRIP="$TOOLCHAIN/bin/llvm-strip" \
         NM="$TOOLCHAIN/bin/llvm-nm" \
+        CFLAGS="${CFLAGS:--O2}" \
         "$SOURCE/configure" \
             --host="$(clang_prefix "$TARGET")" \
             --prefix="$PREFIX" \
@@ -130,6 +133,10 @@ for TARGET in "${TARGETS[@]}"; do
             --disable-extra-programs \
             --with-pic \
             >/dev/null
+
+        # opus appends -Wcast-align after CFLAGS, so it is turned off last
+        sed -i.bak 's/^CFLAGS = .*/& -Wno-cast-align/' Makefile
+        rm -f Makefile.bak
 
         make -j"$(nproc)" >/dev/null
         make install >/dev/null

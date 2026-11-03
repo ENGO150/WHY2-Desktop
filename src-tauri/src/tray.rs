@@ -59,6 +59,9 @@ const TRAY: &str = "why2";
 //AN ITEM IN IT RATHER THAN SOMETHING ONLY A CLICK COULD REACH
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()>
 {
+    #[cfg(target_os = "linux")]
+    quiet_appindicator();
+
     //WHAT THE BAR CALLS IT, WHICH ON LINUX IS NOT THE TOOLTIP BELOW: AN APPINDICATOR HAS NO TOOLTIP AT
     //ALL (tray-icon'S set_tooltip IS AN EMPTY FUNCTION THERE), AND WHAT A SHELL SHOWS ON HOVER IS THE
     //ITEM'S TITLE - WHICH libayatana TAKES FROM GLib'S APPLICATION NAME. NOBODY SETS THAT, SO IT FALLS
@@ -104,6 +107,20 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()>
     tray.build(app)?;
 
     Ok(())
+}
+
+//DROP THE LIBRARY'S OWN DEPRECATION NOTICE
+#[cfg(target_os = "linux")]
+fn quiet_appindicator()
+{
+    glib::log_set_handler(Some("libayatana-appindicator"), glib::LogLevels::LEVEL_WARNING, false, false,
+        |domain, level, message|
+        {
+            if !message.contains("libayatana-appindicator is deprecated")
+            {
+                glib::log_default_handler(domain, level, Some(message));
+            }
+        });
 }
 
 //THE TWO ITEMS, IN THE CURRENT LANGUAGE

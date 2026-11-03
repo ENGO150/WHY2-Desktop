@@ -19,7 +19,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-// @ts-expect-error type error without @types/node package
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
@@ -32,7 +31,26 @@ export default defineConfig(() =>
     //
     // 1. prevent Vite from obscuring rust errors
     clearScreen: false,
-    // 2. tauri expects a fixed port, fail if that port is not available
+    // 2. split the large renderers out of the app chunk
+    build:
+    {
+        rolldownOptions:
+        {
+            output:
+            {
+                codeSplitting:
+                {
+                    groups:
+                    [
+                        { name: "katex", test: /node_modules[\\/]katex[\\/]/ },
+                        { name: "highlight", test: /node_modules[\\/]highlight\.js[\\/]/ },
+                        { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+                    ],
+                },
+            },
+        },
+    },
+    // 3. tauri expects a fixed port, fail if that port is not available
     server:
     {
         port: 1420,

@@ -157,7 +157,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018'
+          packages: 'platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;27.2.12479018'
 
       - name: Point at the NDK
         run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
@@ -208,7 +208,7 @@ jobs:
         run: |
           echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/keystore.jks"
 
-          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          TOOLS="$ANDROID_HOME/build-tools/37.0.0"
 
           for apk in $(find src-tauri/gen/android/app/build/outputs/apk -name '*-unsigned.apk'); do
             "$TOOLS/zipalign" -f -p 4 "$apk" "${apk%-unsigned.apk}-aligned.apk"
