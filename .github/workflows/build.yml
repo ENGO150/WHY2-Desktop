@@ -112,6 +112,8 @@ jobs:
           rm -f squashfs-root/usr/lib/libwayland-*.so.*
           rm -f squashfs-root/usr/lib/libpipewire-*.so.*
           rm -f "$appimage"
+          # EXTRACTION WRITES EVERY DIRECTORY 0700; appimagetool REFUSES AN APPDIR OTHERS CANNOT READ
+          chmod -R a+rX squashfs-root
           ./appimagetool squashfs-root "$appimage"
           rm -rf squashfs-root appimagetool
 
