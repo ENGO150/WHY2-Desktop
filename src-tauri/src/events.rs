@@ -296,13 +296,13 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                 false => PictureState::Absent,
             };
 
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts, edited, voice }| match (image, voice)
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, timestamp, reply, hearts, edited, pinned, voice }| match (image, voice)
             {
                 (_, Some(voice)) => ChatMessage::new(MessageKind::User, username, text).named(colors.username_color).with_message_id(message_id)
-                    .at(timestamp).spoken(&voice).hearted(hearts),
-                (Some(hash), None) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts),
+                    .at(timestamp).spoken(&voice).hearted(hearts).pinned(pinned),
+                (Some(hash), None) => caption(username, text, message_id, timestamp, hash, state, colors.username_color).hearted(hearts).pinned(pinned),
                 (None, None) => ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).at(timestamp).colored(colors)
-                    .replying(reply).hearted(hearts).reworded(edited),
+                    .replying(reply).hearted(hearts).reworded(edited).pinned(pinned),
             }).collect::<Vec<ChatMessage>>();
 
             if !older { say(app, ChatMessage::title(tr!("event.history", count = kept))); }
@@ -644,6 +644,24 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         ClientEvent::Hearts(message_id, hearts) => emit(app, UiEvent::Hearts { message_id, hearts }),
 
         ClientEvent::Edited(message_id, text) => emit(app, UiEvent::Edited { message_id, text }),
+
+        //A MESSAGE WAS PINNED OR UNPINNED, WHEREVER IT IS
+        ClientEvent::Pinned(message_id, pinned) => emit(app, UiEvent::Pinned { message_id, pinned }),
+
+        //  /pins - EVERY PINNED MESSAGE, AS A CARD IN THE PANE. THE TUI PRINTS THE SAME LIST INTO ITS
+        //SCROLLBACK, SO IT ARRIVES WHOLE AND IS DRAWN WHERE IT WAS ASKED FOR
+        ClientEvent::Pins(messages) =>
+        {
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, voice, .. }|
+            {
+                let message = ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).colored(colors);
+
+                //A CLIP HAS NO TEXT TO SHOW - THE WINDOW SAYS WHAT IT IS INSTEAD
+                match voice { Some(voice) => message.spoken(&voice), None => message }
+            }).collect();
+
+            emit(app, UiEvent::Pins { messages });
+        },
 
         //THE CALL. THE CRATE OWNS EVERY PART OF IT - THE UDP HANDSHAKE, THE DEVICES, THE MIXING - SO ALL
         //THAT IS LEFT HERE IS TO SAY WHO IS IN IT AND WHO IS TALKING

@@ -64,6 +64,7 @@ export interface ChatMessage
     reply: number | null;       //THE MESSAGE IT ANSWERS
     hearts: string[];           //WHO HEARTED IT
     edited: boolean;            //REWORDED SINCE SENT
+    pinned: boolean;            //PINNED BY A MODERATOR
 }
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
@@ -172,6 +173,7 @@ export interface FileOwner
 export type PaneEntry =
     | { entry: "message"; message: ChatMessage; picture?: PictureStatus; replayed?: boolean }
     | { entry: "block"; title: string; rows: BlockRow[] }
+    | { entry: "pins"; messages: ChatMessage[] }
     | { entry: "transfer"; uid: string };
 
 //ONE USER'S PROFILE, AS profile.rs HANDS IT OVER
@@ -438,6 +440,8 @@ export type BridgeEvent =
     | { event: "hearts"; data: { message_id: number; hearts: string[] } }
     | { event: "list_hearts"; data: { message_id: number } }
     | { event: "edited"; data: { message_id: number; text: string } }
+    | { event: "pinned"; data: { message_id: number; pinned: boolean } }
+    | { event: "pins"; data: { messages: ChatMessage[] } }
     | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
     | { event: "typing"; data: { username: string; ttl: number } }
     | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }

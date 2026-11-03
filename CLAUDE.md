@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.4.0", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.4.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.4.0", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.4.1", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
@@ -2164,6 +2164,34 @@ rewords the line in whichever pane holds it (`patchMessage`, which the hearts sh
 `StoredMessage::edited` carries the same flag through the history. It is drawn as a dim `(edited)` in the
 trailer, in front of the `#N` — the TUI's own place for it — and shown whether or not the ids are. A reply
 quoting the line picks up the new text for free, since the quote is looked up in the pane.
+
+### Pinning
+
+2.4.1's `/pin ID` and `/pins`, the TUI's own pair. **Pinning is moderation's**: the command's
+`minimal_role` is `Moderator`, the server refuses anything lower with `InvalidUsage`, and `get_commands`
+already filters by the role we hold — so `hasPin` in `App.tsx` is the one answer, and the palette and the
+menus are drawn from it rather than from a rank of their own. Only a **stored** line can be pinned, which
+means only a lobby one (the server keeps no history for a channel), and the server refuses another past
+`max_pinned_messages` with the same `InvalidUsage` a client can do nothing about.
+
+`/pin ID` is a toggle and is sent down the ordinary command path; the server broadcasts
+`PacketCode::Pinned { message_id, pinned }`, which is `ClientEvent::Pinned` → `UiEvent::Pinned` and patches
+the line wherever it is with `patchMessage`, the one the hearts and edits share. A live `Message` carries
+no pin field — a line arrives unpinned whatever its id held before — and `StoredMessage::pinned` is what
+tells the history. It is drawn as an **accent `pinned` in the trailer**, in front of `(edited)` and `#N`,
+which is the TUI's own place for it.
+
+The menus offer it too: `pinnable` is `reactable` (a stored, loaded lobby line) narrowed by `hasPin`, and
+`MessageMenu` and `PictureMenu` both carry the item, reading `Pin message` / `Unpin message` from
+`message.pinned`. A picture and a clip are stored lines like any other, so both take one.
+
+`/pins` is `PinsRequest`, answered with every pinned message oldest first as `ClientEvent::Pins` →
+`UiEvent::Pins { messages }`. The window pushes a **`pins` PaneEntry** — its own arm, not a `block`, since
+the rows carry a name color and a message color the tree's `BlockRow` has no room for — and `renderPins`
+draws the card the TUI prints: the branch glyphs, a right-aligned `#N`, the author in their color, and the
+line in the color it was said in, or `pins.voice` where the text is a clip. An empty answer is the dim
+`pins.none` line, as the TUI's is. The list is a photograph of the moment it was asked for; a pin landing
+while it is on screen moves the tagged line, not the card.
 
 ### Account
 

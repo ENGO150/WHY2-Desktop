@@ -117,7 +117,7 @@ function ReactItems({ message, heart, reply, hearted, close }: {
 //THE MENU A LINE OPENS, HEADED BY THE LINE
 export function MessageMenu(
 {
-    at, copy, heart, reply, hearted, edit, remove, close,
+    at, copy, heart, reply, hearted, edit, pin, remove, close,
 }: {
     at: HeldMenu<ChatMessage>;
     copy: (text: string) => void;
@@ -125,6 +125,7 @@ export function MessageMenu(
     reply: ((message: ChatMessage) => void) | null;
     hearted: boolean;
     edit: ((message: ChatMessage) => void) | null;
+    pin: ((message: ChatMessage) => void) | null;
     remove: ((message_id: number) => void) | null;
     close: () => void;
 })
@@ -146,6 +147,13 @@ export function MessageMenu(
                 <button type="button" onClick={() => { close(); edit(message); }} className={MENU_ITEM}>
                     <Icon name="pencil" className="h-4 w-4 text-muted" />
                     {t("menu.edit")}
+                </button>
+            )}
+
+            {pin && message.message_id !== null && (
+                <button type="button" onClick={() => { close(); pin(message); }} className={MENU_ITEM}>
+                    <Icon name="pin" className="h-4 w-4 text-muted" />
+                    {message.pinned ? t("menu.unpin") : t("menu.pin")}
                 </button>
             )}
 
@@ -216,7 +224,7 @@ export function HeartsMenu(
 //A PICTURE'S MENU: PUT IT ON THE CLIPBOARD OR THE DISK
 export function PictureMenu(
 {
-    at, copy, save, heart, reply, hearted, remove, close,
+    at, copy, save, heart, reply, hearted, pin, remove, close,
 }: {
     at: HeldMenu<HeldPicture>;
     copy: ((image: MessageImage) => void) | null;
@@ -224,6 +232,7 @@ export function PictureMenu(
     heart: ((message_id: number) => void) | null;
     reply: ((message: ChatMessage) => void) | null;
     hearted: boolean;
+    pin: ((message: ChatMessage) => void) | null;
     remove: ((message_id: number) => void) | null;
     close: () => void;
 })
@@ -245,6 +254,13 @@ export function PictureMenu(
                 <Icon name="download" className="h-4 w-4 text-muted" />
                 {t("menu.save_image")}
             </button>
+
+            {pin && message?.message_id != null && (
+                <button type="button" onClick={() => { close(); pin(message); }} className={MENU_ITEM}>
+                    <Icon name="pin" className="h-4 w-4 text-muted" />
+                    {message.pinned ? t("menu.unpin") : t("menu.pin")}
+                </button>
+            )}
 
             {remove && message?.message_id != null && (
                 <>
@@ -806,8 +822,10 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                                 : markup(message.text, config.render_math)}
                     </div>
 
-                    {(messageId || message.edited) && (
+                    {(messageId || message.edited || message.pinned) && (
                         <span className="shrink-0 whitespace-nowrap text-[11.5px] leading-6 text-faint">
+                            {message.pinned && <span className="text-accent">{t("message.pinned")}</span>}
+                            {message.pinned && (message.edited || messageId) && " · "}
                             {message.edited && t("message.edited")}
                             {message.edited && messageId && " · "}
                             {messageId}
@@ -936,6 +954,39 @@ export function renderBlock(title: string, rows: BlockRow[], key: number, config
                         </div>
                     );
                 })}
+            </div>
+        </div>
+    );
+}
+
+//THE PINNED MESSAGES, WHICH IS /pins' ANSWER - THE TUI PRINTS THE SAME TREE, SO THE ROWS ARE THE SAME
+//ROWS: A RIGHT-ALIGNED #ID, THE NAME IN ITS OWN COLOR, AND THE LINE IN THE COLOR IT WAS SAID IN
+export function renderPins(messages: ChatMessage[], key: number, config: ClientConfig)
+{
+    const glyphs = branches(messages.map(() => ({ depth: 0 })));
+    const width = messages.reduce((width, message) => Math.max(width, String(message.message_id ?? "").length), 1);
+
+    return (
+        <div key={key} className="note head">
+            <span className="flex justify-center pt-[12px]">
+                <Icon name="menu" className="h-4 w-4 text-faint" />
+            </span>
+
+            <div className="w-fit max-w-full rounded-lg border border-border px-4 py-3 text-text">
+                <div className="mb-2 text-[13.5px] font-medium">{t("pins.title", { count: messages.length }).replace(/[:：]$/, "")}</div>
+
+                {messages.map((message, index) => (
+                    <div key={index} className="flex items-start whitespace-pre-wrap py-[1px] font-mono text-[12.5px] leading-5">
+                        <span className="shrink-0 whitespace-pre text-faint/60">{glyphs[index]}</span>
+                        <span className="shrink-0 whitespace-pre text-faint">{`#${String(message.message_id ?? "").padStart(width)}  `}</span>
+                        <span className="shrink-0" style={{ color: messageColor(config, message.username_color) }}>{message.username}</span>
+                        <span className="shrink-0 text-faint">: </span>
+
+                        {message.voice
+                            ? <span className="text-faint">{t("pins.voice")}</span>
+                            : <span className="min-w-0 break-words" style={{ color: messageColor(config, message.message_color) }}>{message.text.replace(/\n/g, " ")}</span>}
+                    </div>
+                ))}
             </div>
         </div>
     );

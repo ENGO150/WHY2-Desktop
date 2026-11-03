@@ -90,7 +90,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines, HeldPicture } from "./messages";
-import { renderNotice, renderChat, renderBlock, renderTransfer, renderDay, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderPins, renderTransfer, renderDay, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
 import type { People, ProfileFields } from "./profile";
 import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
@@ -217,6 +217,7 @@ function localLine(kind: MessageKind, text: string): ChatMessage
     return {
         kind, prefix: null, username: "", text, id: null, message_id: null, timestamp: null,
         username_color: null, message_color: null, direct: null, image: null, voice: null, reply: null, hearts: [], edited: false,
+        pinned: false,
     };
 }
 
@@ -622,6 +623,9 @@ function App()
     const hasAccount = commands.some((command) => command.name === "account");
     const hasScreens = commands.some((command) => command.name === "screens");
     const hasRecord = commands.some((command) => command.name === "record");
+
+    //PINNING IS MODERATION'S, AND THE LIST SAYS WHETHER OURS HAS IT
+    const hasPin = commands.some((command) => command.name === "pin");
 
     //AND NO DRAWER SURVIVES THE PICTURE TAKING THE WHOLE SCREEN
     useEffect(() => { if (theater) setDrawer(null); }, [theater]);
@@ -1437,6 +1441,25 @@ function App()
                     break;
                 }
 
+                //A MESSAGE PINNED OR UNPINNED, WHEREVER IT IS
+                case "pinned":
+                {
+                    const { message_id, pinned } = payload.data;
+
+                    setPaneByChannel((previous) => patchMessage(previous, message_id, (message) => ({ ...message, pinned })));
+                    break;
+                }
+
+                //  /pins - THE PINNED MESSAGES, AS A CARD IN THE PANE IT WAS ASKED FROM
+                case "pins":
+                {
+                    const { messages } = payload.data;
+
+                    if (messages.length === 0) push(entryFor(localLine("system", t("pins.none"))));
+                    else push({ entry: "pins", messages });
+                    break;
+                }
+
                 //  /hearts - WHO HEARTED A LOADED MESSAGE
                 case "list_hearts":
                 {
@@ -2167,6 +2190,14 @@ function App()
         setReplyTo(message);
 
         if (!narrow) chatInputRef.current?.focus();
+    };
+
+    //A PIN IS MODERATION'S AND LANDS ON A STORED LOBBY LINE LIKE THE REST OF THEM
+    const pinnable = (message: ChatMessage | null) => hasPin && reactable(message);
+
+    const pinMessage = (message: ChatMessage) =>
+    {
+        if (message.message_id !== null) send(`/pin ${message.message_id}`);
     };
 
     //ONLY OUR OWN TEXT CAN BE REWORDED
@@ -4233,6 +4264,7 @@ function App()
             if (step.day !== null) nodes.push(renderDay(step.day, `day-${index}`));
 
             if (entry.entry === "block") { nodes.push(renderBlock(entry.title, entry.rows, index, config)); return; }
+            if (entry.entry === "pins") { nodes.push(renderPins(entry.messages, index, config)); return; }
             if (entry.entry === "transfer") { nodes.push(renderTransfer(transfers[entry.uid], index)); return; }
 
             const message = entry.message;
@@ -4435,6 +4467,7 @@ function App()
             heart={reactable(pictureHold.menu.value.message) ? heartMessage : null}
             reply={reactable(pictureHold.menu.value.message) ? replyMessage : null}
             hearted={pictureHold.menu.value.message?.hearts.includes(username) ?? false}
+            pin={pinnable(pictureHold.menu.value.message) ? pinMessage : null}
             remove={deletable(pictureHold.menu.value.message) ? deleteMessage : null}
             close={pictureHold.close}
         />
@@ -4453,6 +4486,7 @@ function App()
             reply={reactable(lineHold.menu.value) ? replyMessage : null}
             hearted={lineHold.menu.value.hearts.includes(username)}
             edit={editable(lineHold.menu.value) ? editMessage : null}
+            pin={pinnable(lineHold.menu.value) ? pinMessage : null}
             remove={deletable(lineHold.menu.value) ? deleteMessage : null}
             close={lineHold.close}
         />

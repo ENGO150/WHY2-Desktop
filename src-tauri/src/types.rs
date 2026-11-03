@@ -47,6 +47,7 @@ pub(crate) struct ChatMessage
     pub(crate) reply: Option<u64>,          //THE MESSAGE IT ANSWERS
     pub(crate) hearts: Vec<String>,         //WHO HEARTED IT
     pub(crate) edited: bool,                //REWORDED SINCE SENT
+    pub(crate) pinned: bool,                //PINNED BY A MODERATOR
 }
 
 //A PICTURE SOMEBODY SENT. IT IS A LINE THEY SAID LIKE ANY OTHER - THEIR NAME, THEIR FACE - WITH THE
@@ -427,6 +428,8 @@ pub(crate) enum UiEvent
     Hearts { message_id: u64, hearts: Vec<String> },              //A MESSAGE'S HEARTS CHANGED
     ListHearts { message_id: u64 },                               //  /hearts - WHO HEARTED ONE
     Edited { message_id: u64, text: String },                     //A STORED MESSAGE WAS REWORDED
+    Pinned { message_id: u64, pinned: bool },                     //A STORED MESSAGE WAS PINNED OR UNPINNED
+    Pins { messages: Vec<ChatMessage> },                          //  /pins - EVERY PINNED MESSAGE
     History { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool }, //ONE PAGE OF THE LOBBY'S HISTORY
     Typing { username: String, ttl: u64 },                        //SOMEBODY HERE IS WRITING
     Profile { profile: ProfileInfo, own: bool, open: bool, saved: bool }, //A PROFILE CAME BACK
@@ -496,6 +499,7 @@ impl ChatMessage
             reply: None,
             hearts: Vec::new(),
             edited: false,
+            pinned: false,
         }
     }
 
@@ -590,6 +594,12 @@ impl ChatMessage
     pub(crate) fn reworded(mut self, edited: bool) -> Self
     {
         self.edited = edited;
+        self
+    }
+
+    pub(crate) fn pinned(mut self, pinned: bool) -> Self
+    {
+        self.pinned = pinned;
         self
     }
 }

@@ -32,6 +32,7 @@ deliberately kept in step about *behaviour*.
   with the channel's whole voice roster shown whether or not you are in the call
 - **Screen sharing**, both directions: share a monitor, or watch somebody else's full-window
 - **File transfer**, with a drawer that lists what everybody on the server is offering
+- **Pinned messages** — moderators pin a stored line, every client marks it, and `/pins` lists them
 - **Server list**: the addresses and identities you use, remembered, so the window stops asking
 
 ### The window
@@ -118,13 +119,12 @@ service, the audio routing and the launcher icons it does not know it needs (`sc
 
 ### The crate dependency
 
-`why2-chat` is pulled in as a **git dependency on the `development` branch**, because the published 2.0.0
-lacks the frame sink this app watches a screen through. `Cargo.lock` pins the commit; `cargo update -p
-why2-chat` takes newer work. To build against a local checkout instead, patch it rather than editing the
-dependency line:
+`why2-chat` is pulled from **crates.io by version** (`2.4.1`), with a different feature set per target —
+`client_screen` is left out on Android. The version is bumped by hand when the crate publishes one. To
+build against a local checkout instead, patch it rather than editing the dependency line:
 
 ```toml
-[patch."https://github.com/ENGO150/WHY2"]
+[patch.crates-io]
 why2-chat = { path = "../WHY2/chat" }
 ```
 
