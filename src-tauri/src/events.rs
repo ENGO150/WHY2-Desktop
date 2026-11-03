@@ -652,12 +652,25 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //SCROLLBACK, SO IT ARRIVES WHOLE AND IS DRAWN WHERE IT WAS ASKED FOR
         ClientEvent::Pins(messages) =>
         {
-            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, voice, .. }|
+            let messages = messages.into_iter().map(|StoredMessage { message_id, username, text, colors, image, voice, .. }|
             {
-                let message = ChatMessage::new(MessageKind::User, username, text).with_message_id(message_id).colored(colors);
+                let message = ChatMessage::new(MessageKind::User, username, text.clone()).with_message_id(message_id).colored(colors);
 
-                //A CLIP HAS NO TEXT TO SHOW - THE WINDOW SAYS WHAT IT IS INSTEAD
-                match voice { Some(voice) => message.spoken(&voice), None => message }
+                //A PICTURE IS ITS FILENAME AND A CLIP HAS NO TEXT AT ALL - THE WINDOW SAYS WHAT IT IS
+                match (image, voice)
+                {
+                    (_, Some(voice)) => message.spoken(&voice),
+                    (Some(hash), None) => message.picture(MessageImage
+                    {
+                        filename: text,
+                        hash: Some(picture::hex(&hash)),
+                        source: None,
+                        state: PictureState::Absent,
+                        width: 0,
+                        height: 0,
+                    }),
+                    (None, None) => message,
+                }
             }).collect();
 
             emit(app, UiEvent::Pins { messages });

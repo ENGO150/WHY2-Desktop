@@ -173,7 +173,6 @@ export interface FileOwner
 export type PaneEntry =
     | { entry: "message"; message: ChatMessage; picture?: PictureStatus; replayed?: boolean }
     | { entry: "block"; title: string; rows: BlockRow[] }
-    | { entry: "pins"; messages: ChatMessage[] }
     | { entry: "transfer"; uid: string };
 
 //ONE USER'S PROFILE, AS profile.rs HANDS IT OVER

@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import type { BlockRow } from "./types";
 import { t } from "./i18n";
 
 //THE FINGERPRINT IS 64 HEX CHARS - GROUPED IN EIGHTS AND BROKEN INTO ROWS SO IT CAN ACTUALLY BE
@@ -35,7 +36,7 @@ export function fingerprint(hash: string): string[]
 
 //EVERY LIST BLOCK IS A TREE: ONE BRANCH PER ROW, THEN A RIGHT-ALIGNED ID COLUMN, THEN THE NAME.
 //THE TRUNK KEEPS RUNNING PAST A NESTED ROW UNLESS ITS OWNER WAS THE LAST ONE
-export function branches(rows: { depth: number }[]): string[]
+export function branches(rows: BlockRow[]): string[]
 {
     const last = rows.map((row, index) =>
     {

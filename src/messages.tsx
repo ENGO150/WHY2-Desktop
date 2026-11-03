@@ -136,7 +136,7 @@ export function MessageMenu(
         <MenuBox at={at} title={message.voice ? `${t("chat.voice_message")} · ${clock(message.voice.duration)}` : message.text}>
             <ReactItems message={message} heart={heart} reply={reply} hearted={hearted} close={close} />
 
-            {!message.voice && (
+            {!message.voice && !message.image && (
                 <button type="button" onClick={() => { close(); copy(message.text); }} className={MENU_ITEM}>
                     <Icon name="copy" className="h-4 w-4 text-muted" />
                     {t("menu.copy_text")}
@@ -954,39 +954,6 @@ export function renderBlock(title: string, rows: BlockRow[], key: number, config
                         </div>
                     );
                 })}
-            </div>
-        </div>
-    );
-}
-
-//THE PINNED MESSAGES, WHICH IS /pins' ANSWER - THE TUI PRINTS THE SAME TREE, SO THE ROWS ARE THE SAME
-//ROWS: A RIGHT-ALIGNED #ID, THE NAME IN ITS OWN COLOR, AND THE LINE IN THE COLOR IT WAS SAID IN
-export function renderPins(messages: ChatMessage[], key: number, config: ClientConfig)
-{
-    const glyphs = branches(messages.map(() => ({ depth: 0 })));
-    const width = messages.reduce((width, message) => Math.max(width, String(message.message_id ?? "").length), 1);
-
-    return (
-        <div key={key} className="note head">
-            <span className="flex justify-center pt-[12px]">
-                <Icon name="menu" className="h-4 w-4 text-faint" />
-            </span>
-
-            <div className="w-fit max-w-full rounded-lg border border-border px-4 py-3 text-text">
-                <div className="mb-2 text-[13.5px] font-medium">{t("pins.title", { count: messages.length }).replace(/[:：]$/, "")}</div>
-
-                {messages.map((message, index) => (
-                    <div key={index} className="flex items-start whitespace-pre-wrap py-[1px] font-mono text-[12.5px] leading-5">
-                        <span className="shrink-0 whitespace-pre text-faint/60">{glyphs[index]}</span>
-                        <span className="shrink-0 whitespace-pre text-faint">{`#${String(message.message_id ?? "").padStart(width)}  `}</span>
-                        <span className="shrink-0" style={{ color: messageColor(config, message.username_color) }}>{message.username}</span>
-                        <span className="shrink-0 text-faint">: </span>
-
-                        {message.voice
-                            ? <span className="text-faint">{t("pins.voice")}</span>
-                            : <span className="min-w-0 break-words" style={{ color: messageColor(config, message.message_color) }}>{message.text.replace(/\n/g, " ")}</span>}
-                    </div>
-                ))}
             </div>
         </div>
     );

@@ -154,9 +154,9 @@ buy nothing. What moved out is what does not need the state: `types.ts` (the mir
 picture belongs to), `roster.ts` (the order the member column is in, and which icon a device is),
 `narrow.ts`, `voice.tsx` (`VoiceNote`, and the playback store it reads — see **Voice messages**) — and the
 views that take props
-and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `screens.tsx`,
-`servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`, `profile.tsx` (the card a name opens and the editor
-for our own profile), `account.tsx` (the `/account` form — see **Account**).
+and draw: `sidebar.tsx`, `members.tsx`, `messages.tsx`, `settings-dialog.tsx`, `files.tsx`, `pins.tsx`,
+`screens.tsx`, `servers.tsx`, `login.tsx`, `tofu.tsx`, `titlebar.tsx`, `profile.tsx` (the card a name opens
+and the editor for our own profile), `account.tsx` (the `/account` form — see **Account**).
 
 **`index.html`** carries the one piece of styling that is not in `src/`: the page's own background and the
 mark that stands on it until the window is ready. Everything else arrives with the bundle, and on a phone that
@@ -870,9 +870,9 @@ Everything the user types goes through `send_input`, which mirrors `submit` in t
 The UI drives itself through this same path rather than adding IPC commands: clicking a channel invokes
 `send_input("/channel <name>")` and the sidebar's `+` sends the same thing with a name nobody is in yet; its
 header gear sends `/server settings` (drawn only when `get_commands` says our role has that action) while the
-gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`
-and its headset `/voice`; the monitor button opens the Screens window, whose rows send `/screen <name>`, `/attach <id>` and
-`/deattach`;
+gear by our own name sends `/settings` and the door sends `/exit`; the channel header's folder sends `/files`,
+its pin sends `/pins` and its headset `/voice`; the monitor button opens the Screens window, whose rows send
+`/screen <name>`, `/attach <id>` and `/deattach`;
 the microphone button sends `/mute`; the server settings' icon buttons send `/server icon <path>` and a
 bare `/server icon` (see **Server icons**); the composer's two upload buttons are `/upload` and `/image`
 by way of `upload_file_from_path`, which is the picker's answer put back on that same path; a row of the file list sends
@@ -2186,12 +2186,21 @@ The menus offer it too: `pinnable` is `reactable` (a stored, loaded lobby line) 
 `message.pinned`. A picture and a clip are stored lines like any other, so both take one.
 
 `/pins` is `PinsRequest`, answered with every pinned message oldest first as `ClientEvent::Pins` →
-`UiEvent::Pins { messages }`. The window pushes a **`pins` PaneEntry** — its own arm, not a `block`, since
-the rows carry a name color and a message color the tree's `BlockRow` has no room for — and `renderPins`
-draws the card the TUI prints: the branch glyphs, a right-aligned `#N`, the author in their color, and the
-line in the color it was said in, or `pins.voice` where the text is a clip. An empty answer is the dim
-`pins.none` line, as the TUI's is. The list is a photograph of the moment it was asked for; a pin landing
-while it is on screen moves the tagged line, not the card.
+`UiEvent::Pins { messages }`. It is a **window, not a card in the stream** — the TUI prints a block
+because that is all a terminal has, while a window has somewhere to keep a list that is looked at again.
+`PinsBox` in `pins.tsx` is that window (the shape `FilesBox` has), and the header's **pin button** is the
+other way into it: it sends `/pins` when closed and closes the window when open, and it is drawn where
+`get_commands` lists `pins` (`hasPins`). `/pins` typed, the palette's row and the button all end in the
+same event, so there is one window and not two. An empty answer opens it saying `Nothing is pinned.`
+
+A row is `#N`, the author's face and name in their color, the time and the line in its message color, or
+`pins.voice` where the text is a clip. A press **goes to the line** — `jumpToMessage` scrolls it into view
+and flashes it, the way a reply quote does — and closes the window. A right-click, or a hold on a phone,
+opens the row's own `MessageMenu` (`pinsHold`): the line is stored and in the lobby whatever pane is behind
+the window, so its actions are judged by `storedDeletable` rather than by the pane in front, and reply and
+edit close the window first because they need the composer underneath it. The refresh button sends `/pins`
+again; the list is a photograph of the moment it was asked for, and a pin landing while it is open moves
+the tagged line in the pane rather than rewriting the list.
 
 ### Account
 

@@ -78,6 +78,7 @@ import { useNarrow, useTouch, scrollerAt, canScroll, SWIPE, SWIPE_SLOPE, SWIPE_S
 import { TofuDialog, challenge } from "./tofu";
 import { ScreensBox, ScreenMenu } from "./screens";
 import { FilesBox } from "./files";
+import { PinsBox } from "./pins";
 import { LoginScreen } from "./login";
 import type { ServerForm } from "./servers";
 import { ServerSwitcher, AddServerDialog, useHoldMenu } from "./servers";
@@ -90,7 +91,7 @@ import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
 import type { Pictures, Lines, HeldPicture } from "./messages";
-import { renderNotice, renderChat, renderBlock, renderPins, renderTransfer, renderDay, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
+import { renderNotice, renderChat, renderBlock, renderTransfer, renderDay, messageColor, PictureMenu, MessageMenu, HeartsMenu, MarkupPreview, PRELOAD_SCREENS } from "./messages";
 import type { People, ProfileFields } from "./profile";
 import { ProfileCard, ProfileEditor } from "./profile";
 import { markWaiting, markLoading, deliverPicture, pictureName } from "./pictures";
@@ -359,6 +360,9 @@ function App()
     //WHO HEARTED A LINE, OFF ITS HEART CHIP
     const heartsHold = useHoldMenu<ChatMessage>("pointer");
 
+    //A ROW OF THE PINNED MESSAGES, WHICH IS A STORED LINE WHATEVER PANE IS IN FRONT
+    const pinsHold = useHoldMenu<ChatMessage>("pointer");
+
     //EVERYBODY'S PROFILE BY NAME, AND THE PICTURES THEY NAME BY HASH
     const [profiles, setProfiles] = useState<Record<string, ProfileInfo>>({});
     const [avatars, setAvatars] = useState<Record<string, string>>({});
@@ -415,6 +419,9 @@ function App()
     const [files, setFiles] = useState<FileOwner[] | null>(null);
     const [filter, setFilter] = useState("");
 
+    //WHAT IS PINNED, WHILE THE WINDOW SHOWING IT IS OPEN
+    const [pins, setPins] = useState<ChatMessage[] | null>(null);
+
     //THE NAME OF THE CHANNEL BEING MADE, WHILE ONE IS BEING MADE. THERE IS NO COMMAND FOR CREATING ONE -
     //A CHANNEL IS WHEREVER SOMEBODY IS STANDING, SO THIS IS /channel WITH A NAME NOBODY IS IN YET
     const [creating, setCreating] = useState<string | null>(null);
@@ -436,6 +443,7 @@ function App()
     const selectedRef = useRef<HTMLDivElement>(null);
     const settingsRef = useRef<HTMLDivElement>(null);
     const filesRef = useRef<HTMLDivElement>(null);
+    const pinsRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
     const accountRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -626,6 +634,9 @@ function App()
 
     //PINNING IS MODERATION'S, AND THE LIST SAYS WHETHER OURS HAS IT
     const hasPin = commands.some((command) => command.name === "pin");
+
+    //AND THE PINNED LIST IS EVERYBODY'S
+    const hasPins = commands.some((command) => command.name === "pins");
 
     //AND NO DRAWER SURVIVES THE PICTURE TAKING THE WHOLE SCREEN
     useEffect(() => { if (theater) setDrawer(null); }, [theater]);
@@ -1022,6 +1033,7 @@ function App()
         setDecoding("");
         setCreating(null);
         setFiles(null);
+        setPins(null);
         setProfiles({});
         setAvatars({});
         setProfilesOff(false);
@@ -1450,13 +1462,11 @@ function App()
                     break;
                 }
 
-                //  /pins - THE PINNED MESSAGES, AS A CARD IN THE PANE IT WAS ASKED FROM
+                //  /pins - THE PINNED MESSAGES, IN A WINDOW OF THEIR OWN
                 case "pins":
                 {
-                    const { messages } = payload.data;
-
-                    if (messages.length === 0) push(entryFor(localLine("system", t("pins.none"))));
-                    else push({ entry: "pins", messages });
+                    setFiles(null);
+                    setPins(payload.data.messages);
                     break;
                 }
 
@@ -1614,6 +1624,7 @@ function App()
                 //WHAT IS ON THE SERVER IS NOT SOMETHING THAT WAS SAID - IT IS A DRAWER, AND IT OPENS AS ONE
                 case "files":
                 {
+                    setPins(null);
                     setFiles(payload.data.owners);
                     setFilter("");
                     break;
@@ -1625,6 +1636,7 @@ function App()
                 case "open_account":
                 {
                     setFiles(null);
+                    setPins(null);
                     setAccount({ action: payload.data.action, busy: false, error: "", round: 0 });
                     break;
                 }
@@ -1680,6 +1692,7 @@ function App()
                 {
                     //TWO WINDOWS OVER THE SAME CHAT IS ONE TOO MANY - THE ONE BEING OPENED WINS
                     setFiles(null);
+                    setPins(null);
 
                     Promise.all([
                         invoke<ClientSetting[]>("get_client_settings"),
@@ -2177,6 +2190,10 @@ function App()
         && (message.username === username || role !== "user");
 
     const deleteMessage = (message_id: number) => send(`/delete ${message_id}`);
+
+    //A PINNED LINE IS A STORED LOBBY LINE WHATEVER PANE IS BEHIND ITS WINDOW
+    const storedDeletable = (message: ChatMessage) => message.message_id !== null
+        && (message.username === username || role !== "user");
 
     //HEARTS AND REPLIES LAND ON THE STORED LOBBY ONLY
     const reactable = (message: ChatMessage | null) => message !== null && message.message_id !== null
@@ -3149,6 +3166,12 @@ function App()
 
     useEffect(() => { if (filesOpen) filesRef.current?.focus(); }, [filesOpen]);
 
+    //THE PINNED MESSAGES TAKE IT THE SAME WAY, SO ESC REACHES THEM AND NOTHING TYPED AT THEM LANDS IN
+    //THE LINE BEHIND
+    const pinsOpen = pins !== null;
+
+    useEffect(() => { if (pinsOpen) pinsRef.current?.focus(); }, [pinsOpen]);
+
     //WHO IS SHARING. NOT send(): THE SERVER COUNTS PACKETS, AND THIS ONE HAS TO WAIT OUT WHATEVER THE
     //USER JUST DID - A /screens ON THE HEELS OF AN /attach IS WHAT THE SERVER CALLS SPAM
     const askScreens = () => { invoke("refresh_screens").catch(() => {}); };
@@ -3444,12 +3467,19 @@ function App()
         if (!narrow) chatInputRef.current?.focus();
     };
 
+    const closePins = () =>
+    {
+        setPins(null);
+
+        if (!narrow) chatInputRef.current?.focus();
+    };
+
     //THE COMPOSER IS WHERE TYPING GOES, WHEREVER THE CLICK BEFORE IT LANDED. THE TERMINAL HAD NOWHERE ELSE
     //FOR A KEYPRESS TO GO; A WINDOW DOES, AND A CHARACTER TYPED AT A MEMBER LIST WOULD OTHERWISE BE LOST.
     //A SHORTCUT, A DIALOG, OR A FIELD THAT ALREADY HAS THE KEYBOARD IS NOT OURS TO TAKE IT FROM
     useEffect(() =>
     {
-        if (!connected || settingsOpen || filesOpen || screensOpen || tofu || editing) return;
+        if (!connected || settingsOpen || filesOpen || pinsOpen || screensOpen || tofu || editing) return;
 
         const onKey = (event: KeyboardEvent) =>
         {
@@ -3465,7 +3495,7 @@ function App()
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [connected, settingsOpen, filesOpen, screensOpen, tofu, editing]);
+    }, [connected, settingsOpen, filesOpen, pinsOpen, screensOpen, tofu, editing]);
 
     useEffect(() => { settingsRowRef.current?.scrollIntoView({ block: "nearest" }); }, [settings?.selected]);
 
@@ -3530,6 +3560,7 @@ function App()
             else if (addOpen) closeAdd();
             else if (account) closeAccount();
             else if (screensOpen) setScreensOpen(false);
+            else if (pinsOpen) closePins();
             else if (filesOpen) closeFiles();
             else if (settingsOpen) closeSettings();
             else if (drawer !== null) setDrawer(null);
@@ -4264,7 +4295,6 @@ function App()
             if (step.day !== null) nodes.push(renderDay(step.day, `day-${index}`));
 
             if (entry.entry === "block") { nodes.push(renderBlock(entry.title, entry.rows, index, config)); return; }
-            if (entry.entry === "pins") { nodes.push(renderPins(entry.messages, index, config)); return; }
             if (entry.entry === "transfer") { nodes.push(renderTransfer(transfers[entry.uid], index)); return; }
 
             const message = entry.message;
@@ -4492,6 +4522,25 @@ function App()
         />
     );
 
+    //A PINNED ROW'S MENU: THE LINE IS STORED AND IN THE LOBBY WHATEVER PANE IS BEHIND THE WINDOW, SO ITS
+    //ACTIONS DO NOT ASK ABOUT THE ONE IN FRONT - AND REPLY AND EDIT PUT THE WINDOW AWAY, SINCE THEY NEED
+    //THE COMPOSER UNDER IT
+    const pinsMenu = pinsHold.menu && (
+        <MessageMenu
+            at={pinsHold.menu}
+            copy={copyMessage}
+            heart={heartMessage}
+            reply={(message) => { closePins(); replyMessage(message); }}
+            hearted={pinsHold.menu.value.hearts.includes(username)}
+            edit={pinsHold.menu.value.username === username && !pinsHold.menu.value.image && !pinsHold.menu.value.voice
+                ? (message) => { closePins(); editMessage(message); }
+                : null}
+            pin={hasPin ? pinMessage : null}
+            remove={storedDeletable(pinsHold.menu.value) ? deleteMessage : null}
+            close={pinsHold.close}
+        />
+    );
+
     //AND ITS HEART CHIP'S
     const heartsLine = heartsHold.menu && heartsHold.menu.value.message_id !== null
         ? lines.target(heartsHold.menu.value.message_id) ?? heartsHold.menu.value
@@ -4619,6 +4668,21 @@ function App()
             send={send}
             refresh={() => send("/files")}
             close={closeFiles}
+        />
+    );
+
+    //WHAT IS PINNED, AS A WINDOW OF ITS OWN - A ROW GOES TO THE LINE, AND A HOLD OPENS ITS MENU
+    const pinsBox = pins && (
+        <PinsBox
+            pins={pins}
+            config={config}
+            pinsRef={pinsRef}
+            narrow={narrow}
+            send={send}
+            jump={jumpToMessage}
+            hold={pinsHold.bind}
+            held={pinsHold.held}
+            close={closePins}
         />
     );
 
@@ -4851,6 +4915,7 @@ function App()
                                 {hasVoice && headerAction("headset", voice.enabled ? t("chat.leave_call") : t("chat.join_call"), () => send("/voice"), voice.enabled ? "live" : null)}
                                 {hasScreens && headerAction("monitor", t("screens.title"), openScreens, screen.sharing ? "live" : screensOpen ? "on" : null)}
                                 {headerAction("folder", t("files.title"), () => (filesOpen ? closeFiles() : send("/files")), filesOpen ? "on" : null)}
+                                {hasPins && headerAction("pin", t("chat.pins"), () => (pinsOpen ? closePins() : send("/pins")), pinsOpen ? "on" : null)}
 
                                 {/* A COLUMN WHEN WIDE, A DRAWER WHEN NARROW */}
                                 {headerAction("users", t("chat.members"), () => (narrow
@@ -5092,10 +5157,12 @@ function App()
             {profileEditor}
             {pictureMenu}
             {messageMenu}
+            {pinsMenu}
             {screenMenu}
             {heartsMenu}
             {settingsBox}
             {filesBox}
+            {pinsBox}
             {screensBox}
             {addBox}
             {accountBox}

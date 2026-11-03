@@ -32,7 +32,8 @@ deliberately kept in step about *behaviour*.
   with the channel's whole voice roster shown whether or not you are in the call
 - **Screen sharing**, both directions: share a monitor, or watch somebody else's full-window
 - **File transfer**, with a drawer that lists what everybody on the server is offering
-- **Pinned messages** — moderators pin a stored line, every client marks it, and `/pins` lists them
+- **Pinned messages** — moderators pin a stored line, every client marks it, and the pin button (or
+  `/pins`) opens the list of them
 - **Server list**: the addresses and identities you use, remembered, so the window stops asking
 
 ### The window
