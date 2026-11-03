@@ -8370,9 +8370,9 @@ dependencies = [
 
 [[package]]
 name = "why2"
-version = "1.5.3"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c265aaf4af2ab7bae0a670bea34d0928adcaf83a0202443e7cc7333922f2d432"
+checksum = "ccae25feec87e2132281275cd4fa0a38991e3189dc420575671bc12018981e4a"
 dependencies = [
  "hmac",
  "rand 0.10.3",
@@ -8386,9 +8386,9 @@ dependencies = [
 
 [[package]]
 name = "why2-chat"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "318c9bb464493af4ee1f549c1aa6135c33fc0c2c515934bf387f252b1a201576"
+checksum = "54eba641b257784c38fdd934f5864510a737f742764dedc5ff451cd184ddb50e"
 dependencies = [
  "ash",
  "audiopus",
