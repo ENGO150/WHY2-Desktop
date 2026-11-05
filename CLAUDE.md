@@ -11,10 +11,10 @@ with a **different feature set per target** (see **Android**):
 
 ```toml
 [target.'cfg(not(target_os = "android"))'.dependencies]
-why2-chat = { version = "2.4.1", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
+why2-chat = { version = "2.4.2", default-features = false, features = ["client_base", "client_voice", "client_screen"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-why2-chat = { version = "2.4.1", default-features = false, features = ["client_base", "client_voice"] }
+why2-chat = { version = "2.4.2", default-features = false, features = ["client_base", "client_voice"] }
 ```
 
 It used to be a git dependency on the crate's `development` branch, because the published crate had no
