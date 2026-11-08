@@ -163,6 +163,7 @@ pub(crate) struct ProfileInfo
     pub(crate) pronouns: String,
     pub(crate) website: String,
     pub(crate) status: String,
+    pub(crate) online_status: bool,
     pub(crate) avatar: Option<String>, //HASH AS HEX
 
     #[serde(default)]
@@ -200,6 +201,7 @@ pub(crate) struct OnlineUserInfo
 #[derive(Serialize, Clone)]
 pub(crate) struct OfflineUserInfo
 {
+    pub(crate) id: usize,
     pub(crate) username: String,
     pub(crate) username_color: Option<u8>,
     pub(crate) role: String,
@@ -212,6 +214,7 @@ pub(crate) struct ClientConfig
     pub(crate) show_id: bool,
     pub(crate) show_message_ids: bool,
     pub(crate) auto_load_voice: bool,
+    pub(crate) auto_show_images: bool,
     pub(crate) show_timestamps: bool,
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
@@ -441,6 +444,7 @@ pub(crate) enum UiEvent
     VoiceWaveform { hash: String, waveform: Option<Vec<u8>> },    //A CLIP'S BARS (None = IT IS GONE)
     Playback { hash: Option<String>, ms: u32, loading: bool },    //WHAT PLAYS, AND HOW FAR IN
     Recording { ms: Option<u32> },                                //OUR RECORDING (None = NONE)
+    StopMedia,
     PlayVoice { message_id: u64 },                                //  /play ID
     Popup { text: String },                                       //A TOAST, GONE IN A MOMENT
     Locale { locale: crate::i18n::LocaleInfo },                   //THE LANGUAGE CHANGED
@@ -457,6 +461,7 @@ pub(crate) enum UiEvent
     //THE ROSTER BEHIND THE SIDEBAR, AND THE REGISTERED USERS NOBODY IS CONNECTED AS (None = NOT OFFERED)
     Users { users: Vec<OnlineUserInfo>, offline: Option<Vec<OfflineUserInfo>> },
     UserJoined { user: OnlineUserInfo },                          //ADD ONE ROW WITHOUT ASKING AGAIN
+    UserBanned { username: String },
     UserLeft { id: usize, registered: bool },                     //DROP ONE ROW (registered = THE ACCOUNT STAYS)
     Block { title: String, rows: Vec<BlockRow> },                 //A TREE FOR THE PANE - /list, BANS
     Files { owners: Vec<FileOwnerInfo> },                         //WHAT IS UP FOR DOWNLOAD, AS A LIST
@@ -616,9 +621,9 @@ impl ProfileInfo
 {
     pub(crate) fn new(username: String, profile: UserProfile) -> Self
     {
-        let UserProfile { bio, pronouns, website, status, avatar, role } = profile;
+        let UserProfile { bio, pronouns, website, status, online_status, avatar, role } = profile;
 
-        Self { username, bio, pronouns, website, status, avatar: avatar.as_ref().map(crate::picture::hex), role: role.to_string() }
+        Self { username, bio, pronouns, website, status, online_status, avatar: avatar.as_ref().map(crate::picture::hex), role: role.to_string() }
     }
 }
 

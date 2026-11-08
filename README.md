@@ -32,6 +32,13 @@ deliberately kept in step about *behaviour*.
   with the channel's whole voice roster shown whether or not you are in the call
 - **Screen sharing**, both directions: share a monitor, or watch somebody else's full-window
 - **File transfer**, with a drawer that lists what everybody on the server is offering
+- **Persistent attachments** with WHY2 Chat 2.5.0: the file button asks whether to post a persistent
+  attachment or share a temporary file. Closing the prompt cancels. `/upload <path> [true|false]`
+  defaults to persistent; retention in lobby history depends on the server's history settings
+- **Audio and video attachments** with custom play/pause, volume, download and fullscreen controls, a seekable timeline,
+  automatic previews, and a right-click delete action for permitted messages. Playback uses the platform webview's codecs; unsupported media can be downloaded
+- **Offline presence** in the profile editor: turn off “Show me as online” to appear offline while
+  remaining connected. Offline accounts use stable IDs, including for profile and moderation requests
 - **Pinned messages** — moderators pin a stored line, every client marks it, and the pin button (or
   `/pins`) opens the list of them
 - **Server list**: the addresses and identities you use, remembered, so the window stops asking

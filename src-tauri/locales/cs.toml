@@ -16,6 +16,33 @@
 
 # Machine-translated from en.toml.
 
+"card.show_online" = "Zobrazovat mě online"
+"upload.persistence_prompt" = "Má být soubor trvalý? Trvalé soubory se odešlou jako přílohy a mohou zůstat v historii serveru. Dočasné soubory se sdílí po dobu připojení."
+"upload.persistent" = "Trvalý"
+"upload.temporary" = "Dočasný"
+"attachment.download" = "Stáhnout přílohu"
+"attachment.open" = "Otevřít přehrávač"
+"attachment.failed" = "Přehrávání selhalo. Stáhněte soubor a otevřete ho v jiném přehrávači."
+"attachment.loading" = "Načítání přílohy…"
+"attachment.speed" = "Rychlost přehrávání"
+"attachment.loop" = "Opakovat"
+"attachment.fullscreen" = "Celá obrazovka"
+"attachment.unavailable" = "Příloha není dostupná."
+
+"upload.attachment_too_large" = "Příloha je příliš velká (limit: {limit} MB)."
+
+"attachment.volume" = "Hlasitost"
+"attachment.delete" = "Smazat video"
+
+"attachment.pause" = "Pozastavit"
+"attachment.seek" = "Pozice přehrávání"
+
+"card.presence" = "Stav"
+"card.online" = "Online"
+"card.offline" = "Offline"
+"chat.media" = "Obrázky a videa"
+"chat.send_media" = "Odeslat obrázek nebo video"
+
 [meta]
 plurals = "one-few-other"
 

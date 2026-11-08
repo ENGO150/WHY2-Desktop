@@ -642,3 +642,45 @@ ol.md-list { list-style: decimal; }
     }
 }
 
+
+.attachment-player:fullscreen {
+    display: flex;
+    flex-direction: column;
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.attachment-player:fullscreen video {
+    max-height: none;
+}
+
+/* Touch controls keep enough room for a fingertip without widening the card. */
+@media (pointer: coarse)
+{
+    .attachment-player .attachment-control
+    {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .attachment-timeline input[type="range"]
+    {
+        height: 32px;
+    }
+
+    .attachment-player input[type="range"]::-webkit-slider-thumb
+    {
+        min-width: 20px;
+        min-height: 20px;
+    }
+
+    .attachment-player:fullscreen
+    {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+}

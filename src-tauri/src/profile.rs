@@ -89,9 +89,12 @@ pub(crate) fn request_profiles(usernames: Vec<String>, first: bool, app: AppHand
 
             let Some(write_stream) = state.write_stream.lock().await.clone() else { break };
 
+            let id = if username == *state.username.lock().unwrap() { None }
+                else if let Some(id) = state.user_ids.lock().unwrap().get(&username).copied() { Some(id) }
+                else { continue };
             state.profile_quiet.lock().unwrap().push(username.clone());
 
-            send_packet(&state, &write_stream, PacketCode::ProfileRequest { target: Some(username) }).await;
+            send_packet(&state, &write_stream, PacketCode::ProfileRequest { id }).await;
 
             time::sleep(PROFILE_GAP).await;
         }
@@ -122,6 +125,7 @@ pub(crate) async fn save_profile(profile: ProfileInfo, state: State<'_, AppState
             pronouns: profile.pronouns,
             website: website.to_string(),
             status: profile.status,
+            online_status: profile.online_status,
             ..UserProfile::default()
         },
     }).await;

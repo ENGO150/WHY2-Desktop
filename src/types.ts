@@ -183,6 +183,7 @@ export interface ProfileInfo
     pronouns: string;
     website: string;
     status: string;
+    online_status: boolean;
     avatar: string | null; //HASH AS HEX
     role: string;
 }
@@ -216,6 +217,7 @@ export interface OnlineUser
 //AT ALL, WHICH IS NOT AN EMPTY LIST BUT NO LIST - AND NO PANEL EITHER
 export interface OfflineUser
 {
+    id: number;
     username: string;
     username_color: number | null;
     role: string;
@@ -388,6 +390,7 @@ export interface ClientConfig
     show_id: boolean;
     show_message_ids: boolean;
     auto_load_voice: boolean;
+    auto_show_images: boolean;
     show_timestamps: boolean;
     disable_colors: boolean;
     render_math: boolean;
@@ -452,6 +455,7 @@ export type BridgeEvent =
     | { event: "voice_waveform"; data: { hash: string; waveform: number[] | null } }
     | { event: "playback"; data: { hash: string | null; ms: number; loading: boolean } }
     | { event: "recording"; data: { ms: number | null } }
+    | { event: "stop_media" }
     | { event: "play_voice"; data: { message_id: number } }
     | { event: "popup"; data: { text: string } }
     | { event: "server_icon"; data: { hash: string | null } }
@@ -461,6 +465,7 @@ export type BridgeEvent =
     | { event: "tofu_prompt"; data: TofuPrompt }
     | { event: "users"; data: { users: OnlineUser[]; offline: OfflineUser[] | null } }
     | { event: "user_joined"; data: { user: OnlineUser } }
+    | { event: "user_banned"; data: { username: string } }
     | { event: "user_left"; data: { id: number; registered: boolean } }
     | { event: "block"; data: { title: string; rows: BlockRow[] } }
     | { event: "files"; data: { owners: FileOwner[] } }

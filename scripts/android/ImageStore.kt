@@ -64,17 +64,27 @@ class ImageStore {
 
       val resolver = context.contentResolver
 
+      // Images go to the gallery; arbitrary persistent attachments go to Downloads.
+      val image = mime.startsWith("image/")
+      val directory = if (image) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS
+      val collection = if (image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        else MediaStore.Downloads.EXTERNAL_CONTENT_URI
       val values = ContentValues()
 
       values.put(MediaStore.Images.Media.DISPLAY_NAME, filename)
       values.put(MediaStore.Images.Media.MIME_TYPE, mime)
-      values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + ALBUM)
+      values.put(MediaStore.Images.Media.RELATIVE_PATH, directory + "/" + ALBUM)
       values.put(MediaStore.Images.Media.IS_PENDING, 1)
 
-      val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return NOWHERE
+      val uri = resolver.insert(collection, values) ?: return NOWHERE
 
       try {
-        resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return NOWHERE
+        val output = resolver.openOutputStream(uri)
+        if (output == null) {
+          resolver.delete(uri, null, null)
+          return NOWHERE
+        }
+        output.use { it.write(bytes) }
       } catch (error: Exception) {
         resolver.delete(uri, null, null)
 
@@ -91,14 +101,14 @@ class ImageStore {
         if (row.moveToFirst()) name = row.getString(0)
       }
 
-      return Environment.DIRECTORY_PICTURES + "/" + ALBUM + "/" + name
+      return directory + "/" + ALBUM + "/" + name
     }
 
     // AND BELOW 10, WHERE THE SHARED DIRECTORY WOULD HAVE TO BE ASKED FOR: THE APP'S OWN EXTERNAL
     // Pictures DIRECTORY, WHICH NEEDS NOTHING AND IS A PLACE A FILE MANAGER CAN REACH. THE SCANNER IS
     // WHAT GIVES THE GALLERY A CHANCE OF SHOWING IT
     private fun beside(context: Context, filename: String, mime: String, bytes: ByteArray): String {
-      val directory = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return NOWHERE
+      val directory = context.getExternalFilesDir(if (mime.startsWith("image/")) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS) ?: return NOWHERE
 
       if (!directory.exists() && !directory.mkdirs()) return NOWHERE
 

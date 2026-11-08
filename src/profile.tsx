@@ -37,7 +37,7 @@ export interface People
 }
 
 //THE FIELDS A SAVE CARRIES
-export type ProfileFields = Pick<ProfileInfo, "bio" | "pronouns" | "website" | "status">;
+export type ProfileFields = Pick<ProfileInfo, "bio" | "pronouns" | "website" | "status" | "online_status">;
 
 const CARD_WIDTH = 308;
 const GAP = 8;
@@ -203,13 +203,14 @@ function fieldsOf(profile: ProfileInfo | null): ProfileFields
         pronouns: profile?.pronouns ?? "",
         website: profile?.website ?? "",
         status: profile?.status ?? "",
+        online_status: profile?.online_status ?? true,
     };
 }
 
 function same(one: ProfileFields, other: ProfileFields): boolean
 {
     return one.bio === other.bio && one.pronouns === other.pronouns
-        && one.website === other.website && one.status === other.status;
+        && one.website === other.website && one.status === other.status && one.online_status === other.online_status;
 }
 
 const colorName = (choice: VocabularyValue) => choice.value.replace(/_/g, " ");
@@ -290,6 +291,40 @@ export function ColorPicker(
 function ColorRow(props: { label: string; colors: VocabularyValue[]; current: number | null; pick: (choice: VocabularyValue) => void })
 {
     return <ColorPicker {...props} className="field flex w-full items-center gap-3 text-left" />;
+}
+
+function PresenceRow({ online, pick }: { online: boolean; pick: (online: boolean) => void })
+{
+    const [open, setOpen] = useState(false);
+    const box = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const outside = (event: PointerEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
+        document.addEventListener("pointerdown", outside);
+        return () => document.removeEventListener("pointerdown", outside);
+    }, [open]);
+    const option = (value: boolean) => <>
+        <span className={`h-3 w-3 shrink-0 rounded-full ${value ? "bg-online" : "bg-faint"}`} />
+        <span>{t(value ? "card.online" : "card.offline")}</span>
+    </>;
+    return <div ref={box} className="relative" onKeyDown={(event) => {
+        if (event.key === "Escape" && open) { event.stopPropagation(); setOpen(false); }
+    }}>
+        <button type="button" className="field flex w-full items-center gap-3 text-left" aria-haspopup="listbox" aria-expanded={open}
+            aria-label={t("card.presence")} onClick={() => setOpen(!open)}>
+            <span className="flex-1">{t("card.presence")}</span>
+            <span className="flex items-center gap-2 text-[13px] text-muted">{option(online)}</span>
+            <Icon name="chevron" className={`h-4 w-4 text-faint ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && <div role="listbox" aria-label={t("card.presence")} className="absolute inset-x-0 top-full z-10 mt-1.5 rounded-xl border border-border-strong bg-overlay p-1 shadow-lg">
+            {[true, false].map((value) => <button key={String(value)} autoFocus={value === online} type="button" role="option" aria-selected={value === online}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-hover focus:bg-hover focus:outline-none"
+                onClick={() => { pick(value); setOpen(false); box.current?.querySelector<HTMLButtonElement>("button")?.focus(); }}>
+                {option(value)}
+                {value === online && <Icon name="check" className="ml-auto h-4 w-4 text-muted" />}
+            </button>)}
+        </div>}
+    </div>;
 }
 
 //OUR OWN PROFILE, EDITABLE
@@ -384,6 +419,7 @@ export function ProfileEditor(
                 )}
 
                 <div className="mt-5 flex flex-col gap-3">
+                    <PresenceRow online={draft.online_status} pick={(online_status) => setDraft({ ...draft, online_status })} />
                     <input aria-label={t("profile.status")} value={draft.status} onChange={set("status")} placeholder={t("profile.status")} className="field" />
                     <input aria-label={t("profile.pronouns")} value={draft.pronouns} onChange={set("pronouns")} placeholder={t("profile.pronouns")} className="field" spellCheck={false} />
                     <input aria-label={t("profile.website")} value={draft.website} onChange={set("website")} placeholder={t("profile.website")} className={`field ${badWebsite ? "border-error" : ""}`} spellCheck={false} />

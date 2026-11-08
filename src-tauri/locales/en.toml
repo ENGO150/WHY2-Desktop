@@ -21,6 +21,33 @@
 # own <language>.toml, and translate the values. {name} is filled in by the program, a table of
 # one/few/many/other is a plural, and [meta] plurals picks the rule exactly as the crate's does.
 
+"card.show_online" = "Show me as online"
+"upload.persistence_prompt" = "Should this file be persistent? Persistent files are posted as attachments and can be retained in server history. Temporary files are shared while you are connected."
+"upload.persistent" = "Persistent"
+"upload.temporary" = "Temporary"
+"attachment.download" = "Download attachment"
+"attachment.open" = "Open media player"
+"attachment.failed" = "Playback failed. Download the file to open it in another player."
+"attachment.loading" = "Loading attachment…"
+"attachment.speed" = "Playback speed"
+"attachment.loop" = "Loop"
+"attachment.fullscreen" = "Fullscreen"
+"attachment.unavailable" = "Attachment unavailable."
+
+"upload.attachment_too_large" = "Attachment is too large (limit: {limit} MB)."
+
+"attachment.volume" = "Volume"
+"attachment.delete" = "Delete video"
+
+"attachment.pause" = "Pause"
+"attachment.seek" = "Playback position"
+
+"card.presence" = "Status"
+"card.online" = "Online"
+"card.offline" = "Offline"
+"chat.media" = "Images and videos"
+"chat.send_media" = "Send image or video"
+
 [meta]
 plurals = "one-other"
 

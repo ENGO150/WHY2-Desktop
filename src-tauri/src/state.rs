@@ -84,6 +84,7 @@ pub(crate) struct AppState
     //OUR OWN NAME, OFF THE LINE THAT ANSWERED THE IDENTITY STEP - THE TUI'S App::username. NOTHING ELSE
     //EVER TELLS US: THE PM ECHO NAMES ONLY THE RECIPIENT, AND THE VOICE ROSTER IS EVERYBODY BUT US
     pub(crate) username: Mutex<String>,
+    pub(crate) user_ids: Mutex<HashMap<String, usize>>,
 
     //THE TWO HALVES OF THE VOICE PANEL, KEPT APART BECAUSE ONLY ONE OF THEM ARRIVES WHILE WE ARE NOT IN
     //THE CALL OURSELVES: THE ROSTER IS THE SERVER'S TRUTH ABOUT WHO IS IN VOICE IN OUR CHANNEL (US
@@ -124,6 +125,7 @@ impl AppState
     //PUT BACK EVERYTHING A SESSION ASKED FOR
     pub(crate) fn forget_requests(&self)
     {
+        self.user_ids.lock().unwrap().clear();
         self.image_queue.lock().unwrap().clear();
         self.image_fetching.lock().unwrap().clear();
         self.profile_queue.lock().unwrap().clear();

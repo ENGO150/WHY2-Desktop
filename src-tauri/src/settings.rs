@@ -126,6 +126,7 @@ pub(crate) fn get_client_config() -> ClientConfig
         show_id: config::read_config("show_id"),
         show_message_ids: servers::read_own("show_message_ids"),
         auto_load_voice: servers::read_own("auto_load_voice"),
+        auto_show_images: config::read_config("auto_show_images"),
         show_timestamps: config::read_config("show_timestamps"),
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),

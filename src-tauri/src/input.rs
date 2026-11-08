@@ -192,9 +192,9 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
     {
         //THE SERVER TURNS AN OVERSIZED IMAGE DOWN AS INVALID USAGE, WHICH SAYS NOTHING ABOUT WHY - THE
         //SIZE IS KNOWN HERE, SO IT IS SAID HERE
-        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_IMAGE_SIZE as u64
+        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_ATTACHMENT_SIZE as u64
         {
-            return Err(tr!("upload.image_too_large", limit = consts::MAX_IMAGE_SIZE / consts::MEGABYTE));
+            return Err(tr!("upload.image_too_large", limit = consts::MAX_ATTACHMENT_SIZE / consts::MEGABYTE));
         }
 
         //THE HEADER IS READ BEFORE THE SERVER IS ASKED FOR ANYTHING, SO A FILE THAT IS NOT AN IMAGE COSTS
@@ -212,17 +212,20 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
     Ok((file, path))
 }
 
-//ONE REQUEST, TWO CODES: A PERSISTENT IMAGE IS ASKED FOR EXACTLY THE WAY A FILESHARE IS - THE PATH IS
-//CHECKED AND THE FILE HASHED IDENTICALLY, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE
-//TWO IT BECOMES. THIS IS tui/mod.rs::submit'S Command::Upload | Command::Image, ARM FOR ARM
+//Persistent attachments and temporary file shares use the same upload handshake.
 pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
-    path: &str, image: bool)
+    path: &str, persistent: bool)
 {
-    let (mut file, path) = match open_upload(app, path, image).await
+    let (mut file, path) = match open_upload(app, path, false).await
     {
         Ok(opened) => opened,
         Err(error) => return popup(app, error),
     };
+
+    if persistent && file.metadata().map(|meta| meta.len()).unwrap_or(u64::MAX) > consts::MAX_ATTACHMENT_SIZE as u64
+    {
+        return popup(app, tr!("upload.attachment_too_large", limit = consts::MAX_ATTACHMENT_SIZE / consts::MEGABYTE));
+    }
 
     //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
     //THE REQUEST ITSELF - THE SERVER MAY ALREADY HOLD THE PICTURE AND ANSWER WITHOUT AN UPLOAD AT ALL
@@ -250,12 +253,7 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
     //THE UPLOAD TASK LOOKS THE PATH UP BY HASH WHEN THE APPROVAL COMES BACK
     client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
 
-    let request = match image
-    {
-        //NO COLOR: THE CAPTION IS NAMED IN WHATEVER THE SERVER HOLDS FOR US, THE WAY A MESSAGE IS
-        true => PacketCode::ImageRequest { hash, filename },
-        false => PacketCode::UploadRequest { hash },
-    };
+    let request = PacketCode::UploadRequest { hash, filename, persistent };
 
     send_packet(state, write_stream, request).await;
 }
@@ -310,7 +308,11 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
         true => match tail.parse::<usize>()
         {
             Ok(id) => Some(id),
-            Err(_) => return popup(app, tr!("bridge.invalid_usage")),
+            Err(_) => match state.user_ids.lock().unwrap().get(tail).copied()
+            {
+                Some(id) => Some(id),
+                None => return popup(app, tr!("bridge.invalid_usage")),
+            },
         },
 
         false => None,
@@ -320,7 +322,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
     {
         Subcommand::Mute      => PacketCode::ServerMute { id: id.unwrap() },
         Subcommand::Kick      => PacketCode::ServerKick { id: id.unwrap() },
-        Subcommand::Ban       => PacketCode::ServerBan { target: tail.to_owned() },
+        Subcommand::Ban       => PacketCode::ServerBan { id: id.unwrap() },
         Subcommand::BanIp     => PacketCode::ServerBanIp { id: id.unwrap() },
         Subcommand::Pardon    => PacketCode::ServerPardon { id: id.unwrap() },
         Subcommand::PardonIp  => PacketCode::ServerPardonIp { id: id.unwrap() },
@@ -335,7 +337,7 @@ pub(crate) async fn server_command(app: &AppHandle, state: &AppState, write_stre
 
             let Ok(role) = role.trim().parse::<Role>() else { return popup(app, tr!("bridge.invalid_role")) };
 
-            PacketCode::ServerRoleRequest { target: target.to_owned(), role }
+            PacketCode::ServerRoleRequest { id: match target.parse() { Ok(id) => id, Err(_) => match state.user_ids.lock().unwrap().get(target).copied() { Some(id) => id, None => return popup(app, tr!("bridge.invalid_usage")) } }, role }
         },
 
         //CUT LIKE AN AVATAR, OR DROPPED WITHOUT A PATH
@@ -399,18 +401,18 @@ pub(crate) async fn account_request(action: AccountAction, password: String, new
 //TRANSLATES ONE EVENT OF THE SESSION INTO SOMETHING THE WEBVIEW CAN RENDER
 
 #[tauri::command]
-pub(crate) async fn upload_file_from_path(path: String, image: bool, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn upload_file_from_path(path: String, persistent: bool, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
-    upload_file(&app, &state, &write_stream, &path, image).await;
+    upload_file(&app, &state, &write_stream, &path, persistent).await;
 
     Ok(())
 }
 
 //A CAPTION ASKED TO BE SEEN - ONE THE HISTORY REPLAYED, OR ONE A SERVER OFFERED RATHER THAN PUSHED. IT
 //GOES THROUGH THE CACHE FIRST (client::fetch_image), SINCE THE PICTURE A CLICK ASKS FOR IS USUALLY ALREADY
-//ON DISK AND ASKING THE SERVER FOR IT WOULD COST A DISK READ, A WHOLE RexStream DECRYPT AND MAX_IMAGE_SIZE
+//ON DISK AND ASKING THE SERVER FOR IT WOULD COST A DISK READ, A WHOLE RexStream DECRYPT AND MAX_ATTACHMENT_SIZE
 //BACK ON THE WIRE FOR NOTHING. A HIT COMES BACK AS ClientEvent::ImageData AND A MISS AS ImageRequest,
 //WHICH IS WHAT PUTS THE ASK ON THE WIRE - THE SERVER HOLDS ONE CLIENT TO ONE OF THOSE PER
 //IMAGE_REQUEST_DELAY AND SERVES IT LATE RATHER THAN REFUSING IT, SO THERE IS NOTHING TO RETRY:
@@ -492,16 +494,12 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                 {
                     Command::Upload => match parameters
                     {
-                        Some(path) => upload_file(&app, &state, &write_stream, &path, false).await,
+                        Some(parameters) =>
+                        {
+                            let (path, persistent) = command::upload_parameters(&parameters);
+                            upload_file(&app, &state, &write_stream, path, persistent).await;
+                        },
                         None => popup(&app, usage("/upload", "arg.path")),
-                    },
-
-                    //THE SAME PATH, ASKED FOR WITH THE OTHER CODE: THE SERVER KEEPS THE PICTURE AND PUTS
-                    //IT IN THE CHANNEL, AND THE HISTORY NAMES IT FOR EVERYBODY WHO LOGS IN AFTERWARDS
-                    Command::Image => match parameters
-                    {
-                        Some(path) => upload_file(&app, &state, &write_stream, &path, true).await,
-                        None => popup(&app, usage("/image", "arg.path")),
                     },
 
                     Command::Server => server_command(&app, &state, &write_stream, parameters).await,
@@ -551,7 +549,7 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     #[cfg(voice)]
                     Command::Play => match parameters.as_deref().map(|id| id.trim().parse::<u64>())
                     {
-                        None => crate::voice_message::stop(&app),
+                        None => { crate::voice_message::stop(&app); emit(&app, UiEvent::StopMedia); },
                         Some(Ok(message_id)) => emit(&app, UiEvent::PlayVoice { message_id }),
                         Some(Err(_)) => popup(&app, tr!("bridge.usage", usage = format!("/play [{}]", i18n::text("arg.id")))),
                     },
@@ -620,4 +618,18 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
     send_packet(&state, &write_stream, code).await;
 
     Ok(())
+}
+
+//Read the verified attachment cache. The frontend requests a cache miss once through request_image.
+#[tauri::command]
+pub(crate) async fn attachment_source(hash: String) -> Result<Option<String>, String>
+{
+    use base64::prelude::*;
+    let Some(hash) = unhex(&hash) else { return Err(tr!("bridge.invalid_image")) };
+    if let Some(data) = why2_chat::cache::load(&hash).await
+    {
+        return task::spawn_blocking(move || Some(BASE64_STANDARD.encode(data)))
+            .await.map_err(|error| error.to_string());
+    }
+    Ok(None)
 }

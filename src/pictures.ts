@@ -27,6 +27,7 @@ function waiting(entry: PaneEntry, hash: string, status: PictureStatus[]): boole
 {
     return entry.entry === "message"
         && entry.message.image?.hash === hash
+        && !entry.message.image.source
         && status.includes(entry.picture ?? "absent");
 }
 
@@ -74,7 +75,7 @@ export function markWaiting(panes: Panes, hash: string, front: string): Panes
 //DID ASK (tui/state.rs::deliver_image)
 export function deliverPicture(panes: Panes, hash: string, image: MessageImage | null, front: string): Panes
 {
-    return rewrite(panes, hash, image ? ["absent", "waiting"] : ["waiting"], (entry) =>
+    return rewrite(panes, hash, image ? ["absent", "waiting", "deferred"] : ["waiting"], (entry) =>
     {
         if (entry.entry !== "message") return entry;
         if (!image) return { ...entry, picture: "gone" };

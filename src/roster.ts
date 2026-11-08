@@ -48,11 +48,10 @@ export function sectionLabel(role: string): string
     return tOr(`sidebar.roles.${role}`, `${role.charAt(0).toUpperCase()}${role.slice(1)}s`);
 }
 
-//AND THE OTHERS BY NAME, WHICH IS THE ONLY ORDER A LIST OF PEOPLE WITH NO IDS HAS (THE TUI KEEPS THEM
-//IN A BTreeMap). A LEAVER IS FILED INTO THE SAME ORDER RATHER THAN LANDING AT THE END OF IT
+//Offline accounts have stable IDs in 2.5.0 and use the same ordering as the TUI.
 export function sortOffline(users: OfflineUser[]): OfflineUser[]
 {
-    return users.slice().sort((one, other) => one.username.localeCompare(other.username));
+    return users.slice().sort((one, other) => one.id - other.id);
 }
 
 //WHICH MARK STANDS FOR A CLIENT. THE TUI PRINTS THE WORD BECAUSE A TERMINAL HAS ONLY WORDS; A WINDOW HAS

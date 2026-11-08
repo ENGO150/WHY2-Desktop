@@ -213,7 +213,7 @@ export function PanelFooter({ children }: { children: React.ReactNode })
 }
 
 //A MENU AT A POINT, OUT OF ANY BOX THAT WOULD CLIP IT
-export function MenuBox({ at, title, children }: { at: { x: number; y: number }; title?: React.ReactNode; children: React.ReactNode })
+export function MenuBox({ at, title, children, portalTarget }: { at: { x: number; y: number }; title?: React.ReactNode; children: React.ReactNode; portalTarget?: Element })
 {
     return createPortal(
         <div
@@ -224,6 +224,6 @@ export function MenuBox({ at, title, children }: { at: { x: number; y: number };
             {title && <div className="truncate px-2 pb-1 pt-1.5 text-[12px] text-faint">{title}</div>}
             {children}
         </div>,
-        document.body,
+        portalTarget ?? document.body,
     );
 }

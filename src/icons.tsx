@@ -59,6 +59,7 @@ export const ICONS: Record<string, string[]> =
     phone: ["M7 2h10a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", "M10.5 18.5h3"],
     terminal: ["M4 4h16v16H4z", "M8 9l3 3-3 3", "M13 15h3"],
     play: ["M7.5 5.5v13l10.5-6.5-10.5-6.5z"],
+    pause: ["M8 5v14", "M16 5v14"],
     stop: ["M7 7h10v10H7z"],
     heart: ["M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"],
     pin: ["M12 17v5", "M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.3V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.7a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"],
@@ -76,6 +77,7 @@ export const ICONS: Record<string, string[]> =
 
     //WINDOW BUTTONS
     win_minimize: ["M6 12h12"],
+    fullscreen: ["M8 3H3v5", "M16 3h5v5", "M21 16v5h-5", "M8 21H3v-5"],
     win_maximize: ["M5 5h14v14H5z"],
     win_restore: ["M8 8h11v11H8z", "M16 8V5H5v11h3"],
 };

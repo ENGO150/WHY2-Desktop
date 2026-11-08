@@ -152,13 +152,14 @@ export function MemberColumn(
 
                             return (
                                 <button
-                                    key={user.username}
+                                    key={user.id}
                                     type="button"
                                     onClick={press(user.username)}
                                     {...bind({ username: user.username, user: null, role: user.role })}
                                     data-member={user.username}
                                     className={`${row} opacity-45 hover:opacity-100`}
                                 >
+                                    {config.show_id && <span className="text-xs text-faint">{user.id}</span>}
                                     <Avatar name={user.username} color={color} size={26} src={people.avatar(user.username)} />
 
                                     <span className="min-w-0 flex-1">

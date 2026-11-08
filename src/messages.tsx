@@ -17,13 +17,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import React from "react";
+import { Attachment, isMedia } from "./attachment";
 
 import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus, TransferInfo } from "./types";
 import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar, MenuBox, MENU_ITEM } from "./components";
-import { branches, clock, linkParts, sentAt } from "./format";
+import { branches, clock, linkParts, sentAt, fileKind } from "./format";
 import { mentions } from "./palette";
 import { deviceIcon } from "./roster";
 import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, type Shape } from "./markup";
@@ -54,6 +55,9 @@ export interface HeldPicture
 //A HOLD ENDS IN A CLICK LIKE ANY OTHER, AND THAT ONE WOULD OPEN THE PICTURE BEING HELD
 export interface Pictures
 {
+    auto: boolean;
+    like: (message: ChatMessage) => (() => void) | null;
+    remove: (message: ChatMessage) => (() => void) | null;
     show: (hash: string) => void;
 
     //A PICTURE THE CACHE ALREADY HOLDS, ASKED FOR BECAUSE ITS CAPTION IS ON SCREEN - NOBODY PRESSED
@@ -606,7 +610,7 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 {
     if (!transfer) return null;
 
-    const { upload, image, avatar, icon, filename, done, total, outcome } = transfer;
+    const { upload, avatar, icon, filename, done, total, outcome } = transfer;
 
     const percent = total === 0 ? 100 : Math.floor((Math.min(done, total) * 100) / total);
 
@@ -622,7 +626,7 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 
             <div className="my-1 w-full max-w-[380px] rounded-lg border border-border px-3 py-2.5">
                 <div className="flex items-center gap-3">
-                    <Icon name={image || avatar || icon ? "image" : "file"} className="h-5 w-5 shrink-0 text-muted" />
+                    <Icon name={avatar || icon ? "image" : fileKind(filename).icon} className="h-5 w-5 shrink-0 text-muted" />
 
                     <span className="min-w-0 flex-1">
                         <span className="block truncate text-[14px] text-text">{avatar ? t("chat.transfer.avatar") : icon ? t("chat.transfer.icon") : filename}</span>
@@ -643,6 +647,8 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 //A PICTURE, OR THE CAPTION STANDING IN FOR ONE
 export function renderPicture(message: ChatMessage, image: MessageImage, status: PictureStatus, pictures: Pictures)
 {
+    if (image.hash && (isMedia(image.filename) || !/\.(avif|bmp|gif|ico|jpeg|jpg|png|pnm|qoi|tga|webp)$/i.test(image.filename) || (!image.source && status === "gone"))) return <Attachment image={image} message={message} auto={pictures.auto} remove={pictures.remove(message)} like={pictures.like(message)} />;
+
     if (image.source)
     {
         return (

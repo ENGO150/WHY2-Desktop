@@ -86,7 +86,8 @@ import { AccountDialog, type AccountBox } from "./account";
 import { SettingsDialog } from "./settings-dialog";
 import { applyTheme, cachedTheme, DEFAULT_THEME } from "./themes";
 import { Sidebar } from "./sidebar";
-import { Avatar } from "./components";
+import { isMedia } from "./attachment";
+import { Avatar, Overlay, PanelHeader } from "./components";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
 import { MemberColumn } from "./members";
@@ -184,6 +185,8 @@ const IMAGE_EXTENSIONS =
     "qoi", "hdr", "ff", "dds", "pnm", "pbm", "pgm", "ppm", "pam",
 ];
 
+const VIDEO_EXTENSIONS = ["mp4", "m4v", "webm", "ogv", "mov", "mkv", "avi"];
+
 //ONE MESSAGE OF A PANE, BY ITS SERVER ID
 function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
 {
@@ -248,13 +251,16 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, show_timestamps: true, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, auto_show_images: true, show_timestamps: true, disable_colors: false, render_math: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
 
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
+    const [uploadChoice, setUploadChoice] = useState<string | null>(null);
+    const uploadChoiceRef = useRef<HTMLDivElement>(null);
+    const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
     const [activeChannels, setActiveChannels] = useState<string[]>([]);
     const [currentChannel, setCurrentChannel] = useState(LOBBY);
@@ -1006,6 +1012,8 @@ function App()
         setPaneByChannel({});
         setUsers([]);
         setOffline(null);
+        bannedUsers.current.clear();
+        setUploadChoice(null);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
         setDms({});
@@ -1602,6 +1610,10 @@ function App()
                 }
 
                 //  /play ID - THE PANE KNOWS WHICH CLIP IT IS
+                case "stop_media":
+                    window.dispatchEvent(new Event("why2-stop-media"));
+                    break;
+
                 case "play_voice":
                 {
                     const { message_id } = payload.data;
@@ -1610,6 +1622,10 @@ function App()
                     const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
 
                     if (!message) push(entryFor(localLine("error", t("voice_message.not_loaded", { message_id }))));
+                    else if (message.image && isMedia(message.image.filename)) {
+                        jumpToMessage(message_id);
+                        requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("why2-play-media", { detail: message_id })));
+                    }
                     else if (!message.voice) push(entryFor(localLine("error", t("voice_message.not_voice", { message_id }))));
                     else playVoice(message.voice.hash);
                     break;
@@ -1881,6 +1897,7 @@ function App()
                 case "user_joined":
                 {
                     const joined = payload.data.user;
+                    bannedUsers.current.delete(joined.username);
 
                     setUsers((previous) => previous.some((user) => user.id === joined.id)
                         ? previous
@@ -1895,6 +1912,11 @@ function App()
                 //AND THE OTHER WAY ROUND: THE SERVER HAS NO GUESTS, SO SOMEBODY WHO LEFT IS A REGISTERED
                 //USER UNLESS THEIR ACCOUNT WENT WITH THEM - THE ROW WE ARE DROPPING IS ALSO WHERE THEIR NAME
                 //AND THEIR COLOR COME FROM
+                case "user_banned":
+                    bannedUsers.current.add(payload.data.username);
+                    setOffline((previous) => previous?.filter((user) => user.username !== payload.data.username) ?? null);
+                    break;
+
                 case "user_left":
                 {
                     const { id, registered } = payload.data;
@@ -1906,11 +1928,11 @@ function App()
                     {
                         stoppedTyping(gone.username);
 
-                        if (registered) setOffline((listed) =>
+                        if (registered && !bannedUsers.current.has(gone.username)) setOffline((listed) =>
                         {
                             if (!listed || listed.some((user) => user.username === gone.username)) return listed;
 
-                            return sortOffline([...listed, { username: gone.username,
+                            return sortOffline([...listed, { id: gone.id, username: gone.username,
                                 username_color: gone.username_color, role: gone.role, rank: gone.rank }]);
                         });
                     }
@@ -2529,17 +2551,17 @@ function App()
         }
     };
 
-    //THE ONE UPLOAD PATH, ASKED FOR EITHER WAY ROUND: A FILESHARE IS SOMETHING TO FETCH LATER AND AN IMAGE
-    //IS SOMETHING TO LOOK AT NOW, AND ONLY THE CODE THE SERVER IS ASKED WITH DECIDES WHICH OF THE TWO IT IS
+    //Pictures are persistent; the general file picker asks which lifetime to use.
     const uploadFile = async (image: boolean) =>
     {
         const selected = await open(image
-            ? { multiple: false, filters: [{ name: t("chat.images"), extensions: IMAGE_EXTENSIONS }] }
+            ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }] }
             : { multiple: false });
 
         if (typeof selected !== "string") return;
 
-        invoke("upload_file_from_path", { path: selected, image }).catch((error: unknown) => setPopupMessage(String(error)));
+        if (!image) { setUploadChoice(selected); return; }
+        invoke("upload_file_from_path", { path: selected, persistent: true }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -2903,6 +2925,9 @@ function App()
 
     const pictures: Pictures =
     {
+        auto: config.auto_show_images,
+        like: (message) => reactable(message) ? () => heartMessage(message.message_id!) : null,
+        remove: (message) => deletable(message) ? () => deleteMessage(message.message_id!) : null,
         show: (hash: string) =>
         {
             const front = currentChannelRef.current;
@@ -5077,7 +5102,7 @@ function App()
                                             : (
                                                 <>
                                                     <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
-                                                    <IconButton icon="image" label={t("chat.send_picture")} onClick={() => uploadFile(true)} />
+                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true)} />
                                                 </>
                                             )}
 
@@ -5152,6 +5177,20 @@ function App()
                 </div>
             )}
 
+            {uploadChoice && <Overlay narrow={narrow} width={440} label={t("chat.attach")} cardRef={uploadChoiceRef} close={() => setUploadChoice(null)}>
+                <PanelHeader title={t("chat.attach")} close={() => setUploadChoice(null)} />
+                <div className="px-6 pb-6">
+                    <p className="mb-3 break-all text-sm font-medium">{uploadChoice.split(/[\\/]/).pop()}</p>
+                    <p className="mb-5 text-sm text-muted">{t("upload.persistence_prompt")}</p>
+                    <div className="flex gap-3">
+                        {[true, false].map((persistent) => <button key={String(persistent)} type="button" autoFocus={persistent} className="btn btn-accent flex-1" onClick={() => {
+                            const path = uploadChoice;
+                            setUploadChoice(null);
+                            invoke("upload_file_from_path", { path, persistent }).catch((error: unknown) => setPopupMessage(String(error)));
+                        }}>{t(persistent ? "upload.persistent" : "upload.temporary")}</button>)}
+                    </div>
+                </div>
+            </Overlay>}
             {pictureBox}
             {profileCard}
             {profileEditor}

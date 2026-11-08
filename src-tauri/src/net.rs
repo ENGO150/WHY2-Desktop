@@ -103,7 +103,7 @@ async fn pump_pictures(state: &AppState)
             hash
         };
 
-        send_packet(state, &write_stream, PacketCode::ImageDataRequest { hash: next }).await;
+        send_packet(state, &write_stream, PacketCode::AttachmentDataRequest { hash: next }).await;
     }
 }
 
