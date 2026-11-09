@@ -44,6 +44,7 @@ export function Attachment({ image, message, auto, remove, like }: {
     const [volume, setVolume] = useState(1);
     const [volumeOpen, setVolumeOpen] = useState(false);
     const [opened, setOpened] = useState(false);
+    const [expanded, setExpanded] = useState(false);
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const touch = useTouch();
     const touchAt = useRef(-Infinity);
@@ -77,6 +78,34 @@ export function Attachment({ image, message, auto, remove, like }: {
         return () => { window.removeEventListener("pointerdown", dismiss); window.removeEventListener("keydown", escape); };
     }, [menu, volumeOpen]);
     useEffect(() => { if (auto && mime) void load(); }, [auto]);
+
+    useEffect(() => {
+        if (!expanded) return;
+        const element = room.current;
+        //The top layer escapes the chat's scrolling and clipping ancestors without
+        //remounting the video (which would reset playback).
+        if (element && typeof element.showPopover === "function") {
+            element.setAttribute("popover", "manual");
+            element.showPopover();
+        }
+        const close = (event: Event) => {
+            event.preventDefault();
+            setExpanded(false);
+        };
+        const escape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") { event.stopImmediatePropagation(); close(event); }
+        };
+        window.addEventListener("why2-exit-media-fullscreen", close);
+        window.addEventListener("keydown", escape, true);
+        return () => {
+            window.removeEventListener("why2-exit-media-fullscreen", close);
+            window.removeEventListener("keydown", escape, true);
+            if (element?.hasAttribute("popover")) {
+                element.hidePopover();
+                element.removeAttribute("popover");
+            }
+        };
+    }, [expanded]);
 
     useEffect(() => {
         const play = (event: Event) => {
@@ -193,10 +222,25 @@ export function Attachment({ image, message, auto, remove, like }: {
 
     async function fullscreen()
     {
+        if (expanded) { setExpanded(false); return; }
+        if (!room.current) return;
+        if (document.fullscreenElement === room.current) {
+            try { await document.exitFullscreen(); }
+            catch (reason) { setError(String(reason)); }
+            return;
+        }
+        setOpened(true);
+        void load();
         try {
-            if (document.fullscreenElement === room.current) await document.exitFullscreen();
-            else { setOpened(true); void load(); await room.current?.requestFullscreen(); }
-        } catch (reason) { setError(String(reason)); }
+            if (!document.fullscreenEnabled || !room.current.requestFullscreen) {
+                setExpanded(true);
+                return;
+            }
+            await room.current.requestFullscreen();
+        } catch {
+            //Some WebViews expose the API but reject every fullscreen request.
+            if (alive.current) setExpanded(true);
+        }
     }
 
     const shown = Boolean(mime && (auto || opened || source));
@@ -207,7 +251,7 @@ export function Attachment({ image, message, auto, remove, like }: {
         </button>
     );
 
-    return <div ref={room} className="attachment-player my-2 w-full max-w-[520px] overflow-hidden rounded-xl border border-border bg-panel" data-attachment-id={message.message_id}
+    return <div ref={room} className={`attachment-player my-2 w-full max-w-[520px] overflow-hidden rounded-xl border border-border bg-panel${expanded ? " attachment-expanded" : ""}`} data-attachment-id={message.message_id}
         onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -326,7 +370,7 @@ export function Attachment({ image, message, auto, remove, like }: {
         </div>
         {loading && <p role="status" className="px-4 pb-2 text-xs text-muted">{t("attachment.loading")}</p>}
         {error && <p role="alert" className="px-4 pb-2 text-xs text-error">{error}</p>}
-        {menu && remove && <MenuBox at={menu} title={image.filename} portalTarget={document.fullscreenElement ?? undefined}>
+        {menu && remove && <MenuBox at={menu} title={image.filename} portalTarget={document.fullscreenElement ?? (expanded ? room.current : null) ?? undefined}>
             <button autoFocus type="button" className={`${MENU_ITEM} text-error`} onClick={() => { setMenu(null); remove(); }}>
                 <Icon name="trash" className="h-4 w-4" />{t("attachment.delete")}
             </button>

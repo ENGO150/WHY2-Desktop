@@ -3575,6 +3575,8 @@ function App()
 
         host.__why2Back = () =>
         {
+            if (!window.dispatchEvent(new Event("why2-exit-media-fullscreen", { cancelable: true }))) return true;
+            if (document.fullscreenElement) { void document.exitFullscreen(); return true; }
             //WHATEVER IS ON TOP, IN THE ORDER THEY STACK - AND A PICTURE SOMEBODY HAS ZOOMED INTO IS
             //ONE MORE LAYER THAN THE PICTURE ITSELF
             if (lightbox && zoom) setZoom(null);

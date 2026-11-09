@@ -643,7 +643,8 @@ ol.md-list { list-style: decimal; }
 }
 
 
-.attachment-player:fullscreen {
+.attachment-player:fullscreen,
+.attachment-player.attachment-expanded {
     display: flex;
     flex-direction: column;
     max-width: none;
@@ -654,7 +655,17 @@ ol.md-list { list-style: decimal; }
     border-radius: 0;
 }
 
-.attachment-player:fullscreen video {
+.attachment-player.attachment-expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    max-height: none;
+    padding: var(--inset-top, 0px) 0 var(--inset-bottom, 0px);
+    color: var(--text);
+}
+
+.attachment-player:fullscreen video,
+.attachment-player.attachment-expanded video {
     max-height: none;
 }
 
@@ -678,9 +689,10 @@ ol.md-list { list-style: decimal; }
         min-height: 20px;
     }
 
-    .attachment-player:fullscreen
+    .attachment-player:fullscreen,
+    .attachment-player.attachment-expanded
     {
-        padding: env(safe-area-inset-top) env(safe-area-inset-right)
-            env(safe-area-inset-bottom) env(safe-area-inset-left);
+        padding: max(var(--inset-top, 0px), env(safe-area-inset-top)) env(safe-area-inset-right)
+            max(var(--inset-bottom, 0px), env(safe-area-inset-bottom)) env(safe-area-inset-left);
     }
 }
