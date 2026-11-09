@@ -79,7 +79,9 @@ sudo apt-get install -y \
   libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf file \
   libayatana-appindicator3-dev libxdo-dev libssl-dev \
   pkg-config libasound2-dev libopus-dev libpipewire-0.3-dev libegl-dev \
-  clang libclang-dev libgbm-dev nasm
+  clang libclang-dev libgbm-dev nasm \
+  gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-pulseaudio
 ```
 
 #### macOS

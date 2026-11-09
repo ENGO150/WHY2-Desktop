@@ -26,6 +26,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
     "publisher": "Václav Šmejkal",
     "homepage": "https://why2.satan.red",
     "copyright": "Copyright (C) 2026 Václav Šmejkal - GPL-3.0-only",
