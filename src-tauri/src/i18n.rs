@@ -152,6 +152,7 @@ const CRATE_KEYS: &[&str] =
     "sidebar.roles.moderator",
     "sidebar.roles.owner",
     "tofu.challenge",
+    "upload.not_found",
     "typing.one",
     "typing.two",
     "voice_message.not_loaded",

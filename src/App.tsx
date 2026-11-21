@@ -278,6 +278,7 @@ function App()
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
     const [uploadChoice, setUploadChoice] = useState<{ path: string; destination: UploadDestination; session: number } | null>(null);
+    const [uploadsPreparing, setUploadsPreparing] = useState(0);
     const uploadChoiceRef = useRef<HTMLDivElement>(null);
     const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
@@ -1113,6 +1114,7 @@ function App()
         setOffline(null);
         bannedUsers.current.clear();
         setUploadChoice(null);
+        setUploadsPreparing(0);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
         setDms([]);
@@ -2701,25 +2703,40 @@ function App()
         }
     };
 
-    //Pictures are persistent; the general file picker asks which lifetime to use.
+    // The file picker and private media picker offer both retention modes.
     const submitUpload = (path: string, persistent: boolean, destination: UploadDestination, session: number) =>
     {
         if (session !== chatSession.current) return;
-        invoke("upload_file_from_path", { path, persistent, destination }).catch((error: unknown) => setPopupMessage(String(error)));
+        setUploadsPreparing((count) => count + 1);
+        invoke("upload_file_from_path", { path, persistent, destination })
+            .catch((error: unknown) => { if (session === chatSession.current) setPopupMessage(String(error)); })
+            .finally(() => { if (session === chatSession.current) setUploadsPreparing((count) => count - 1); });
     };
 
     const uploadFile = async (image: boolean, peer: string | null) =>
     {
         const destination: UploadDestination = peer === null ? { kind: "channel" } : { kind: "private", username: peer };
         const session = chatSession.current;
-        const selected = await open(image
-            ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
-            : { multiple: false });
+        try
+        {
+            const selected = await open(image
+                ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
+                : { multiple: false });
 
-        if (typeof selected !== "string" || session !== chatSession.current) return;
+            if (selected === null || session !== chatSession.current) return;
+            if (typeof selected !== "string") throw new Error(t("upload.not_found"));
 
-        if (!image) { setUploadChoice({ path: selected, destination, session }); return; }
-        submitUpload(selected, true, destination, session);
+            if (!image || destination.kind === "private")
+            {
+                setUploadChoice({ path: selected, destination, session });
+                return;
+            }
+            submitUpload(selected, true, destination, session);
+        }
+        catch (error)
+        {
+            setPopupMessage(error instanceof Error ? error.message : String(error));
+        }
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -5277,6 +5294,8 @@ function App()
                             onMouseDown={(event) => event.stopPropagation()}
                         >
                             <div className={`relative mx-auto max-w-[820px] ${narrow ? "" : "px-3"}`}>
+                                {uploadsPreparing > 0 && <p role="status" className="mb-1 text-xs text-muted">{t("card.uploading")}</p>}
+
                                 {Object.values(transfers).filter(isChatAttachmentUpload).map(({ uid, done, total }) => (
                                     <progress key={uid} max={Math.max(total, 1)} value={done}
                                         aria-label={t("card.uploading")}
