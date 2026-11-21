@@ -40,7 +40,8 @@ deliberately kept in step about *behaviour*.
 - **Audio and video attachments** with custom play/pause, volume, download and fullscreen controls, a seekable timeline,
   automatic previews, and a right-click delete action for permitted messages. The player slider updates
   the saved Media volume setting shared by attachments and voice notes. Media volume is capped by
-  Output volume. The Audio settings also include loudness normalisation.
+  Output volume. Loudness normalisation applies to audio attachments and voice notes.
+  Inline video uses the webview's native playback and supports up to 100% effective volume.
 - **Offline presence** in the profile editor: turn off “Show me as online” to appear offline while
   remaining connected. Offline accounts use stable IDs, including for profile and moderation requests
 - **Pinned messages** — moderators pin a stored line, every client marks it, and the pin button (or

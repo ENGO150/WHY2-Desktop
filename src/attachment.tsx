@@ -78,7 +78,7 @@ export function Attachment({ image, message, auto, media, remove, like }: {
 })
 {
     const [source, setSource] = useState<string | null>(null);
-    const [playbackUrl, setPlaybackUrl] = useState<string>();
+    const [audioUrl, setAudioUrl] = useState<string>();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [playing, setPlaying] = useState(false);
@@ -104,6 +104,8 @@ export function Attachment({ image, message, auto, media, remove, like }: {
     const room = useRef<HTMLDivElement>(null);
     const alive = useRef(true);
     const mime = image.hash ? mediaType(image.filename) : undefined;
+    const audioOnly = mime?.startsWith("audio/") ?? false;
+    const playbackUrl = audioOnly ? audioUrl : source;
     const [autoplay, setAutoplay] = useState(false);
     const shown = Boolean(mime && (auto || opened || source));
     useEffect(() => {
@@ -169,7 +171,8 @@ export function Attachment({ image, message, auto, media, remove, like }: {
 
     function connectAudio()
     {
-        if (graph.current) return;
+        // Keep the video element on the webview's native decoder and audio output.
+        if (!audioOnly || graph.current) return;
         prepareAudio();
         const context = audio;
         const element = player.current;
@@ -221,22 +224,22 @@ export function Attachment({ image, message, auto, media, remove, like }: {
     useEffect(() => { if (auto && mime) void load(); }, [auto]);
     useEffect(() =>
     {
-        if (!source || !mime) return;
+        if (!source || !audioOnly) return;
         let url: string | undefined;
         let current = true;
         fetch(source).then((response) => response.blob()).then((blob) =>
         {
             if (!current) return;
             url = URL.createObjectURL(blob);
-            setPlaybackUrl(url);
-        }).catch(() => { if (current) setPlaybackUrl(source); });
+            setAudioUrl(url);
+        }).catch(() => { if (current) setAudioUrl(source); });
 
         return () =>
         {
             current = false;
             if (url) URL.revokeObjectURL(url);
         };
-    }, [source, mime]);
+    }, [source, audioOnly]);
 
     useEffect(() => {
         if (!expanded) return;
@@ -282,7 +285,12 @@ export function Attachment({ image, message, auto, media, remove, like }: {
     }, [message.message_id, source]);
     useEffect(() => {
         if (autoplay && playbackUrl && player.current) {
-            void player.current.play().catch((reason) => setError(String(reason)));
+            setError("");
+            void player.current.play().catch((reason: unknown) => {
+                if (alive.current && (!(reason instanceof DOMException) || reason.name !== "AbortError")) {
+                    setError(t("attachment.failed"));
+                }
+            });
             setAutoplay(false);
         }
     }, [autoplay, playbackUrl]);
@@ -337,7 +345,7 @@ export function Attachment({ image, message, auto, media, remove, like }: {
 
     function togglePlayback()
     {
-        prepareAudio();
+        if (audioOnly) prepareAudio();
         if (playing) {
             player.current?.pause();
             setAutoplay(false);
@@ -495,7 +503,7 @@ export function Attachment({ image, message, auto, media, remove, like }: {
                 }
             }}>
 
-            <video ref={player} src={playbackUrl} poster={image.source ?? undefined} playsInline preload="auto"
+            <video ref={player} src={playbackUrl ?? undefined} poster={image.source ?? undefined} playsInline preload="auto"
                 className="h-full max-h-[65vh] w-full object-contain" aria-label={image.filename}
                 onPlay={() => { frameChanged.current = true; setPlaying(true); connectAudio(); }}
                 onPause={() => { setPlaying(false); capturePausedFrame(); }}

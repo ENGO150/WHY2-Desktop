@@ -224,7 +224,8 @@ function localLine(kind: MessageKind, text: string): ChatMessage
     };
 }
 
-const directPane = (username: string) => `\0${username}`;
+const DIRECT_PANE_PREFIX = "\0";
+const directPane = (username: string) => `${DIRECT_PANE_PREFIX}${username}`;
 const newHistory = (): History => ({ entries: [], pos: 0, stash: null, prefix: null });
 
 interface PrivateUnread
@@ -858,6 +859,8 @@ function App()
 
             for (const channel in next)
             {
+                if (channel.startsWith(DIRECT_PANE_PREFIX)) continue;
+
                 if (channel !== currentChannelRef.current && !channels.has(channel))
                 {
                     delete next[channel];
