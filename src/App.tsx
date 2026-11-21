@@ -186,6 +186,12 @@ const IMAGE_EXTENSIONS =
 ];
 
 
+// Attachment transfer events carry a local UID but no conversation.
+function isChatAttachmentUpload(transfer: TransferInfo): boolean
+{
+    return transfer.upload && transfer.image && !transfer.avatar && !transfer.icon;
+}
+
 //ONE MESSAGE OF A PANE, BY ITS SERVER ID
 function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
 {
@@ -226,6 +232,8 @@ function localLine(kind: MessageKind, text: string): ChatMessage
 
 const DIRECT_PANE_PREFIX = "\0";
 const directPane = (username: string) => `${DIRECT_PANE_PREFIX}${username}`;
+type UploadDestination = { kind: "channel" } | { kind: "private"; username: string };
+
 const newHistory = (): History => ({ entries: [], pos: 0, stash: null, prefix: null });
 
 interface PrivateUnread
@@ -262,14 +270,14 @@ function App()
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, auto_show_images: true, show_timestamps: true, disable_colors: false, render_math: true, media_volume: 100, media_volume_max: 200, output_volume: 100, media_normalisation: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, auto_show_images: true, show_timestamps: true, disable_colors: false, render_math: true, media_volume: 100, output_volume: 100, media_normalisation: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
 
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
-    const [uploadChoice, setUploadChoice] = useState<{ path: string; peer: string | null } | null>(null);
+    const [uploadChoice, setUploadChoice] = useState<{ path: string; destination: UploadDestination; session: number } | null>(null);
     const uploadChoiceRef = useRef<HTMLDivElement>(null);
     const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
@@ -605,11 +613,6 @@ function App()
     {
         if (drawer !== null && document.activeElement === chatInputRef.current) chatInputRef.current?.blur();
     }, [drawer]);
-
-    useEffect(() =>
-    {
-        openDmRef.current = openDm;
-    }, [openDm]);
 
     useEffect(() =>
     {
@@ -1664,7 +1667,7 @@ function App()
                     const transfer: TransferInfo = { ...payload.data.transfer, done: 0, outcome: null };
 
                     setTransfers((previous) => ({ ...previous, [transfer.uid]: transfer }));
-                    push({ entry: "transfer", uid: transfer.uid });
+                    if (!isChatAttachmentUpload(transfer)) push({ entry: "transfer", uid: transfer.uid });
                     break;
                 }
 
@@ -1687,6 +1690,13 @@ function App()
                         const transfer = previous[uid];
 
                         if (!transfer) return previous;
+
+                        if (isChatAttachmentUpload(transfer))
+                        {
+                            const next = { ...previous };
+                            delete next[uid];
+                            return next;
+                        }
 
                         return { ...previous, [uid]: { ...transfer, done: ok ? transfer.total : transfer.done, outcome: ok } };
                     });
@@ -2692,9 +2702,15 @@ function App()
     };
 
     //Pictures are persistent; the general file picker asks which lifetime to use.
-    const uploadFile = async (image: boolean) =>
+    const submitUpload = (path: string, persistent: boolean, destination: UploadDestination, session: number) =>
     {
-        const peer = openDmRef.current;
+        if (session !== chatSession.current) return;
+        invoke("upload_file_from_path", { path, persistent, destination }).catch((error: unknown) => setPopupMessage(String(error)));
+    };
+
+    const uploadFile = async (image: boolean, peer: string | null) =>
+    {
+        const destination: UploadDestination = peer === null ? { kind: "channel" } : { kind: "private", username: peer };
         const session = chatSession.current;
         const selected = await open(image
             ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
@@ -2702,8 +2718,8 @@ function App()
 
         if (typeof selected !== "string" || session !== chatSession.current) return;
 
-        if (!image) { setUploadChoice({ path: selected, peer }); return; }
-        invoke("upload_file_from_path", { path: selected, persistent: true, peer }).catch((error: unknown) => setPopupMessage(String(error)));
+        if (!image) { setUploadChoice({ path: selected, destination, session }); return; }
+        submitUpload(selected, true, destination, session);
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -3066,31 +3082,54 @@ function App()
     };
 
     const volumeWrites = useRef(Promise.resolve());
-    const updatePlaybackVolume = (key: "media_volume" | "output_volume", percent: number) =>
+    const effectiveMediaVolume = Math.min(config.media_volume, config.output_volume);
+
+    useEffect(() =>
     {
-        setConfig((previous) => ({ ...previous, [key]: percent }));
         setSettings((previous) => previous && !previous.server ? {
             ...previous,
-            rows: previous.rows.map((row) => row.row === "item" && row.item.key === key && row.item.value.kind === "volume"
-                ? { row: "item", item: { ...row.item, value: { kind: "volume", value: { ...row.item.value.value, percent } } } }
-                : row),
+            rows: previous.rows.map((row) =>
+            {
+                if (row.row !== "item" || row.item.value.kind !== "volume") return row;
+                const value = row.item.value.value;
+                switch (row.item.key)
+                {
+                    case "media_volume":
+                        return { row: "item", item: { ...row.item, value: { kind: "volume", value: {
+                            ...value, max: config.output_volume, percent: effectiveMediaVolume,
+                        } } } };
+                    case "output_volume":
+                        return { row: "item", item: { ...row.item, value: { kind: "volume", value: {
+                            ...value, percent: config.output_volume,
+                        } } } };
+                    default: return row;
+                }
+            }),
         } : previous);
+    }, [effectiveMediaVolume, config.output_volume]);
+
+    const updatePlaybackVolume = (key: "media_volume" | "output_volume", percent: number) =>
+    {
+        const wanted = key === "media_volume" ? Math.min(percent, config.output_volume) : percent;
+        setConfig((previous) => ({ ...previous, [key]: wanted }));
         volumeWrites.current = volumeWrites.current
-            .then(() => invoke("set_client_volume", { key, percent }))
-            .then(() => {}, (error: unknown) =>
+            .then(() => invoke<number>("set_client_volume", { key, percent: wanted }))
+            .then((stored) =>
+            {
+                if (stored !== wanted) setConfig((previous) => previous[key] === wanted ? { ...previous, [key]: stored } : previous);
+            }, (error: unknown) =>
             {
                 setPopupMessage(String(error));
                 return invoke<ClientConfig>("get_client_config").then((stored) => setConfig((previous) =>
-                    previous[key] === percent ? { ...previous, [key]: stored[key] } : previous)).catch(console.error);
+                    previous[key] === wanted ? { ...previous, [key]: stored[key] } : previous)).catch(console.error);
             });
     };
 
     const pictures: Pictures =
     {
         media: {
-            volume: config.media_volume,
-            max: config.media_volume_max,
-            outputVolume: config.output_volume,
+            volume: effectiveMediaVolume,
+            max: config.output_volume,
             normalise: config.media_normalisation,
             setVolume: (percent) => updatePlaybackVolume("media_volume", percent),
         },
@@ -5238,6 +5277,12 @@ function App()
                             onMouseDown={(event) => event.stopPropagation()}
                         >
                             <div className={`relative mx-auto max-w-[820px] ${narrow ? "" : "px-3"}`}>
+                                {Object.values(transfers).filter(isChatAttachmentUpload).map(({ uid, done, total }) => (
+                                    <progress key={uid} max={Math.max(total, 1)} value={done}
+                                        aria-label={t("card.uploading")}
+                                        className="mb-1 block h-1 w-full accent-accent" />
+                                ))}
+
                                 {/* PREVIEW AND PALETTE NEVER WANT THE SPACE AT ONCE */}
                                 {palette.mode === "hidden" && previewing && (
                                     <MarkupPreview text={chatInput} config={config} />
@@ -5295,8 +5340,8 @@ function App()
                                             ? <IconButton icon="trash" label={t("chat.discard")} onClick={discardRecording} />
                                             : (
                                                 <>
-                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
-                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true)} />
+                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false, openDm)} />
+                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true, openDm)} />
                                                 </>
                                             )}
 
@@ -5379,9 +5424,9 @@ function App()
                     <p className="mb-5 text-sm text-muted">{t("upload.persistence_prompt")}</p>
                     <div className="flex gap-3">
                         {[true, false].map((persistent) => <button key={String(persistent)} type="button" autoFocus={persistent} className="btn btn-accent flex-1" onClick={() => {
-                            const { path, peer } = uploadChoice;
+                            const { path, destination, session } = uploadChoice;
                             setUploadChoice(null);
-                            invoke("upload_file_from_path", { path, persistent, peer }).catch((error: unknown) => setPopupMessage(String(error)));
+                            submitUpload(path, persistent, destination, session);
                         }}>{t(persistent ? "upload.persistent" : "upload.temporary")}</button>)}
                     </div>
                 </div>

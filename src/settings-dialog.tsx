@@ -106,6 +106,7 @@ export function SettingsDialog(
                         type="range"
                         min={0}
                         max={max}
+                        disabled={max === 0}
                         step={step}
                         value={percent}
                         onChange={(event) => setVolume(index, Number(event.currentTarget.value), max)}

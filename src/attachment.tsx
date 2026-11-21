@@ -31,7 +31,6 @@ export interface MediaSettings
 {
     volume: number;
     max: number;
-    outputVolume: number;
     normalise: boolean;
     setVolume: (volume: number) => void;
 }
@@ -88,7 +87,7 @@ export function Attachment({ image, message, auto, media, remove, like }: {
     const volume = media.volume;
     const graph = useRef<AudioGraph | null>(null);
     const [audioReady, setAudioReady] = useState(0);
-    const volumeGain = Math.min(media.volume, media.outputVolume) / 100;
+    const volumeGain = volume / 100;
     const [volumeOpen, setVolumeOpen] = useState(false);
     const [opened, setOpened] = useState(false);
     const [expanded, setExpanded] = useState(false);
@@ -534,7 +533,7 @@ export function Attachment({ image, message, auto, media, remove, like }: {
                     <Icon name={volume === 0 ? "speaker_off" : "speaker"} className="h-[18px] w-[18px]" />
                 </button>
                 {volumeOpen && <div className="absolute bottom-12 right-0 rounded-lg border border-border-strong bg-overlay px-3 py-2 shadow-lg">
-                    <input autoFocus type="range" min="0" max={media.max} step="1" value={volume} aria-label={t("settings.row.media_volume")} aria-valuetext={`${volume}%`}
+                    <input autoFocus type="range" min="0" max={media.max} step="1" disabled={media.max === 0} value={volume} aria-label={t("settings.row.media_volume")} aria-valuetext={`${volume}%`}
                         onChange={(event) => media.setVolume(Number(event.currentTarget.value))} style={{ touchAction: "pan-x" }} className="block h-8 w-28 accent-current" />
                 </div>}
             </div>}

@@ -134,7 +134,9 @@ pub(crate) fn get_client_config() -> ClientConfig
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),
         media_volume: config::read_config("media_volume"),
-        media_volume_max: 200,
+        #[cfg(voice)]
+        output_volume: voice_options::get_output_volume(),
+        #[cfg(not(voice))]
         output_volume: config::read_config("output_volume"),
         media_normalisation: config::read_config("media_normalisation"),
     }
@@ -184,6 +186,14 @@ pub(crate) fn client_settings() -> Vec<ClientSetting>
                 id: crate::i18n::language(),
                 options: crate::i18n::languages(),
                 none: false,
+            },
+
+            #[cfg(voice)]
+            ClientKind::Volume if *key == "media_volume" => ClientValue::Volume
+            {
+                percent: voice_options::get_media_volume(),
+                max: voice_options::get_output_volume(),
+                step: 1,
             },
 
             #[cfg(voice)]
@@ -303,6 +313,7 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
     let Some(ClientKind::Volume) = client_kind(&key) else { return Err(tr!("bridge.unknown_setting")) };
 
     let percent = voice_options::clamp_volume(percent);
+    let percent = if key == "media_volume" { percent.min(voice_options::get_output_volume()) } else { percent };
 
     config::client_write_int(&key, percent as i64);
 

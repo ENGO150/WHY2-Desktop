@@ -219,7 +219,6 @@ pub(crate) struct ClientConfig
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
     pub(crate) media_volume: u32,
-    pub(crate) media_volume_max: u32,
     pub(crate) output_volume: u32,
     pub(crate) media_normalisation: bool,
 }

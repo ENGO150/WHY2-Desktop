@@ -393,7 +393,6 @@ export interface ClientConfig
     disable_colors: boolean;
     render_math: boolean;
     media_volume: number;
-    media_volume_max: number;
     output_volume: number;
     media_normalisation: boolean;
 }
