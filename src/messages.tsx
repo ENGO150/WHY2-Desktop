@@ -73,6 +73,7 @@ export interface Pictures
 export interface Lines
 {
     copy: (text: string) => void;
+    nameColor: (message: ChatMessage) => string | undefined;
     hold: (message: ChatMessage) => Record<string, unknown>;
     held: () => boolean;
 
@@ -747,7 +748,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
     //PRIVATE IS ONLY NEWS OUTSIDE A CONVERSATION
     const whisper = message.kind === "private" && !dm;
 
-    const color = messageColor(config, message.username_color);
+    const color = lines.nameColor(message);
 
     //A PICTURE OR A CLIP IS NOT TEXT TO COPY
     const copyable = !message.image && !message.voice;
@@ -821,7 +822,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
                     </div>
                 )}
 
-                {message.reply !== null && replyQuote(message.reply, target, config, lines)}
+                {message.reply !== null && replyQuote(message.reply, target, lines)}
 
                 <div className="flex items-end gap-2">
                     <div
@@ -912,7 +913,7 @@ function rowButton(label: string, icon: string, onClick: () => void, tone = "")
 }
 
 //THE LINE A REPLY ANSWERS, ONE ROW
-function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
+function replyQuote(reply: number, target: ChatMessage | null, lines: Lines)
 {
     const text = target?.image ? t("chat.picture") : target?.voice ? t("chat.voice_message") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: formatMessageId(reply) });
 
@@ -923,7 +924,7 @@ function replyQuote(reply: number, target: ChatMessage | null, config: ClientCon
             className="mb-0.5 mt-0.5 flex w-full min-w-0 items-center gap-2 text-left text-[13px] text-muted transition-colors hover:text-text"
         >
             <Icon name="reply" className="h-3.5 w-3.5 shrink-0 -scale-x-100 text-faint" />
-            {target && <span className="shrink-0 font-medium" style={{ color: messageColor(config, target.username_color) }}>{target.username}</span>}
+            {target && <span className="shrink-0 font-medium" style={{ color: lines.nameColor(target) }}>{target.username}</span>}
             <span className="min-w-0 truncate">{text}</span>
         </button>
     );

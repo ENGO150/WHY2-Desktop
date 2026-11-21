@@ -955,14 +955,9 @@ function App()
     const mergeDirect = (messages: ChatMessage[], replayed: boolean) =>
     {
         const byPeer = new Map<string, Extract<PaneEntry, { entry: "message" }>[]>();
-        for (let message of messages)
+        for (const message of messages)
         {
             const peer = message.direct!;
-            if (peer.outgoing && message.username_color === null)
-            {
-                const author = usersRef.current.find((user) => user.username === usernameRef.current);
-                message = { ...message, username_color: author?.username_color ?? null };
-            }
 
             const key = directPane(peer.username);
             const entries = byPeer.get(key) ?? [];
@@ -3277,9 +3272,14 @@ function App()
         return () => node.removeEventListener("touchstart", keep);
     }, []);
 
+    // SENT PM HISTORY CAN CARRY THE PEER'S NAME COLOR.
+    const nameColor = (message: ChatMessage) =>
+        messageColor(config, message.direct?.outgoing ? ownColors.name : message.username_color);
+
     const lines: Lines =
     {
         copy: copyMessage,
+        nameColor,
 
         //THE HOLD IS THE GESTURE'S, ANYWHERE ON THE ROW - THE WORDS INCLUDED. ANDROID'S OWN TEXT SELECTION
         //IS A HOLD TOO, AND STANDING ASIDE FOR IT MEANT THE TWO CAME UP TOGETHER WHENEVER THE FINGER WAS
@@ -4641,6 +4641,8 @@ function App()
 
     //WHO SENT IT
     const shownAuthor = shownLine ? shownLine.username || username : null;
+    const shownAuthorColor = shownLine?.direct?.outgoing ? nameColor(shownLine)
+        : (shownLine ? nameColor(shownLine) : undefined) ?? (shownAuthor ? colorOf(shownAuthor) : undefined);
     const shownHearted = shownLine?.hearts.includes(username) ?? false;
 
     //A BUTTON ON THE CARD
@@ -4701,7 +4703,7 @@ function App()
                             {shownAuthor !== null && (
                                 <Avatar
                                     name={shownAuthor}
-                                    color={messageColor(config, shownLine?.username_color ?? null) ?? colorOf(shownAuthor)}
+                                    color={shownAuthorColor}
                                     size={30}
                                     src={people.avatar(shownAuthor)}
                                 />
@@ -5316,7 +5318,7 @@ function App()
                                     {editTarget && contextBar("pencil", t("chat.editing"), editTarget.text.split("\n")[0], stopEditing, t("chat.cancel_edit"))}
 
                                     {replyTo && contextBar("reply", (
-                                        <span style={{ color: messageColor(config, replyTo.username_color) }}>{replyTo.username}</span>
+                                        <span style={{ color: nameColor(replyTo) }}>{replyTo.username}</span>
                                     ), replyTo.image ? t("chat.picture") : replyTo.voice ? t("chat.voice_message") : replyTo.text.split("\n")[0],
                                         () => setReplyTo(null), t("chat.cancel_reply"))}
 
