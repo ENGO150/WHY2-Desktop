@@ -97,7 +97,7 @@ pub(crate) struct PictureActions
 #[derive(Serialize, Clone)]
 pub(crate) struct DirectPeer
 {
-    pub(crate) id: usize,
+    pub(crate) persistent: bool,
     pub(crate) username: String,
     pub(crate) outgoing: bool, //OURS TO THEM RATHER THAN THEIRS TO US - THE ECHO NAMES NOBODY BUT THE OTHER END
 }
@@ -218,6 +218,10 @@ pub(crate) struct ClientConfig
     pub(crate) show_timestamps: bool,
     pub(crate) disable_colors: bool,
     pub(crate) render_math: bool,
+    pub(crate) media_volume: u32,
+    pub(crate) media_volume_max: u32,
+    pub(crate) output_volume: u32,
+    pub(crate) media_normalisation: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -356,6 +360,7 @@ pub(crate) struct VocabularyValue
 pub(crate) enum PictureState
 {
     Absent,
+    Gone,
     Deferred,
     Waiting,
 }
@@ -434,6 +439,9 @@ pub(crate) enum UiEvent
     Pinned { message_id: u64, pinned: bool },                     //A STORED MESSAGE WAS PINNED OR UNPINNED
     Pins { messages: Vec<ChatMessage> },                          //  /pins - EVERY PINNED MESSAGE
     History { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool }, //ONE PAGE OF THE LOBBY'S HISTORY
+    PrivateHistory { messages: Vec<ChatMessage>, start: u64, more: bool, older: bool },
+    PrivateUnread { next: u64, senders: Vec<(String, u64, u64)> },
+    OpenDirect { username: String },
     Typing { username: String, ttl: u64 },                        //SOMEBODY HERE IS WRITING
     Profile { profile: ProfileInfo, own: bool, open: bool, saved: bool }, //A PROFILE CAME BACK
     ProfilesDisabled,                                             //THE SERVER KEEPS NONE
@@ -483,6 +491,22 @@ pub(crate) enum UiEvent
 }
 
 //IMPLEMENTATIONS
+// Private IDs start at 2^63 on the wire, outside JavaScript's exact integer range.
+const UI_PRIVATE_ID: u64 = 1 << 52;
+
+pub(crate) fn ui_message_id(id: u64) -> u64
+{
+    let private = why2_chat::consts::PRIVATE_MESSAGE_ID;
+    if id >= private { UI_PRIVATE_ID + (id - private) } else { id }
+}
+
+pub(crate) fn wire_private_id(id: u64) -> Result<u64, String>
+{
+    let offset = id.checked_sub(UI_PRIVATE_ID).filter(|offset| *offset < UI_PRIVATE_ID)
+        .ok_or_else(|| crate::tr!("bridge.invalid_usage"))?;
+    Ok(why2_chat::consts::PRIVATE_MESSAGE_ID + offset)
+}
+
 impl ChatMessage
 {
     pub(crate) fn new(kind: MessageKind, username: impl Into<String>, text: impl Into<String>) -> Self
@@ -574,7 +598,7 @@ impl ChatMessage
 
     pub(crate) fn with_message_id(mut self, message_id: u64) -> Self
     {
-        self.message_id = Some(message_id);
+        self.message_id = Some(ui_message_id(message_id));
         self
     }
 
@@ -586,7 +610,7 @@ impl ChatMessage
 
     pub(crate) fn replying(mut self, reply: Option<u64>) -> Self
     {
-        self.reply = reply;
+        self.reply = reply.map(ui_message_id);
         self
     }
 
@@ -641,5 +665,24 @@ pub(crate) fn device_label(device: &Device) -> &'static str
         Device::TUI => "tui",
         Device::Desktop => "desktop",
         Device::Phone => "phone",
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::{ ui_message_id, wire_private_id };
+    use why2_chat::consts::PRIVATE_MESSAGE_ID;
+
+    #[test]
+    fn adjacent_private_ids_round_trip_through_webview_numbers()
+    {
+        let first = ui_message_id(PRIVATE_MESSAGE_ID);
+        let second = ui_message_id(PRIVATE_MESSAGE_ID + 1);
+        assert_eq!((second as f64 - first as f64) as u64, 1);
+        assert_eq!(wire_private_id(first).unwrap(), PRIVATE_MESSAGE_ID);
+        assert_eq!(wire_private_id(second).unwrap(), PRIVATE_MESSAGE_ID + 1);
+        assert_eq!(ui_message_id(42), 42);
+        assert!(wire_private_id(42).is_err());
     }
 }

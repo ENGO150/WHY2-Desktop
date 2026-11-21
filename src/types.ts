@@ -111,7 +111,7 @@ export type PictureStatus = PictureState | "gone";
 //THE RECIPIENT AND CARRIES NO AUTHOR, SO outgoing IS WHICH SIDE OF THE CONVERSATION THE LINE IS ON
 export interface DirectPeer
 {
-    id: number;
+    persistent: boolean;
     username: string;
     outgoing: boolean;
 }
@@ -120,9 +120,7 @@ export interface DirectPeer
 //SCROLLBACK THE WAY A CHANNEL DOES - AND ITS OWN COUNT OF WHAT ARRIVED WHILE IT WAS NOT BEING LOOKED AT
 export interface DirectChat
 {
-    id: number;
     username: string;
-    pane: PaneEntry[];
     unread: number;
 }
 
@@ -394,6 +392,10 @@ export interface ClientConfig
     show_timestamps: boolean;
     disable_colors: boolean;
     render_math: boolean;
+    media_volume: number;
+    media_volume_max: number;
+    output_volume: number;
+    media_normalisation: boolean;
 }
 
 export interface TofuPrompt
@@ -445,6 +447,9 @@ export type BridgeEvent =
     | { event: "pinned"; data: { message_id: number; pinned: boolean } }
     | { event: "pins"; data: { messages: ChatMessage[] } }
     | { event: "history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
+    | { event: "private_history"; data: { messages: ChatMessage[]; start: number; more: boolean; older: boolean } }
+    | { event: "private_unread"; data: { next: number; senders: [string, number, number][] } }
+    | { event: "open_direct"; data: { username: string } }
     | { event: "typing"; data: { username: string; ttl: number } }
     | { event: "profile"; data: { profile: ProfileInfo; own: boolean; open: boolean; saved: boolean } }
     | { event: "profiles_disabled"; data?: null }

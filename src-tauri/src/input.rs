@@ -42,7 +42,7 @@ use why2_chat::
     network::
     {
         client,
-        codes::{ PacketCode, Device },
+        codes::{ PacketCode, Device, ChatUpload },
     },
 };
 
@@ -192,9 +192,10 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
     {
         //THE SERVER TURNS AN OVERSIZED IMAGE DOWN AS INVALID USAGE, WHICH SAYS NOTHING ABOUT WHY - THE
         //SIZE IS KNOWN HERE, SO IT IS SAID HERE
-        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > consts::MAX_ATTACHMENT_SIZE as u64
+        let limit = options::upload_limits().attachment;
+        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > limit
         {
-            return Err(tr!("upload.image_too_large", limit = consts::MAX_ATTACHMENT_SIZE / consts::MEGABYTE));
+            return Err(tr!("upload.image_too_large", limit = limit / consts::MEGABYTE as u64));
         }
 
         //THE HEADER IS READ BEFORE THE SERVER IS ASKED FOR ANYTHING, SO A FILE THAT IS NOT AN IMAGE COSTS
@@ -214,7 +215,7 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
 
 //Persistent attachments and temporary file shares use the same upload handshake.
 pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
-    path: &str, persistent: bool)
+    path: &str, persistent: bool, recipient: Option<usize>)
 {
     let (mut file, path) = match open_upload(app, path, false).await
     {
@@ -222,9 +223,11 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
         Err(error) => return popup(app, error),
     };
 
-    if persistent && file.metadata().map(|meta| meta.len()).unwrap_or(u64::MAX) > consts::MAX_ATTACHMENT_SIZE as u64
+    let limits = options::upload_limits();
+    let limit = if persistent || recipient.is_some() { limits.file.min(limits.attachment) } else { limits.file };
+    if file.metadata().map(|meta| meta.len()).unwrap_or(u64::MAX) > limit
     {
-        return popup(app, tr!("upload.attachment_too_large", limit = consts::MAX_ATTACHMENT_SIZE / consts::MEGABYTE));
+        return popup(app, tr!("upload.file_too_large", limit = limit / consts::MEGABYTE as u64));
     }
 
     //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
@@ -250,10 +253,7 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
 
     let Some(hash) = hash else { return popup(app, tr!("upload.read_failed")) };
 
-    //THE UPLOAD TASK LOOKS THE PATH UP BY HASH WHEN THE APPROVAL COMES BACK
-    client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
-
-    let request = PacketCode::UploadRequest { hash, filename, persistent };
+    let request = client::request_chat_upload(path, hash, recipient, ChatUpload::File { filename, persistent });
 
     send_packet(state, write_stream, request).await;
 }
@@ -400,12 +400,19 @@ pub(crate) async fn account_request(action: AccountAction, password: String, new
 
 //TRANSLATES ONE EVENT OF THE SESSION INTO SOMETHING THE WEBVIEW CAN RENDER
 
+pub(crate) fn private_recipient(state: &AppState, peer: Option<&str>) -> Result<Option<usize>, String>
+{
+    peer.map(|peer| state.user_ids.lock().unwrap().get(peer).copied()
+        .ok_or_else(|| tr!("pm.recipient_unavailable"))).transpose()
+}
+
 #[tauri::command]
-pub(crate) async fn upload_file_from_path(path: String, persistent: bool, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn upload_file_from_path(path: String, persistent: bool, peer: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
-    upload_file(&app, &state, &write_stream, &path, persistent).await;
+    let recipient = private_recipient(&state, peer.as_deref())?;
+    upload_file(&app, &state, &write_stream, &path, persistent, recipient).await;
 
     Ok(())
 }
@@ -430,7 +437,7 @@ pub(crate) async fn request_image(hash: String, state: State<'_, AppState>) -> R
 }
 
 #[tauri::command]
-pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn send_input(input: String, peer: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
@@ -449,6 +456,34 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
 
         if let (Some(command), parameters) = command::get_command(&input)
         {
+            if command == Command::PrivateMessage && parameters.as_deref().is_none_or(|text| !text.contains(' '))
+            {
+                let username = match parameters.as_deref().filter(|text| !text.is_empty())
+                {
+                    Some(target) =>
+                    {
+                        let id = target.parse::<usize>().ok();
+                        state.user_ids.lock().unwrap().iter()
+                            .find(|(name, user_id)| id.map_or_else(|| name.as_str() == target, |id| **user_id == id))
+                            .map(|(name, _)| name.clone())
+                            .ok_or_else(|| tr!("pm.recipient_unavailable"))?
+                    },
+                    None => String::new(),
+                };
+                emit(&app, UiEvent::OpenDirect { username });
+                return Ok(());
+            }
+
+            if command == Command::Reply
+            {
+                let reply = parameters.as_deref().and_then(|text| text.split_whitespace().next())
+                    .and_then(command::parse_message_id);
+                if reply.is_some_and(|id| (id & consts::PRIVATE_MESSAGE_ID != 0) != peer.is_some())
+                {
+                    return Err(tr!("pm.reply_context"));
+                }
+            }
+
             //A PHONE ASKS BEFORE IT RECORDS, AND IT ASKS HERE - WHEN THE CALL IS STARTED AND NOT AT LAUNCH.
             //THE PACKET IS HELD BACK UNTIL THE ANSWER IS IN, SO SAYING YES TO THE DIALOG IS ALSO JOINING
             #[cfg(target_os = "android")]
@@ -497,7 +532,8 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                         Some(parameters) =>
                         {
                             let (path, persistent) = command::upload_parameters(&parameters);
-                            upload_file(&app, &state, &write_stream, path, persistent).await;
+                            let recipient = private_recipient(&state, peer.as_deref())?;
+                            upload_file(&app, &state, &write_stream, path, persistent, recipient).await;
                         },
                         None => popup(&app, usage("/upload", "arg.path")),
                     },
@@ -508,9 +544,9 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
                     Command::Account => account_command(&app, parameters),
 
                     //THE PANE KNOWS WHO HEARTED IT
-                    Command::Hearts => match parameters.and_then(|id| id.trim().parse::<u64>().ok())
+                    Command::Hearts => match parameters.as_deref().and_then(command::parse_message_id)
                     {
-                        Some(message_id) => emit(&app, UiEvent::ListHearts { message_id }),
+                        Some(message_id) => emit(&app, UiEvent::ListHearts { message_id: ui_message_id(message_id) }),
                         None => popup(&app, usage("/hearts", "arg.id")),
                     },
 
@@ -543,15 +579,15 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
 
                     //START, OR SEND WHAT WAS RECORDED
                     #[cfg(voice)]
-                    Command::Record => crate::voice_message::record(&app, &state, &write_stream).await,
+                    Command::Record => crate::voice_message::record(&app, &state, &write_stream, peer).await?,
 
                     //THE PANE KNOWS WHICH CLIP AN ID IS
                     #[cfg(voice)]
-                    Command::Play => match parameters.as_deref().map(|id| id.trim().parse::<u64>())
+                    Command::Play => match parameters.as_deref().map(command::parse_message_id)
                     {
                         None => { crate::voice_message::stop(&app); emit(&app, UiEvent::StopMedia); },
-                        Some(Ok(message_id)) => emit(&app, UiEvent::PlayVoice { message_id }),
-                        Some(Err(_)) => popup(&app, tr!("bridge.usage", usage = format!("/play [{}]", i18n::text("arg.id")))),
+                        Some(Some(message_id)) => emit(&app, UiEvent::PlayVoice { message_id: ui_message_id(message_id) }),
+                        Some(None) => popup(&app, tr!("bridge.usage", usage = format!("/play [{}]", i18n::text("arg.id")))),
                     },
 
                     Command::UsernameColor => color_handler(&app, &state, &write_stream, true, parameters).await,
@@ -612,7 +648,11 @@ pub(crate) async fn send_input(input: String, app: AppHandle, state: State<'_, A
         },
         LoginState::Login => PacketCode::Login { password: input },
         LoginState::Register => PacketCode::Register { password: input },
-        LoginState::None => PacketCode::MessageRequest { text: input, reply: None },
+        LoginState::None => match private_recipient(&state, peer.as_deref())?
+        {
+            Some(id) => PacketCode::PrivateMessageRequest { id, text: input },
+            None => PacketCode::MessageRequest { text: input, reply: None },
+        },
     };
 
     send_packet(&state, &write_stream, code).await;

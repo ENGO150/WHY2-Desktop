@@ -55,6 +55,9 @@ pub(crate) const AUDIO_SETTINGS: &[SettingsKey] =
     ("settings.section.audio", "settings.row.input_volume",      "input_volume",      ClientKind::Volume),
     ("settings.section.audio", "settings.row.output_volume",     "output_volume",     ClientKind::Volume),
 
+    ("settings.section.audio", "settings.row.media_volume", "media_volume", ClientKind::Volume),
+    ("settings.section.audio", "settings.row.media_normalisation", "media_normalisation", ClientKind::Toggle { invert: false }),
+
     //THE ATTACHED SHARE'S OWN PLAYBACK, WHICH ONLY A BUILD THAT CAN WATCH ONE HAS
     #[cfg(screen)]
     ("settings.section.audio", "settings.row.screen_volume",     "screen_volume",     ClientKind::Volume),
@@ -130,6 +133,10 @@ pub(crate) fn get_client_config() -> ClientConfig
         show_timestamps: config::read_config("show_timestamps"),
         disable_colors: config::read_config("disable_colors"),
         render_math: config::read_config("render_math"),
+        media_volume: config::read_config("media_volume"),
+        media_volume_max: 200,
+        output_volume: config::read_config("output_volume"),
+        media_normalisation: config::read_config("media_normalisation"),
     }
 }
 
@@ -261,6 +268,7 @@ pub(crate) fn set_client_setting(key: String, on: bool) -> Result<ClientConfig, 
     {
         "noise_suppression" => voice_options::set_noise_suppression(on),
         "automatic_gain" => voice_options::set_automatic_gain(on),
+        "media_normalisation" => voice_options::set_media_normalisation(on),
         _ => {},
     }
 
@@ -303,6 +311,7 @@ pub(crate) fn set_client_volume(key: String, percent: u32, app: AppHandle) -> Re
     {
         "input_volume" => voice_options::set_input_volume(percent),
         "output_volume" => voice_options::set_output_volume(percent),
+        "media_volume" => voice_options::set_media_volume(percent),
 
         #[cfg(screen)]
         "screen_volume" => screen_options::set_screen_volume(percent),
@@ -414,3 +423,47 @@ pub(crate) async fn restart_server(app: AppHandle, state: State<'_, AppState>) -
 //A MONITOR IS NAMED BY THE DISPLAY SERVER (DP-3, \\.\DISPLAY2) - NEITHER IS SOMETHING TO GUESS AT. THIS IS
 //ASKED FOR EVERY TIME THE CARET LANDS ON SUCH A PARAMETER RATHER THAN ONCE: A MONITOR PLUGGED IN MID-SESSION
 //IS STILL SUPPOSED TO SHOW UP HERE
+
+// The terminal client uses the same role names and comma-separated overrides.
+const CUSTOM_COLORS: &[&str] = &[
+    "background", "text", "muted", "accent", "highlight", "error", "heart", "ok", "logo", "code_bg",
+    "selected", "mention", "selection", "arg_required", "arg_optional", "arg_active",
+];
+
+fn theme_color(value: &str) -> Option<String>
+{
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    (hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| format!("#{}", hex.to_ascii_uppercase()))
+}
+
+#[tauri::command]
+pub(crate) fn get_custom_theme() -> std::collections::BTreeMap<String, String>
+{
+    config::read_config::<String>("custom_theme").split(',')
+        .filter_map(|entry| entry.split_once('='))
+        .filter(|(role, _)| CUSTOM_COLORS.contains(role))
+        .filter_map(|(role, color)| Some((role.to_owned(), theme_color(color)?)))
+        .collect()
+}
+
+#[tauri::command]
+pub(crate) fn set_custom_color(role: String, color: String) -> Result<(), String>
+{
+    if !CUSTOM_COLORS.contains(&role.as_str()) { return Err(tr!("bridge.unknown_setting")); }
+
+    static EDIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _edit = EDIT.lock().unwrap();
+    let mut overrides = get_custom_theme();
+
+    if color.trim().is_empty() { overrides.remove(&role); }
+    else
+    {
+        let color = theme_color(color.trim()).ok_or_else(|| tr!("settings.custom_theme.invalid"))?;
+        overrides.insert(role, color);
+    }
+
+    let value = overrides.into_iter().map(|(role, color)| format!("{role}={color}")).collect::<Vec<_>>().join(",");
+    config::client_write("custom_theme", &value);
+    Ok(())
+}

@@ -146,9 +146,11 @@ pub(crate) async fn cut_square(app: &AppHandle, path: &str) -> Result<([u8; 32],
 
         let (avatar, extension) = client_image::make_avatar(&data).ok_or_else(|| tr!("upload.unreadable_image"))?;
 
-        if avatar.len() > consts::MAX_AVATAR_SIZE
+        let limits = why2_chat::options::upload_limits();
+        let limit = limits.avatar.min(limits.file);
+        if avatar.len() as u64 > limit
         {
-            return Err(tr!("upload.avatar_too_large", limit = consts::MAX_AVATAR_SIZE / consts::MEGABYTE));
+            return Err(tr!("upload.avatar_too_large", limit = limit / consts::MEGABYTE as u64));
         }
 
         let hash: [u8; 32] = Sha256::digest(&avatar).into();

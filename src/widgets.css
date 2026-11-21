@@ -247,7 +247,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 /* SOMEBODY NAMED US */
 .msg.mention
 {
-    background: color-mix(in oklab, var(--highlight) 9%, transparent);
+    background: var(--mention-bg, color-mix(in oklab, var(--highlight) 9%, transparent));
 }
 
 .msg.mention::before

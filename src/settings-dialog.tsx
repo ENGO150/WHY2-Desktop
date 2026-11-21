@@ -21,7 +21,7 @@ import type { SettingsBox, SettingsItem, AccountAction, IconSource, VocabularyVa
 import { Icon } from "./icons";
 import { Switch, Overlay, PanelHeader, PanelFooter, SpaceIcon } from "./components";
 import { defaultDevice, noChoice, unsavedRows } from "./settings";
-import { THEMES, type Theme } from "./themes";
+import { CUSTOM_THEME, THEMES, THEME_COLORS, customTheme, type Theme, type CustomTheme, type ThemeRole } from "./themes";
 import { ColorPicker } from "./profile";
 import { t, tOr } from "./i18n";
 
@@ -48,7 +48,7 @@ export interface ColorsBox
 export function SettingsDialog(
 {
     settings, settingsRef, settingsRowRef, pickerRowRef, narrow,
-    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, pickTheme, icon, colors, close,
+    onKeyDown, setToggle, setVolume, setPicked, activateRow, commitEdit, editSettings, account, theme, customColors, editCustomColor, pickTheme, icon, colors, close,
 }: {
     settings: SettingsBox;
     settingsRef: React.RefObject<HTMLDivElement | null>;
@@ -64,6 +64,8 @@ export function SettingsDialog(
     editSettings: (change: (box: SettingsBox) => SettingsBox | null) => void;
     account: ((action: AccountAction) => void) | null; //OURS ONLY, WHERE THE SERVER HAS /account
     theme: string | null; //OURS ONLY
+    customColors: CustomTheme;
+    editCustomColor: (role: ThemeRole, color: string) => void;
     pickTheme: (id: string) => void;
     icon: ServerIconBox | null; //THE SERVER'S ONLY, FOR ITS OWNER
     colors: ColorsBox | null; //OURS ONLY
@@ -216,7 +218,7 @@ export function SettingsDialog(
                     </span>
                 </span>
 
-                <span className={`text-[12.5px] ${chosen ? "font-medium text-text" : "text-muted"}`}>{tOr(`themes.${entry.id}`, entry.name)}</span>
+                <span className={`text-[12.5px] ${chosen ? "font-medium text-text" : "text-muted"}`}>{entry.id === CUSTOM_THEME ? t("settings.custom_theme.name") : tOr(`themes.${entry.id}`, entry.name)}</span>
             </button>
         );
     };
@@ -363,6 +365,15 @@ export function SettingsDialog(
                                 {THEMES.filter((entry) => entry.light === light).map(swatch)}
                             </div>
                         ))}
+                        {swatch(customTheme(customColors))}
+                        {theme === CUSTOM_THEME && <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+                            {(Object.keys(THEME_COLORS) as ThemeRole[]).map((role) => <ThemeColorEditor
+                                key={role}
+                                role={role}
+                                color={customColors[role] ?? ""}
+                                onChange={(color) => editCustomColor(role, color)}
+                            />)}
+                        </div>}
                     </div>
                 ), "appearance")}
 
@@ -524,5 +535,48 @@ export function SettingsDialog(
                 </div>
             )}
         </Overlay>
+    );
+}
+
+function ThemeColorEditor({ role, color, onChange }: { role: ThemeRole; color: string; onChange: (color: string) => void })
+{
+    const [draft, setDraft] = useState(color);
+    const [invalid, setInvalid] = useState(false);
+    useEffect(() => { setDraft(color); setInvalid(false); }, [color]);
+
+    const apply = () =>
+    {
+        const hex = draft.trim().replace(/^#/, "").toUpperCase();
+        if (hex && !/^[0-9A-F]{6}$/.test(hex))
+        {
+            setInvalid(true);
+            return;
+        }
+
+        const next = hex ? `#${hex}` : "";
+        setDraft(next);
+        setInvalid(false);
+        if (next !== color) onChange(next);
+    };
+
+    const label = t(`settings.custom_theme.${role}`);
+    return (
+        <div>
+            <label className="block text-[12.5px] text-muted" htmlFor={`custom-color-${role}`}>{label}</label>
+            <div className="mt-1 flex items-center gap-2">
+                <input type="color" aria-label={label} className="h-8 w-8 shrink-0 cursor-pointer rounded"
+                    value={color || THEME_COLORS[role]} onChange={(event) => onChange(event.currentTarget.value.toUpperCase())} />
+                <input type="text" id={`custom-color-${role}`} value={draft} placeholder={THEME_COLORS[role]}
+                    spellCheck={false} autoComplete="off" aria-invalid={invalid}
+                    onChange={(event) => { setDraft(event.currentTarget.value); setInvalid(false); }} onBlur={apply}
+                    onKeyDown={(event) =>
+                    {
+                        event.stopPropagation();
+                        if (event.key === "Enter") { event.preventDefault(); apply(); }
+                    }}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-border bg-chat px-2 font-mono text-[13px] text-text" />
+            </div>
+            {invalid && <p role="alert" className="mt-1 text-xs text-error">{t("settings.custom_theme.invalid")}</p>}
+        </div>
     );
 }

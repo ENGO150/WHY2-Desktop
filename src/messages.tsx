@@ -17,14 +17,14 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 import React from "react";
-import { Attachment, isMedia } from "./attachment";
+import { Attachment, type MediaSettings } from "./attachment";
 
 import type { ChatMessage, BlockRow, ClientConfig, MessageImage, PictureStatus, TransferInfo } from "./types";
 import type { People } from "./profile";
 import { ANSI } from "./theme";
 import { Icon } from "./icons";
 import { Avatar, MenuBox, MENU_ITEM } from "./components";
-import { branches, clock, linkParts, sentAt, fileKind } from "./format";
+import { branches, clock, linkParts, sentAt, fileKind, formatMessageId } from "./format";
 import { mentions } from "./palette";
 import { deviceIcon } from "./roster";
 import { parse, rows, ITALIC, BOLD, UNDERLINE, STRIKE, type Inline, type Row, type Shape } from "./markup";
@@ -55,6 +55,7 @@ export interface HeldPicture
 //A HOLD ENDS IN A CLICK LIKE ANY OTHER, AND THAT ONE WOULD OPEN THE PICTURE BEING HELD
 export interface Pictures
 {
+    media: MediaSettings;
     auto: boolean;
     like: (message: ChatMessage) => (() => void) | null;
     remove: (message: ChatMessage) => (() => void) | null;
@@ -647,7 +648,13 @@ export function renderTransfer(transfer: TransferInfo | undefined, key: number)
 //A PICTURE, OR THE CAPTION STANDING IN FOR ONE
 export function renderPicture(message: ChatMessage, image: MessageImage, status: PictureStatus, pictures: Pictures)
 {
-    if (image.hash && (isMedia(image.filename) || !/\.(avif|bmp|gif|ico|jpeg|jpg|png|pnm|qoi|tga|webp)$/i.test(image.filename) || (!image.source && status === "gone"))) return <Attachment image={image} message={message} auto={pictures.auto} remove={pictures.remove(message)} like={pictures.like(message)} />;
+    const temporaryDirect = !image.hash && message.direct && message.message_id !== null;
+    const imageFile = /\.(avif|bmp|gif|ico|jpeg|jpg|png|pnm|qoi|tga|webp)$/i.test(image.filename);
+    if (temporaryDirect || (image.hash && (!imageFile || (!image.source && status === "gone"))))
+    {
+        return <Attachment image={image} message={message} auto={pictures.auto} media={pictures.media}
+            remove={pictures.remove(message)} like={pictures.like(message)} />;
+    }
 
     if (image.source)
     {
@@ -751,7 +758,7 @@ export function renderChat(message: ChatMessage, key: number, grouped: boolean, 
     //THE BODY'S COLOR, ALSO FOR HEADINGS
     const body = messageColor(config, message.message_color);
 
-    const messageId = config.show_message_ids && message.message_id !== null ? `#${message.message_id}` : null;
+    const messageId = config.show_message_ids && message.message_id !== null ? `#${formatMessageId(message.message_id)}` : null;
     const time = config.show_timestamps && message.timestamp !== null ? message.timestamp : null;
 
     const reacts = lines.reacts(message);
@@ -907,7 +914,7 @@ function rowButton(label: string, icon: string, onClick: () => void, tone = "")
 //THE LINE A REPLY ANSWERS, ONE ROW
 function replyQuote(reply: number, target: ChatMessage | null, config: ClientConfig, lines: Lines)
 {
-    const text = target?.image ? t("chat.picture") : target?.voice ? t("chat.voice_message") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: reply });
+    const text = target?.image ? t("chat.picture") : target?.voice ? t("chat.voice_message") : target?.text.split("\n")[0] ?? t("chat.message_number", { id: formatMessageId(reply) });
 
     return (
         <button

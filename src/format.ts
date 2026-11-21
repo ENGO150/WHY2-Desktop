@@ -158,3 +158,10 @@ export function clock(ms: number): string
 
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+// The bridge maps the private sequence into the upper half of JavaScript's exact integer range.
+export function formatMessageId(id: number): string
+{
+    const privateBase = 2 ** 52;
+    return id >= privateBase ? `p${id - privateBase}` : String(id);
+}

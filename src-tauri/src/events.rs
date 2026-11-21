@@ -46,6 +46,8 @@ use why2_chat::
             ServerSetting,
             StoredMessage,
             MessageColors,
+            MessageMedia,
+            StoredPrivateMessage,
         },
     },
 };
@@ -76,6 +78,31 @@ fn caption(username: String, filename: String, message_id: u64, timestamp: Optio
     })
 }
 
+fn private_message(message: StoredPrivateMessage, own: &str, temporary: bool, persistent: bool) -> ChatMessage
+{
+    let StoredPrivateMessage { message_id, username, sent, text, media, colors, timestamp, reply, hearts, edited, .. } = message;
+    let author = if sent { own.to_owned() } else { username.clone() };
+    let mut line = ChatMessage::new(MessageKind::Private, author, text.clone())
+        .with_message_id(message_id).at(timestamp).colored(colors)
+        .direct(DirectPeer { username, outgoing: sent, persistent });
+    match media
+    {
+        Some(MessageMedia::File(hash)) => line = line.picture(MessageImage
+        {
+            filename: text,
+            hash: (!temporary).then(|| picture::hex(&hash)),
+            source: None,
+            state: if temporary { PictureState::Gone } else if client::image::auto_show_images() { PictureState::Deferred } else { PictureState::Absent },
+            width: 0,
+            height: 0,
+        }),
+        Some(MessageMedia::Voice(voice)) => line = line.spoken(&voice),
+        None => {},
+    }
+
+    line.replying(reply).hearted(hearts).reworded(edited)
+}
+
 pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 {
     let state = app.state::<AppState>();
@@ -87,7 +114,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::notice(tr!("event.banned", username = &username)).from_server());
             emit(app, UiEvent::UserBanned { username });
         },
-        ClientEvent::AttachmentUnavailable { message_id } => popup(app, tr!("attachment.unavailable", message_id)),
+        ClientEvent::AttachmentUnavailable { message_id } => popup(app, tr!("attachment.unavailable", message_id = why2_chat::command::format_message_id(message_id))),
         #[cfg(voice)]
         ClientEvent::MediaFrame { generation, .. } => client::media::frame_consumed(generation),
         #[cfg(voice)]
@@ -282,22 +309,41 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         //THE LINE CARRIES WHO IT IS WITH RATHER THAN SAYING SO IN ITS OWN TEXT: THE WINDOW FILES IT INTO
         //THAT PERSON'S CONVERSATION, WHERE "TO" AND "FROM" ARE WHICH SIDE THE LINE IS ON
-        ClientEvent::PrivateMessageRecv { message: text, username: from, id, colors } =>
+        ClientEvent::PrivateMessageRecv { message_id, timestamp, reply, message, username, colors, persistent, .. } =>
         {
-            let peer = DirectPeer { id, username: from.clone(), outgoing: false };
-
-            say(app, ChatMessage::new(MessageKind::Private, from, text).with_id(id).colored(colors).direct(peer));
+            let peer = DirectPeer { username: username.clone(), outgoing: false, persistent };
+            say(app, ChatMessage::new(MessageKind::Private, username, message)
+                .with_message_id(message_id).at(timestamp).replying(reply).colored(colors).direct(peer));
         },
 
-        //THE ECHO OF ONE WE SENT NAMES THE RECIPIENT, SO IT CARRIES NO AUTHOR AT ALL - THE AUTHOR IS US,
-        //AND THIS SIDE OF THE BRIDGE IS THE ONE PLACE THAT NEVER LEARNS OUR OWN NAME
-        //ITS NAME COLOR IS THE RECIPIENT'S, SO OURS COMES OFF THE ROSTER
-        ClientEvent::PrivateMessageSent { message: text, username: to, id, colors } =>
+        ClientEvent::PrivateMessageSent { message_id, timestamp, reply, message, username, message_color } =>
         {
-            let peer = DirectPeer { id, username: to, outgoing: true };
-
-            say(app, ChatMessage::new(MessageKind::Private, "", text).colored(MessageColors { username_color: None, ..colors }).direct(peer));
+            let own = state.username.lock().unwrap().clone();
+            let peer = DirectPeer { username, outgoing: true, persistent: false };
+            say(app, ChatMessage::new(MessageKind::Private, own, message)
+                .with_message_id(message_id).at(timestamp).replying(reply)
+                .colored(MessageColors { username_color: None, message_color }).direct(peer));
         },
+
+        ClientEvent::PrivateMedia { message, temporary_file, persistent } =>
+        {
+            let own = state.username.lock().unwrap().clone();
+            say(app, private_message(message, &own, temporary_file, persistent));
+        },
+
+        ClientEvent::PrivateHistory { messages, start, more, older, .. } =>
+        {
+            let own = state.username.lock().unwrap().clone();
+            let messages = messages.into_iter().map(|message| private_message(message, &own, false, true)).collect();
+            emit(app, UiEvent::PrivateHistory { messages, start: ui_message_id(start), more, older });
+        },
+
+        ClientEvent::PrivateUnread { next, senders } => emit(app, UiEvent::PrivateUnread
+        {
+            next: ui_message_id(next),
+            senders: senders.into_iter().map(|(name, count, newest)| (name, count, ui_message_id(newest))).collect(),
+        }),
+        ClientEvent::PrivateUploadUnavailable => popup(app, tr!("pm.recipient_unavailable")),
 
         //ONE PAGE OF THE LOBBY'S HISTORY - THE NEWEST AT LOGIN, AN OLDER ONE WHEN ASKED
         ClientEvent::History { messages, start, more, kept, older } =>
@@ -318,7 +364,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
                     .replying(reply).hearted(hearts).reworded(edited).pinned(pinned),
             }).collect::<Vec<ChatMessage>>();
 
-            if !older { say(app, ChatMessage::title(tr!("event.history", count = kept))); }
+            if !older && kept > 0 { say(app, ChatMessage::title(tr!("event.timeline"))); }
 
             emit(app, UiEvent::History { messages, start, more, older });
         },
@@ -441,6 +487,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
         //THE Leave PACKET NAMES THE USER, SO THE ROSTER CAN DROP THEM ITSELF
         ClientEvent::Leave { username, id, registered } =>
         {
+            if !registered { state.user_ids.lock().unwrap().remove(&username); }
             say(app, ChatMessage::system(tr!("event.left", username)).from_server());
             emit(app, UiEvent::UserLeft { id, registered });
 
@@ -654,11 +701,11 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
 
         ClientEvent::Muted => say(app, ChatMessage::notice(tr!("event.muted"))),
 
-        ClientEvent::Deleted { message_id } => emit(app, UiEvent::Deleted { message_id }),
+        ClientEvent::Deleted { message_id } => emit(app, UiEvent::Deleted { message_id: ui_message_id(message_id) }),
 
-        ClientEvent::Hearts { message_id, hearts } => emit(app, UiEvent::Hearts { message_id, hearts }),
+        ClientEvent::Hearts { message_id, hearts } => emit(app, UiEvent::Hearts { message_id: ui_message_id(message_id), hearts }),
 
-        ClientEvent::Edited { message_id, text } => emit(app, UiEvent::Edited { message_id, text }),
+        ClientEvent::Edited { message_id, text } => emit(app, UiEvent::Edited { message_id: ui_message_id(message_id), text }),
 
         //A MESSAGE WAS PINNED OR UNPINNED, WHEREVER IT IS
         ClientEvent::Pinned { message_id, pinned } => emit(app, UiEvent::Pinned { message_id, pinned }),
@@ -738,14 +785,14 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             emit_voice(app);
         },
 
-        ClientEvent::VoiceDisabled =>
+        ClientEvent::VoiceDisabled { moved } =>
         {
             state.voice_enabled.store(false, Ordering::Relaxed);
 
             //ONLY OUR OWN HALF OF THE PANEL GOES - THE OTHERS ARE STILL IN VOICE, WE JUST STOPPED HEARING THEM
             state.voice_activity.lock().unwrap().clear();
 
-            say(app, ChatMessage::system(tr!("event.voice_disabled")));
+            say(app, ChatMessage::system(if moved { tr!("event.voice_moved") } else { tr!("event.voice_disabled") }));
             emit_voice(app);
         },
 

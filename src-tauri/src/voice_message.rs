@@ -49,7 +49,7 @@ use why2_chat::
     network::
     {
         client::{ self, ClientEvent },
-        codes::PacketCode,
+        codes::ChatUpload,
         voice::
         {
             consts as voice_consts,
@@ -233,7 +233,9 @@ fn watch_playback(app: AppHandle) //POLL THE PLAYER WHILE THERE IS ONE
     });
 }
 
-fn start_recording(app: &AppHandle, state: &AppState)
+static RECORD_PEER: Mutex<Option<String>> = Mutex::new(None);
+
+fn start_recording(app: &AppHandle, state: &AppState, peer: Option<String>)
 {
     let Some(events) = state.events.lock().unwrap().clone() else { return };
 
@@ -241,6 +243,7 @@ fn start_recording(app: &AppHandle, state: &AppState)
 
     emit(app, UiEvent::Recording { ms: Some(0) });
 
+    *RECORD_PEER.lock().unwrap() = peer.clone();
     watch_recording(app.clone());
 }
 
@@ -248,15 +251,32 @@ async fn finish_recording(app: &AppHandle, state: &AppState, write_stream: &Arc<
 {
     emit(app, UiEvent::Recording { ms: None });
 
-    match recorder::finish_recording()
+    let (peer, clip) =
     {
-        Some(clip) => send_clip(app, state, write_stream, clip).await,
+        let mut target = RECORD_PEER.lock().unwrap();
+        (target.take(), recorder::finish_recording())
+    };
+
+    match clip
+    {
+        Some(clip) => match crate::input::private_recipient(state, peer.as_deref())
+        {
+            Ok(recipient) => send_clip(app, state, write_stream, clip, recipient).await,
+            Err(error) => popup(app, error),
+        },
         None => popup(app, tr!("voice_message.too_short")),
     }
 }
 
-async fn send_clip(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, clip: Vec<u8>)
+async fn send_clip(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, clip: Vec<u8>, recipient: Option<usize>)
 {
+    let limits = why2_chat::options::upload_limits();
+    let limit = limits.voice.min(limits.file);
+    if clip.len() as u64 > limit
+    {
+        return popup(app, tr!("upload.file_too_large", limit = limit / why2_chat::consts::MEGABYTE as u64));
+    }
+
     let hash: [u8; 32] = Sha256::digest(&clip).into();
     let path = misc::voice_temp(&hash);
 
@@ -268,13 +288,11 @@ async fn send_clip(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAs
 
     if !written { return popup(app, tr!("upload.read_failed")) }
 
-    //THE UPLOAD TASK FINDS IT BY HASH
-    client::ACTIVE_UPLOADS.lock().unwrap().insert(hash, path);
-
-    send_packet(state, write_stream, PacketCode::VoiceMessageRequest { hash }).await;
+    let request = client::request_chat_upload(path, hash, recipient, ChatUpload::Voice);
+    send_packet(state, write_stream, request).await;
 }
 
-fn watch_recording(app: AppHandle) //POLL THE RECORDER WHILE IT RUNS
+fn watch_recording(app: AppHandle)
 {
     if RECORD_WATCH.swap(true, Ordering::Relaxed) { return }
 
@@ -310,7 +328,7 @@ fn watch_recording(app: AppHandle) //POLL THE RECORDER WHILE IT RUNS
                     match write_stream
                     {
                         Some(write_stream) => finish_recording(&app, &state, &write_stream).await,
-                        None => recorder::cancel_recording(),
+                        None => cancel_recording(),
                     }
                 },
 
@@ -375,13 +393,18 @@ pub(crate) fn stop(app: &AppHandle) //STOP PLAYBACK
     if playing.is_some() { emit_playback(app, None, 0, false); }
 }
 
-pub(crate) async fn record(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>) //START OR SEND
+pub(crate) async fn record(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>, peer: Option<String>) -> Result<(), String>
 {
-    match recorder::recording()
+    if recorder::recording().is_some()
     {
-        Some(_) => finish_recording(app, state, write_stream).await,
-        None => start_recording(app, state),
+        finish_recording(app, state, write_stream).await;
     }
+    else
+    {
+        crate::input::private_recipient(state, peer.as_deref())?;
+        start_recording(app, state, peer);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "android")]
@@ -390,9 +413,16 @@ pub(crate) fn recording() -> bool //A RECORDING IS RUNNING
     recorder::recording().is_some()
 }
 
+fn cancel_recording()
+{
+    let mut target = RECORD_PEER.lock().unwrap();
+    recorder::cancel_recording();
+    *target = None;
+}
+
 pub(crate) fn reset() //THE SESSION ENDED
 {
-    recorder::cancel_recording();
+    cancel_recording();
     halt();
 
     PLAYING.lock().unwrap().take();
@@ -490,7 +520,7 @@ pub(crate) fn discard_recording(app: AppHandle)
 {
     if recorder::recording().is_none() { return }
 
-    recorder::cancel_recording();
+    cancel_recording();
 
     emit(&app, UiEvent::Recording { ms: None });
     popup(&app, tr!("voice_message.discarded"));

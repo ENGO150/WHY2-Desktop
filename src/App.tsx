@@ -70,7 +70,7 @@ import { Icon, IconButton } from "./icons";
 import { isKeyFrame, h264Config } from "./video";
 import { PALETTE_ROWS, analyze, entryTyped, formatArg, mentions } from "./palette";
 import { hasMarkup } from "./markup";
-import { clock, sentAt } from "./format";
+import { clock, sentAt, formatMessageId } from "./format";
 import { setPlayback, type Voices } from "./voice";
 import type { History } from "./history";
 import { historyUp, historyDown, pushHistory } from "./history";
@@ -84,9 +84,9 @@ import type { ServerForm } from "./servers";
 import { ServerSwitcher, AddServerDialog, useHoldMenu } from "./servers";
 import { AccountDialog, type AccountBox } from "./account";
 import { SettingsDialog } from "./settings-dialog";
-import { applyTheme, cachedTheme, DEFAULT_THEME } from "./themes";
+import { applyTheme, cachedTheme, cachedCustomTheme, DEFAULT_THEME, type ThemeRole } from "./themes";
 import { Sidebar } from "./sidebar";
-import { isMedia } from "./attachment";
+import { isMedia, MEDIA_EXTENSIONS } from "./attachment";
 import { Avatar, Overlay, PanelHeader } from "./components";
 import type { WindowChrome } from "./titlebar";
 import { TitleBar } from "./titlebar";
@@ -185,7 +185,6 @@ const IMAGE_EXTENSIONS =
     "qoi", "hdr", "ff", "dds", "pnm", "pbm", "pgm", "ppm", "pam",
 ];
 
-const VIDEO_EXTENSIONS = ["mp4", "m4v", "webm", "ogv", "mov", "mkv", "avi"];
 
 //ONE MESSAGE OF A PANE, BY ITS SERVER ID
 function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
@@ -225,6 +224,15 @@ function localLine(kind: MessageKind, text: string): ChatMessage
     };
 }
 
+const directPane = (username: string) => `\0${username}`;
+const newHistory = (): History => ({ entries: [], pos: 0, stash: null, prefix: null });
+
+interface PrivateUnread
+{
+    count: number;
+    newest: number;
+}
+
 function App()
 {
     const [uiState, setUiState] = useState<UIState>("server_select");
@@ -248,17 +256,19 @@ function App()
     const [username, setUsername] = useState("");
     const [role, setRole] = useState("user");
     const [theme, setTheme] = useState(() => cachedTheme() ?? DEFAULT_THEME);
+    const [customColors, setCustomColors] = useState(cachedCustomTheme);
+    const customWrites = useRef(Promise.resolve());
     const [paneByChannel, setPaneByChannel] = useState<Record<string, PaneEntry[]>>({});
     const [popupMessage, setPopupMessage] = useState("");
     const [commands, setCommands] = useState<CommandInfo[]>([]);
-    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, auto_show_images: true, show_timestamps: true, disable_colors: false, render_math: true });
+    const [config, setConfig] = useState<ClientConfig>({ show_id: false, show_message_ids: false, auto_load_voice: true, auto_show_images: true, show_timestamps: true, disable_colors: false, render_math: true, media_volume: 100, media_volume_max: 200, output_volume: 100, media_normalisation: true });
     const [tofu, setTofu] = useState<TofuPrompt | null>(null);
     const [tofuTyped, setTofuTyped] = useState("");
     const [users, setUsers] = useState<OnlineUser[]>([]);
 
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
-    const [uploadChoice, setUploadChoice] = useState<string | null>(null);
+    const [uploadChoice, setUploadChoice] = useState<{ path: string; peer: string | null } | null>(null);
     const uploadChoiceRef = useRef<HTMLDivElement>(null);
     const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
@@ -268,8 +278,17 @@ function App()
     //THE CONVERSATIONS, KEYED BY THE OTHER PERSON'S ID, AND WHICH OF THEM THE MIDDLE COLUMN IS SHOWING.
     //A CONVERSATION IS OPEN BECAUSE SOMEBODY OPENED IT OR BECAUSE SOMETHING ARRIVED IN IT - THE SERVER
     //KNOWS NOTHING ABOUT ANY OF THIS, WHICH IS ALSO WHY IT LASTS EXACTLY AS LONG AS THE SESSION DOES
-    const [dms, setDms] = useState<Record<number, DirectChat>>({});
-    const [openDm, setOpenDm] = useState<number | null>(null);
+    const [dms, setDms] = useState<string[]>([]);
+    const [openDm, setOpenDm] = useState<string | null>(null);
+    const [directUnread, setDirectUnread] = useState<Map<string, number>>(new Map());
+    const storedUnread = useRef(new Map<string, PrivateUnread>());
+    const liveUnread = useRef(new Map<string, Set<number>>());
+    const readPending = useRef(new Map<string, number>());
+    const unreadNext = useRef<number | null>(null);
+    const chatSession = useRef(0);
+    const privatePage = useRef<{ cursor: number | null; pending: boolean }>({ cursor: null, pending: false });
+    const readDirectRef = useRef<() => void>(() => {});
+    const showDirectRef = useRef<(peer: { username: string } | null) => void>(() => {});
     const [selected, setSelected] = useState(0);
     const [dismissed, setDismissed] = useState(false);
     const [settings, setSettings] = useState<SettingsBox | null>(null);
@@ -443,7 +462,16 @@ function App()
 
     //THE LINES ALREADY SENT. IT IS A REF AND NOT STATE BECAUSE NOTHING IS DRAWN FROM IT - IT IS READ AND
     //WRITTEN BY ONE KEYPRESS AT A TIME, AND A RE-RENDER PER ARROW WOULD BE ONE PER RECALLED LINE ANYWAY
-    const historyRef = useRef<History>({ entries: [], pos: 0, stash: null, prefix: null });
+    const historyRef = useRef<History>(newHistory());
+    const directHistories = useRef(new Map<string, History>());
+    const inputHistory = () =>
+    {
+        const peer = openDmRef.current;
+        if (!peer) return historyRef.current;
+        const history = directHistories.current.get(peer) ?? newHistory();
+        directHistories.current.set(peer, history);
+        return history;
+    };
 
     const paneRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLDivElement>(null);
@@ -523,6 +551,7 @@ function App()
         //FROM HERE. IT ANSWERS NOTHING EVERYWHERE ELSE
         const resumed = () =>
         {
+            readDirectRef.current();
             invoke<string | null>("notification_target")
                 .then((key) => { if (key) jumpRef.current(key); })
                 .catch(() => {});
@@ -648,9 +677,9 @@ function App()
     useEffect(() => { if (theater) setDrawer(null); }, [theater]);
 
     //WHOEVER THE MIDDLE COLUMN IS TALKING TO, WHILE IT IS A PERSON AND NOT A CHANNEL
-    const dm = openDm === null ? null : dms[openDm] ?? null;
+    const dm = openDm === null ? null : { username: openDm };
 
-    const pane = dm ? dm.pane : paneByChannel[currentChannel] ?? [];
+    const pane = paneByChannel[dm ? directPane(dm.username) : currentChannel] ?? [];
 
     panesRef.current = paneByChannel;
 
@@ -780,18 +809,19 @@ function App()
     const maybePage = () =>
     {
         const node = paneRef.current;
-        const page = pageRef.current;
+        const peer = openDmRef.current;
+        const page = peer ? privatePage.current : pageRef.current;
 
         if (!node || page.cursor === null || page.pending) return;
-        if (currentChannelRef.current !== LOBBY || openDmRef.current !== null) return;
+        if (!peer && currentChannelRef.current !== LOBBY) return;
         if (node.scrollTop >= node.clientHeight * (PRELOAD_SCREENS + 1)) return;
 
         page.pending = true;
-
-        invoke("request_history", { before: page.cursor }).catch(() => { page.pending = false; });
+        invoke(peer ? "request_private_history" : "request_history", { before: page.cursor })
+            .catch(() => { page.pending = false; });
     };
 
-    useEffect(maybePage, [paneByChannel, currentChannel, openDm]);
+    useEffect(() => { maybePage(); });
 
     //NOBODY WHO STOPPED RESTATING IT IS STILL WRITING
     useEffect(() =>
@@ -890,24 +920,93 @@ function App()
         });
     };
 
-    //A PRIVATE MESSAGE GOES TO THE CONVERSATION IT BELONGS TO, WHICH IS STARTED HERE IF THERE WAS NONE -
-    //SOMEBODY WRITING TO US IS EXACTLY AS MUCH A REASON FOR ONE TO EXIST AS US WRITING TO THEM
-    const pushDirect = (peer: DirectPeer, entry: PaneEntry) =>
+    const refreshDirectUnread = () =>
     {
-        const reading = openDmRef.current === peer.id;
+        const counts = new Map<string, number>();
+        for (const [peer, { count }] of storedUnread.current) counts.set(peer, count);
+        for (const [peer, ids] of liveUnread.current) counts.set(peer, (counts.get(peer) ?? 0) + ids.size);
+        setDirectUnread(counts);
+    };
 
-        setDms((previous) =>
+    const readVisibleDirect = () =>
+    {
+        const peer = openDmRef.current;
+        if (!peer || !connected || view !== "chat" || (narrow && drawer !== null) || awayRef.current ||
+            !pinnedRef.current || !paneRef.current || settings || files || pins) return;
+
+        const pane = panesRef.current[directPane(peer)] ?? [];
+        const stored = storedUnread.current.get(peer);
+        const live = liveUnread.current.get(peer);
+        if (live?.size && [...live].every((id) => findMessage(pane, id)))
         {
-            const chat = previous[peer.id] ?? { id: peer.id, username: peer.username, pane: [], unread: 0 };
+            liveUnread.current.delete(peer);
+            refreshDirectUnread();
+        }
 
-            return { ...previous, [peer.id]: {
-                ...chat,
-                username: peer.username,
-                pane: [...chat.pane, entry],
-                unread: chat.unread + (reading ? 0 : 1),
-            } };
+        if (!stored || readPending.current.has(peer) || !findMessage(pane, stored.newest)) return;
+        readPending.current.set(peer, stored.newest);
+        invoke("read_private", { peer, through: stored.newest }).catch(() => readPending.current.delete(peer));
+    };
+    readDirectRef.current = readVisibleDirect;
+
+    useEffect(readVisibleDirect, [paneByChannel, openDm, directUnread, connected, view, drawer, narrow, settings, files, pins]);
+
+    const mergeDirect = (messages: ChatMessage[], replayed: boolean) =>
+    {
+        const byPeer = new Map<string, Extract<PaneEntry, { entry: "message" }>[]>();
+        for (let message of messages)
+        {
+            const peer = message.direct!;
+            if (peer.outgoing && message.username_color === null)
+            {
+                const author = usersRef.current.find((user) => user.username === usernameRef.current);
+                message = { ...message, username_color: author?.username_color ?? null };
+            }
+
+            const key = directPane(peer.username);
+            const entries = byPeer.get(key) ?? [];
+            entries.push({ ...entryFor(message), replayed });
+            byPeer.set(key, entries);
+        }
+
+        setDms((previous) => [...new Set([...previous, ...messages.map((message) => message.direct!.username)])]);
+        setPaneByChannel((previous) =>
+        {
+            const next = { ...previous };
+            for (const [key, entries] of byPeer)
+            {
+                const pane = previous[key] ?? [];
+                const known = new Set(pane.map((entry) => entry.entry === "message" ? entry.message.message_id : null));
+                const additions = entries.filter((entry) => !known.has(entry.message.message_id));
+                next[key] = [...pane, ...additions].sort((a, b) =>
+                    (a.entry === "message" ? a.message.message_id ?? 0 : 0) -
+                    (b.entry === "message" ? b.message.message_id ?? 0 : 0));
+            }
+            return next;
         });
+    };
 
+    const pushDirect = (peer: DirectPeer, message: ChatMessage) =>
+    {
+        const reading = openDmRef.current === peer.username;
+        mergeDirect([message], false);
+
+        const id = message.message_id;
+        if (peer.outgoing || id === null) return;
+        if (peer.persistent)
+        {
+            const next = unreadNext.current;
+            if (next !== null && id < next) return;
+            const previous = storedUnread.current.get(peer.username);
+            storedUnread.current.set(peer.username, { count: (previous?.count ?? 0) + 1, newest: Math.max(previous?.newest ?? id, id) });
+        }
+        else
+        {
+            const ids = liveUnread.current.get(peer.username) ?? new Set<number>();
+            ids.add(id);
+            liveUnread.current.set(peer.username, ids);
+        }
+        refreshDirectUnread();
         if (reading && !pinnedRef.current) setUnread((previous) => previous + 1);
     };
 
@@ -929,7 +1028,7 @@ function App()
         //THE SERVER BROADCASTS A CHANNEL LINE TO THE WHOLE CHANNEL, INCLUDING WHOEVER SENT IT
         if (!peer && message.username === usernameRef.current) return;
 
-        const reading = peer ? openDmRef.current === peer.id : openDmRef.current === null && room === currentChannelRef.current;
+        const reading = peer ? openDmRef.current === peer.username : openDmRef.current === null && room === currentChannelRef.current;
 
         if (reading && !awayRef.current) return;
 
@@ -937,7 +1036,7 @@ function App()
 
         //ONE KEY PER CONVERSATION, SO SOMEBODY WRITING FIVE TIMES REPLACES THEIR OWN LINE IN THE SHADE
         //RATHER THAN STACKING FIVE OF THEM
-        const key = peer ? `dm:${peer.id}` : `channel:${room}`;
+        const key = peer ? `dm:${peer.username}` : `channel:${room}`;
         const title = peer ? peer.username : `#${channel}`;
         const said = message.voice ? t("message.voice", { username: message.username, duration: clock(message.voice.duration) }) : message.text;
         const body = peer || message.voice ? said : `${message.username}: ${said}`;
@@ -957,39 +1056,31 @@ function App()
 
     //THE COLUMN TURNS TO ONE PERSON, OR BACK TO THE CHANNEL. EITHER WAY IT IS ANOTHER PANE WITH ANOTHER
     //BOTTOM, SO WHAT WAS COUNTED AGAINST THE LAST ONE IS NOT WHAT IS UNREAD IN THIS ONE
-    const showDirect = (peer: { id: number; username: string } | null) =>
+    const showDirect = (peer: { username: string } | null) =>
     {
-        if (peer) setDms((previous) =>
+        const name = peer?.username ?? null;
+        if (name) setDms((previous) => previous.includes(name) ? previous : [...previous, name]);
+        if (openDmRef.current !== name)
         {
-            const chat = previous[peer.id] ?? { id: peer.id, username: peer.username, pane: [], unread: 0 };
+            setReplyTo(null);
+            stopEditing();
+            setChatInput("");
+        }
 
-            return { ...previous, [peer.id]: { ...chat, username: peer.username, unread: 0 } };
-        });
-
-        setOpenDm(peer ? peer.id : null);
+        openDmRef.current = name;
+        setOpenDm(name);
         setView("chat");
-
         pinnedRef.current = true;
         setUnread(0);
 
-        //ON A PHONE THE COMPOSER'S FOCUS IS HALF THE SCREEN'S WORTH OF KEYBOARD, WHICH IS NOT SOMETHING
-        //TO OPEN BECAUSE A CONVERSATION WAS PICKED - IT OPENS WHEN THE LINE ITSELF IS TAPPED
         if (!narrow) chatInputRef.current?.focus();
     };
+    showDirectRef.current = showDirect;
 
-    //CLOSING ONE IS CLOSING IT FOR GOOD: NOTHING BUT THIS WINDOW EVER HELD THE CONVERSATION, AND THE
-    //SERVER HAS NO HISTORY OF IT TO ASK FOR AGAIN
-    const closeDirect = (id: number) =>
+    const closeDirect = (name: string) =>
     {
-        setDms((previous) =>
-        {
-            const next = { ...previous };
-            delete next[id];
-
-            return next;
-        });
-
-        setOpenDm((previous) => (previous === id ? null : previous));
+        setDms((previous) => previous.filter((peer) => peer !== name));
+        if (openDmRef.current === name) showDirect(null);
     };
 
     const refreshCommands = () =>
@@ -1000,6 +1091,8 @@ function App()
     //EVERYTHING THE SESSION BUILT UP GOES AWAY WITH IT
     const resetSession = (reason: string) =>
     {
+        chatSession.current += 1;
+        openDmRef.current = null;
         setUiState("server_select");
         setConnecting(false);
         setErrorMsg(reason);
@@ -1016,7 +1109,14 @@ function App()
         setUploadChoice(null);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
-        setDms({});
+        setDms([]);
+        setDirectUnread(new Map());
+        storedUnread.current.clear();
+        liveUnread.current.clear();
+        readPending.current.clear();
+        unreadNext.current = null;
+        privatePage.current = { cursor: null, pending: false };
+        directHistories.current.clear();
         setOpenDm(null);
         setCommands([]);
         setTofu(null);
@@ -1193,11 +1293,12 @@ function App()
         //BECAUSE THE ANSWER IS AN id INTO THE LIST AND IS WORTH NOTHING WITHOUT IT; THE BRIDGE ALREADY
         //ANSWERS None FOR A ROW THAT HAS SINCE BEEN FORGOTTEN, SO A MISS HERE IS SIMPLY THE LIST
         //THE PALETTE ON DISK WINS OVER THE BOOT CACHE
-        invoke<string | null>("get_theme").then((stored) =>
-        {
-            setTheme(stored ?? DEFAULT_THEME);
-            applyTheme(stored);
-        }).catch(console.error);
+        Promise.all([invoke<string | null>("get_theme"), invoke<ReturnType<typeof cachedCustomTheme>>("get_custom_theme")])
+            .then(([stored, colors]) =>
+            {
+                setCustomColors(colors);
+                setTheme(stored ?? DEFAULT_THEME);
+            }).catch(console.error);
 
         Promise.all([
             invoke<StoredServer[]>("get_servers"),
@@ -1349,20 +1450,12 @@ function App()
                     const channel = payload.data.channel ?? currentChannelRef.current;
                     const here = channel === currentChannelRef.current;
 
-                    //OUR OWN PM'S NAME COLOUR IS TAKEN OFF THE ROSTER
-                    if (message.direct?.outgoing && message.username_color === null)
-                    {
-                        const author = usersRef.current.find((user) => user.username === usernameRef.current);
-
-                        message = { ...message, username_color: author?.username_color ?? null };
-                    }
-
                     //A PM IS NOT A LINE OF THE CHANNEL THAT HAPPENED TO BE OPEN WHEN IT LANDED
-                    if (message.direct) pushDirect(message.direct, entryFor(message));
+                    if (message.direct) pushDirect(message.direct, message);
                     else pushTo(channel, entryFor(message));
 
                     //A PARKED LINE ONLY WHEN IT NAMES US
-                    if (here || mentions(message.text, usernameRef.current) || answersUs(message)) notifyMessage(message, channel);
+                    if (message.direct || here || mentions(message.text, usernameRef.current) || answersUs(message)) notifyMessage(message, channel);
 
                     //A MESSAGE IS THE PROOF THEY STOPPED
                     if (message.kind === "user" || message.kind === "private")
@@ -1372,6 +1465,35 @@ function App()
                         requestProfiles([message.username]);
                     }
 
+                    break;
+                }
+
+                case "open_direct":
+                    showDirectRef.current(payload.data.username ? { username: payload.data.username } : null);
+                    break;
+
+                case "private_history":
+                {
+                    const { messages, start, more, older } = payload.data;
+                    const node = paneRef.current;
+                    if (older && node && !pinnedRef.current && messages.some((message) => message.direct?.username === openDmRef.current))
+                    {
+                        keepScrollRef.current = { height: node.scrollHeight, top: node.scrollTop };
+                    }
+                    privatePage.current = { cursor: more ? start : null, pending: false };
+                    mergeDirect(messages, true);
+                    requestProfiles(messages.map((message) => message.direct!.username));
+                    break;
+                }
+
+                case "private_unread":
+                {
+                    const { next, senders } = payload.data;
+                    unreadNext.current = next;
+                    storedUnread.current = new Map(senders.map(([peer, count, newest]) => [peer, { count, newest }]));
+                    readPending.current.clear();
+                    setDms((previous) => [...new Set([...previous, ...senders.map(([peer]) => peer)])]);
+                    refreshDirectUnread();
                     break;
                 }
 
@@ -1416,6 +1538,10 @@ function App()
                 case "deleted":
                 {
                     const { message_id } = payload.data;
+                    for (const ids of liveUnread.current.values())
+                    {
+                        if (ids.delete(message_id)) refreshDirectUnread();
+                    }
 
                     if (editRef.current?.message_id === message_id) stopEditing();
 
@@ -1484,10 +1610,12 @@ function App()
                     const { message_id } = payload.data;
 
                     const panes = panesRef.current;
-                    const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
+                    const peer = openDmRef.current;
+                    const message = peer ? findMessage(panes[directPane(peer)] ?? [], message_id)
+                        : findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
 
-                    if (!message) push(entryFor(localLine("error", t("hearts.not_loaded", { message_id }))));
-                    else if (message.hearts.length === 0) push(entryFor(localLine("notice", t("hearts.none", { message_id }))));
+                    if (!message) push(entryFor(localLine("error", t("hearts.not_loaded", { message_id: formatMessageId(message_id) }))));
+                    else if (message.hearts.length === 0) push(entryFor(localLine("notice", t("hearts.none", { message_id: formatMessageId(message_id) }))));
                     else push({
                         entry: "block",
                         title: t("hearts.title", { message_id, count: message.hearts.length }).replace(/[:：]$/, ""),
@@ -1575,7 +1703,7 @@ function App()
                 {
                     const { hash, image } = payload.data;
 
-                    const front = currentChannelRef.current;
+                    const front = openDmRef.current ? directPane(openDmRef.current) : currentChannelRef.current;
 
                     setPaneByChannel((previous) => deliverPicture(previous, hash, image, front));
 
@@ -1619,14 +1747,16 @@ function App()
                     const { message_id } = payload.data;
 
                     const panes = panesRef.current;
-                    const message = findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
+                    const peer = openDmRef.current;
+                    const message = peer ? findMessage(panes[directPane(peer)] ?? [], message_id)
+                        : findMessage(panes[currentChannelRef.current] ?? [], message_id) ?? findMessage(panes[LOBBY] ?? [], message_id);
 
-                    if (!message) push(entryFor(localLine("error", t("voice_message.not_loaded", { message_id }))));
+                    if (!message) push(entryFor(localLine("error", t("voice_message.not_loaded", { message_id: formatMessageId(message_id) }))));
                     else if (message.image && isMedia(message.image.filename)) {
                         jumpToMessage(message_id);
                         requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("why2-play-media", { detail: message_id })));
                     }
-                    else if (!message.voice) push(entryFor(localLine("error", t("voice_message.not_voice", { message_id }))));
+                    else if (!message.voice) push(entryFor(localLine("error", t("voice_message.not_voice", { message_id: formatMessageId(message_id) }))));
                     else playVoice(message.voice.hash);
                     break;
                 }
@@ -1945,8 +2075,8 @@ function App()
                     setCurrentChannel(payload.data.channel ?? LOBBY);
                     setTypingUsers({});
 
-                    //WALKING INTO A CHANNEL IS WALKING OUT OF WHATEVER CONVERSATION WAS IN FRONT OF IT
-                    setOpenDm(null);
+                    // Switching channels also clears the previous conversation's reply target.
+                    if (openDmRef.current) showDirectRef.current(null);
 
                     pinnedRef.current = true;
                     setUnread(0);
@@ -2203,25 +2333,34 @@ function App()
 
     const send = (input: string) =>
     {
-        invoke("send_input", { input }).catch((error: unknown) => setPopupMessage(String(error)));
+        const peer = openDmRef.current;
+        const reply = input.trim().match(/^\/(?:reply|respond)\s+#?(p\d+)\s/i);
+        if (reply && (!peer || !(panesRef.current[directPane(peer)] ?? []).some((entry) =>
+            entry.entry === "message" && entry.message.message_id !== null && formatMessageId(entry.message.message_id) === reply[1])))
+        {
+            setPopupMessage(t("pm.reply_context"));
+            return;
+        }
+        invoke("send_input", { input, peer }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
-    //ONLY THE LOBBY IS STORED; OURS, OR ANYBODY'S AS A MODERATOR
+    // Authors may delete their PMs. Moderation applies to lobby messages.
     const deletable = (message: ChatMessage | null) => message !== null && message.message_id !== null
-        && message.kind === "user" && openDm === null && currentChannel === LOBBY
-        && (message.username === username || role !== "user");
+        && (message.direct ? message.direct.username === openDm && message.direct.outgoing
+            : message.kind === "user" && openDm === null && currentChannel === LOBBY
+                && (message.username === username || role !== "user"));
 
-    const deleteMessage = (message_id: number) => send(`/delete ${message_id}`);
+    const deleteMessage = (message_id: number) => send(`/delete ${formatMessageId(message_id)}`);
 
     //A PINNED LINE IS A STORED LOBBY LINE WHATEVER PANE IS BEHIND ITS WINDOW
     const storedDeletable = (message: ChatMessage) => message.message_id !== null
         && (message.username === username || role !== "user");
 
-    //HEARTS AND REPLIES LAND ON THE STORED LOBBY ONLY
+    // Reactions and replies use the current conversation or stored lobby.
     const reactable = (message: ChatMessage | null) => message !== null && message.message_id !== null
-        && message.kind === "user" && openDm === null && currentChannel === LOBBY;
+        && (message.direct ? message.direct.username === openDm : message.kind === "user" && openDm === null && currentChannel === LOBBY);
 
-    const heartMessage = (message_id: number) => send(`/heart ${message_id}`);
+    const heartMessage = (message_id: number) => send(`/heart ${formatMessageId(message_id)}`);
 
     const replyMessage = (message: ChatMessage) =>
     {
@@ -2232,7 +2371,7 @@ function App()
     };
 
     //A PIN IS MODERATION'S AND LANDS ON A STORED LOBBY LINE LIKE THE REST OF THEM
-    const pinnable = (message: ChatMessage | null) => hasPin && reactable(message);
+    const pinnable = (message: ChatMessage | null) => hasPin && !message?.direct && reactable(message);
 
     const pinMessage = (message: ChatMessage) =>
     {
@@ -2270,7 +2409,7 @@ function App()
     {
         const row = paneRef.current?.querySelector(`[data-message-id="${message_id}"]`);
 
-        if (!row) return setPopupMessage(t("hearts.not_loaded", { message_id }));
+        if (!row) return setPopupMessage(t("hearts.not_loaded", { message_id: formatMessageId(message_id) }));
 
         row.scrollIntoView({ behavior: "smooth", block: "center" });
         row.classList.remove("flash");
@@ -2335,10 +2474,8 @@ function App()
 
         if (key.startsWith("dm:"))
         {
-            const id = Number(key.slice(3));
-            const peer = dms[id] ?? users.find((user) => user.id === id);
-
-            if (peer) showDirect({ id, username: peer.username });
+            const username = key.slice(3);
+            if (username) showDirect({ username });
 
             return;
         }
@@ -2554,14 +2691,16 @@ function App()
     //Pictures are persistent; the general file picker asks which lifetime to use.
     const uploadFile = async (image: boolean) =>
     {
+        const peer = openDmRef.current;
+        const session = chatSession.current;
         const selected = await open(image
-            ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }] }
+            ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
             : { multiple: false });
 
-        if (typeof selected !== "string") return;
+        if (typeof selected !== "string" || session !== chatSession.current) return;
 
-        if (!image) { setUploadChoice(selected); return; }
-        invoke("upload_file_from_path", { path: selected, persistent: true }).catch((error: unknown) => setPopupMessage(String(error)));
+        if (!image) { setUploadChoice({ path: selected, peer }); return; }
+        invoke("upload_file_from_path", { path: selected, persistent: true, peer }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -2923,14 +3062,41 @@ function App()
         setZoom(start.live);
     };
 
+    const volumeWrites = useRef(Promise.resolve());
+    const updatePlaybackVolume = (key: "media_volume" | "output_volume", percent: number) =>
+    {
+        setConfig((previous) => ({ ...previous, [key]: percent }));
+        setSettings((previous) => previous && !previous.server ? {
+            ...previous,
+            rows: previous.rows.map((row) => row.row === "item" && row.item.key === key && row.item.value.kind === "volume"
+                ? { row: "item", item: { ...row.item, value: { kind: "volume", value: { ...row.item.value.value, percent } } } }
+                : row),
+        } : previous);
+        volumeWrites.current = volumeWrites.current
+            .then(() => invoke("set_client_volume", { key, percent }))
+            .then(() => {}, (error: unknown) =>
+            {
+                setPopupMessage(String(error));
+                return invoke<ClientConfig>("get_client_config").then((stored) => setConfig((previous) =>
+                    previous[key] === percent ? { ...previous, [key]: stored[key] } : previous)).catch(console.error);
+            });
+    };
+
     const pictures: Pictures =
     {
+        media: {
+            volume: config.media_volume,
+            max: config.media_volume_max,
+            outputVolume: config.output_volume,
+            normalise: config.media_normalisation,
+            setVolume: (percent) => updatePlaybackVolume("media_volume", percent),
+        },
         auto: config.auto_show_images,
         like: (message) => reactable(message) ? () => heartMessage(message.message_id!) : null,
         remove: (message) => deletable(message) ? () => deleteMessage(message.message_id!) : null,
         show: (hash: string) =>
         {
-            const front = currentChannelRef.current;
+            const front = openDmRef.current ? directPane(openDmRef.current) : currentChannelRef.current;
 
             setPaneByChannel((previous) => markWaiting(previous, hash, front));
 
@@ -2941,7 +3107,7 @@ function App()
         //AND IT IS USUALLY THE CACHE THAT ANSWERS IT, SINCE THAT IS WHY THE LINE WAS DEFERRED AT ALL
         load: (hash: string) =>
         {
-            const front = currentChannelRef.current;
+            const front = openDmRef.current ? directPane(openDmRef.current) : currentChannelRef.current;
 
             setPaneByChannel((previous) => markLoading(previous, hash, front));
 
@@ -3544,8 +3710,9 @@ function App()
     //THE CONVERSATIONS, IN AN ORDER THAT DOES NOT MOVE UNDER THE POINTER - A LIST SORTED BY WHAT ARRIVED
     //LAST WOULD PUT THE ROW BEING CLICKED SOMEWHERE ELSE THE MOMENT SOMEBODY TYPED
     const directs = useMemo(
-        () => Object.values(dms).sort((a, b) => a.username.localeCompare(b.username)),
-        [dms],
+        (): DirectChat[] => dms.map((username) => ({ username, unread: directUnread.get(username) ?? 0 }))
+            .sort((a, b) => a.username.localeCompare(b.username)),
+        [dms, directUnread],
     );
 
     //EVERY EDIT OF THE BOX GOES THROUGH HERE, BECAUSE EVERY ONE OF THEM IS "THE SAME BOX, ONE ROW LATER"
@@ -3626,7 +3793,7 @@ function App()
         if (!box.server)
         {
             invoke<ClientConfig>("set_client_setting", { key: row.item.key, on })
-                .then(setConfig)
+                .then((stored) => setConfig((previous) => ({ ...stored, media_volume: previous.media_volume, output_volume: previous.output_volume })))
                 .catch((error: unknown) => setPopupMessage(String(error)));
         }
 
@@ -3651,6 +3818,12 @@ function App()
             (item) => (item.value.kind === "volume"
                 ? { ...item, value: { kind: "volume", value: { ...item.value.value, percent: stored } } }
                 : item)));
+
+        if (row.item.key === "media_volume" || row.item.key === "output_volume")
+        {
+            updatePlaybackVolume(row.item.key, wanted);
+            return;
+        }
 
         write(wanted);
 
@@ -4082,8 +4255,8 @@ function App()
             event.preventDefault();
 
             const line = event.key === "ArrowUp"
-                ? historyUp(historyRef.current, chatInput)
-                : historyDown(historyRef.current);
+                ? historyUp(inputHistory(), chatInput)
+                : historyDown(inputHistory());
 
             if (line !== null) writeInput(line);
 
@@ -4120,16 +4293,14 @@ function App()
         //A REWORDED LINE REPLACES THE ONE IT CAME FROM
         if (editTarget && !command)
         {
-            if (chatInput !== editTarget.text) send(`/edit ${editTarget.message_id} ${chatInput}`);
+            if (chatInput !== editTarget.text) send(`/edit ${formatMessageId(editTarget.message_id!)} ${chatInput}`);
 
             stopEditing();
             return;
         }
 
-        send(dm && !command ? `/pm ${dm.id} ${chatInput}`
-            : replyTo?.message_id != null && !command ? `/reply ${replyTo.message_id} ${chatInput}`
-                : chatInput);
-        pushHistory(historyRef.current, chatInput);
+        send(replyTo?.message_id != null && !command ? `/reply ${formatMessageId(replyTo.message_id)} ${chatInput}` : chatInput);
+        pushHistory(inputHistory(), chatInput);
 
         if (!command) setReplyTo(null);
 
@@ -4147,7 +4318,7 @@ function App()
 
         pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 8;
 
-        if (pinnedRef.current) setUnread(0);
+        if (pinnedRef.current) { setUnread(0); readVisibleDirect(); }
 
         maybePage();
     };
@@ -4183,7 +4354,7 @@ function App()
                 {entry.args.map((arg, position) => (
                     <span
                         key={arg.name}
-                        className={`font-mono text-[13px] ${position === activeArgument ? "text-accent" : arg.required ? "text-arg-required" : "text-arg-optional"}`}
+                        className={`font-mono text-[13px] ${position === activeArgument ? "text-arg-active" : arg.required ? "text-arg-required" : "text-arg-optional"}`}
                     >
                         {formatArg(arg)}
                     </span>
@@ -4328,18 +4499,33 @@ function App()
 
             if (message.kind !== "user" && message.kind !== "private") { nodes.push(renderNotice(message, index)); return; }
 
-            nodes.push(renderChat(message, index, step.grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
+            nodes.push(renderChat(message, message.direct ? message.message_id ?? index : index, step.grouped, config, username, dm !== null, entry.picture ?? "absent", pictures,
                 lines, people, narrow, voices));
         });
 
         return nodes;
     })();
 
+    useEffect(() => { applyTheme(theme, customColors); }, [theme, customColors]);
+
+    const editCustomColor = (role: ThemeRole, color: string) =>
+    {
+        setCustomColors((previous) =>
+        {
+            const next = { ...previous };
+            if (color) next[role] = color;
+            else delete next[role];
+            return next;
+        });
+        customWrites.current = customWrites.current
+            .then(() => invoke("set_custom_color", { role, color }))
+            .then(() => {}, (error: unknown) => setPopupMessage(String(error)));
+    };
+
     //A SWATCH PRESSED
     const pickTheme = (id: string) =>
     {
         setTheme(id);
-        applyTheme(id);
         invoke("set_theme", { id: id === DEFAULT_THEME ? "" : id }).catch((error) => setPopupMessage(String(error)));
     };
 
@@ -4374,6 +4560,8 @@ function App()
             editSettings={editSettings}
             account={!settings?.server && hasAccount ? (action) => { closeSettings(); send(`/account ${action}`); } : null}
             theme={settings?.server ? null : theme}
+            customColors={customColors}
+            editCustomColor={editCustomColor}
             pickTheme={pickTheme}
             icon={settings?.server && serverAction("icon")
                 ? { name: serverName || "WHY2", src: iconSrc, busy: uploadingIcon, pick: pickIcon, remove: () => send("/server icon") }
@@ -4605,8 +4793,8 @@ function App()
             config={config}
             anchor={card.anchor}
             narrow={narrow}
-            message={cardUser && !cardOwn
-                ? () => { setCard(null); setDrawer(null); showDirect(cardUser); }
+            message={!cardOwn
+                ? () => { setCard(null); setDrawer(null); showDirect({ username: card.username }); }
                 : null}
             edit={cardOwn && !profilesOff ? () => { setCard(null); setDrawer(null); setEditing(true); } : null}
             close={() =>
@@ -4838,7 +5026,7 @@ function App()
 
     //WHAT THE HEADER SAYS UNDER THE NAME
     const subtitle = typingLine ?? (dm
-        ? users.some((user) => user.id === dm.id) ? t("chat.online") : t("chat.offline")
+        ? users.some((user) => user.username === dm.username) ? t("chat.online") : t("chat.offline")
         : tn("chat.online_count", users.length));
 
     const shell = (
@@ -5031,6 +5219,7 @@ function App()
 
                                         pinnedRef.current = true;
                                         setUnread(0);
+                                        readVisibleDirect();
                                     }}
                                     title={t("pane.unread", { count: unread })}
                                     className="absolute bottom-4 right-6 flex h-10 w-10 items-center justify-center rounded-full border border-border-strong bg-overlay text-text shadow-[0_8px_24px_-8px_rgba(0,0,0,0.4)]"
@@ -5109,7 +5298,7 @@ function App()
                                             )}
 
                                         {/* HELD TO TALK, OR TAPPED */}
-                                        {hasRecord && (!dm || recording !== null) && (
+                                        {hasRecord && (
                                             <button
                                                 ref={holdRecord}
                                                 type="button"
@@ -5156,6 +5345,7 @@ function App()
                         <MemberColumn
                             users={users}
                             offline={offline}
+                            directUnread={directUnread}
                             username={username}
                             config={config}
                             narrow={narrow}
@@ -5182,13 +5372,13 @@ function App()
             {uploadChoice && <Overlay narrow={narrow} width={440} label={t("chat.attach")} cardRef={uploadChoiceRef} close={() => setUploadChoice(null)}>
                 <PanelHeader title={t("chat.attach")} close={() => setUploadChoice(null)} />
                 <div className="px-6 pb-6">
-                    <p className="mb-3 break-all text-sm font-medium">{uploadChoice.split(/[\\/]/).pop()}</p>
+                    <p className="mb-3 break-all text-sm font-medium">{uploadChoice.path.split(/[\\/]/).pop()}</p>
                     <p className="mb-5 text-sm text-muted">{t("upload.persistence_prompt")}</p>
                     <div className="flex gap-3">
                         {[true, false].map((persistent) => <button key={String(persistent)} type="button" autoFocus={persistent} className="btn btn-accent flex-1" onClick={() => {
-                            const path = uploadChoice;
+                            const { path, peer } = uploadChoice;
                             setUploadChoice(null);
-                            invoke("upload_file_from_path", { path, persistent }).catch((error: unknown) => setPopupMessage(String(error)));
+                            invoke("upload_file_from_path", { path, persistent, peer }).catch((error: unknown) => setPopupMessage(String(error)));
                         }}>{t(persistent ? "upload.persistent" : "upload.temporary")}</button>)}
                     </div>
                 </div>

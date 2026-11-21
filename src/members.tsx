@@ -51,12 +51,13 @@ export interface Moderation
 //EVERYBODY ON THE SERVER, BY ROLE; A ROW OPENS THEIR CARD
 export function MemberColumn(
 {
-    users, offline, username, config, narrow, drawer, people, panelRef, moderation, message, send,
+    users, offline, directUnread, username, config, narrow, drawer, people, panelRef, moderation, message, send,
 }: {
     users: OnlineUser[];
 
     //null IS A SERVER THAT KEEPS THEM TO ITSELF
     offline: OfflineUser[] | null;
+    directUnread: Map<string, number>;
 
     username: string;
     config: ClientConfig;
@@ -68,7 +69,7 @@ export function MemberColumn(
     panelRef: React.Ref<HTMLElement>;
 
     moderation: Moderation;
-    message: (user: OnlineUser) => void;
+    message: (user: { username: string }) => void;
     send: (input: string) => void;
 })
 {
@@ -132,6 +133,7 @@ export function MemberColumn(
                                         )}
                                     </span>
 
+                                    <DirectUnread count={directUnread.get(user.username)} />
                                     {device && <Icon name={device} className="h-3.5 w-3.5 shrink-0 text-faint" />}
                                     {config.show_id && <span className="shrink-0 text-[11px] text-faint">{user.id}</span>}
                                 </button>
@@ -157,7 +159,7 @@ export function MemberColumn(
                                     onClick={press(user.username)}
                                     {...bind({ username: user.username, user: null, role: user.role })}
                                     data-member={user.username}
-                                    className={`${row} opacity-45 hover:opacity-100`}
+                                    className={`${row} ${directUnread.get(user.username) ? "" : "opacity-45 hover:opacity-100"}`}
                                 >
                                     {config.show_id && <span className="text-xs text-faint">{user.id}</span>}
                                     <Avatar name={user.username} color={color} size={26} src={people.avatar(user.username)} />
@@ -166,6 +168,7 @@ export function MemberColumn(
                                         <span className="block truncate text-[13.5px] leading-tight" style={color ? { color } : undefined}>{user.username}</span>
                                         {status && <span className="block truncate text-[11.5px] leading-tight text-faint">{status}</span>}
                                     </span>
+                                    <DirectUnread count={directUnread.get(user.username)} />
                                 </button>
                             );
                         })}
@@ -201,7 +204,7 @@ function MemberMenu(
     own: boolean;
     moderation: Moderation;
     profile: () => void;
-    message: (user: OnlineUser) => void;
+    message: (user: { username: string }) => void;
     send: (input: string) => void;
     close: () => void;
 })
@@ -256,8 +259,8 @@ function MemberMenu(
                 {t("menu.view_profile")}
             </button>
 
-            {target && (
-                <button type="button" onClick={() => { close(); message(target); }} className={MENU_ITEM}>
+            {!own && (
+                <button type="button" onClick={() => { close(); message({ username }); }} className={MENU_ITEM}>
                     <Icon name="at" className="h-4 w-4 text-muted" />
                     {t("menu.send_message")}
                 </button>
@@ -302,4 +305,9 @@ function MemberMenu(
             ))}
         </MenuBox>
     );
+}
+
+function DirectUnread({ count }: { count?: number })
+{
+    return count ? <span title={t("pane.unread", { count })} className="rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{count}</span> : null;
 }

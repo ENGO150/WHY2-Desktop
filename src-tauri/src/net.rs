@@ -48,6 +48,7 @@ use why2_chat::
 
 use crate::tr;
 use crate::state::*;
+use crate::types::wire_private_id;
 use crate::emit::*;
 use crate::events::pump_events;
 
@@ -115,6 +116,22 @@ pub(crate) async fn request_history(before: u64, state: State<'_, AppState>) -> 
 
     send_packet(&state, &write_stream, PacketCode::HistoryRequest { before }).await;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn request_private_history(before: u64, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
+    send_packet(&state, &write_stream, PacketCode::PrivateHistoryRequest { before: wire_private_id(before)? }).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn read_private(peer: String, through: u64, state: State<'_, AppState>) -> Result<(), String>
+{
+    let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
+    send_packet(&state, &write_stream, PacketCode::PrivateRead { peer, through: wire_private_id(through)? }).await;
     Ok(())
 }
 

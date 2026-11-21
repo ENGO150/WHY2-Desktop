@@ -47,7 +47,7 @@ export function Sidebar(
     channels: string[];
     currentChannel: string;
     directs: DirectChat[];
-    openDm: number | null;
+    openDm: string | null;
     voice: VoiceState;
     screen: ScreenState;
     creating: string | null;
@@ -60,8 +60,8 @@ export function Sidebar(
     setDrawer: (drawer: "left" | "right" | null) => void;
     send: (input: string) => void;
     setSpeaker: (on: boolean) => void;
-    showDirect: (peer: { id: number; username: string } | null) => void;
-    closeDirect: (id: number) => void;
+    showDirect: (peer: { username: string } | null) => void;
+    closeDirect: (username: string) => void;
     openScreens: () => void;
     switcher: React.ReactNode;
     people: People;
@@ -161,11 +161,11 @@ export function Sidebar(
 
                         {directs.map((chat) =>
                         {
-                            const here = chat.id === openDm;
-                            const online = users.some((user) => user.id === chat.id);
+                            const here = chat.username === openDm;
+                            const online = users.some((user) => user.username === chat.username);
 
                             return (
-                                <div key={chat.id} className={`${row} ${here ? "bg-selected" : "hover:bg-hover"}`}>
+                                <div key={chat.username} className={`${row} ${here ? "bg-selected" : "hover:bg-hover"}`}>
                                     <button
                                         type="button"
                                         onClick={() => { showDirect(chat); setDrawer(null); }}
@@ -189,7 +189,7 @@ export function Sidebar(
                                         type="button"
                                         title={t("window.close")}
                                         aria-label={t("side.close_direct")}
-                                        onClick={() => closeDirect(chat.id)}
+                                        onClick={() => closeDirect(chat.username)}
                                         className={`h-5 w-5 shrink-0 items-center justify-center rounded text-faint transition-colors hover:text-text group-hover:flex ${narrow ? "flex" : "hidden"}`}
                                     >
                                         <Icon name="close" className="h-3.5 w-3.5" />

@@ -26,6 +26,73 @@ export interface Theme
 }
 
 export const DEFAULT_THEME = "why2";
+export const CUSTOM_THEME = "custom";
+
+export const THEME_COLORS = {
+    background: "#000000",
+    text: "#E5E3DC",
+    muted: "#9C9A93",
+    accent: "#5C9DF5",
+    highlight: "#F2C94C",
+    error: "#EC6A5E",
+    heart: "#EC6A7E",
+    ok: "#6FBF73",
+    logo: "#E5E3DC",
+    code_bg: "#0E0E0E",
+    selected: "#202020",
+    mention: "#382F1A",
+    selection: "#203755",
+    arg_required: "#D9B26A",
+    arg_optional: "#B8A2D6",
+    arg_active: "#5C9DF5",
+};
+export type ThemeRole = keyof typeof THEME_COLORS;
+export type CustomTheme = Partial<Record<ThemeRole, string>>;
+
+const CUSTOM_CACHE = "why2-custom-theme";
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+export function cachedCustomTheme(): CustomTheme
+{
+    try { return JSON.parse(localStorage.getItem(CUSTOM_CACHE) ?? "{}") ?? {}; }
+    catch { return {}; }
+}
+
+export function customTheme(colors: CustomTheme): Theme
+{
+    const background = validColor(colors.background) ?? THEME_COLORS.background;
+    const [red, green, blue] = [1, 3, 5].map((offset) => parseInt(background.slice(offset, offset + 2), 16));
+    return {
+        id: CUSTOM_THEME,
+        name: "Custom",
+        light: (red * 299 + green * 587 + blue * 114) / 1000 >= 150,
+        swatch: [background, background, validColor(colors.text) ?? THEME_COLORS.text],
+    };
+}
+
+function validColor(color: string | undefined): string | undefined
+{
+    return typeof color === "string" && HEX_COLOR.test(color) ? color : undefined;
+}
+
+const COLOR_PROPERTIES: Record<ThemeRole, string[]> = {
+    background: ["deep", "chat"],
+    text: ["text", "code-text", "md-heading"],
+    muted: ["muted", "faint", "md-quote", "code-lang"],
+    accent: ["accent"],
+    highlight: ["highlight"],
+    error: ["error"],
+    heart: ["heart"],
+    ok: ["ok", "online", "code-inline"],
+    logo: ["brand"],
+    code_bg: ["code-bg"],
+    selected: ["selected"],
+    mention: ["mention-bg"],
+    selection: ["selection-bg"],
+    arg_required: ["arg-required"],
+    arg_optional: ["arg-optional"],
+    arg_active: ["arg-active"],
+};
 
 //BOOT CACHE KEY
 const CACHE = "why2-theme";
@@ -52,9 +119,9 @@ export function findTheme(id: string | null | undefined): Theme
 }
 
 //PUT A PALETTE ON THE PAGE
-export function applyTheme(id: string | null | undefined)
+export function applyTheme(id: string | null | undefined, colors = cachedCustomTheme())
 {
-    const theme = findTheme(id);
+    const theme = id === CUSTOM_THEME ? customTheme(colors) : findTheme(id);
     const root = document.documentElement;
 
     if (theme.id === DEFAULT_THEME) delete root.dataset.theme;
@@ -62,6 +129,18 @@ export function applyTheme(id: string | null | undefined)
 
     if (theme.light) root.dataset.tone = "light";
     else delete root.dataset.tone;
+
+    for (const [role, properties] of Object.entries(COLOR_PROPERTIES))
+    {
+        const color = theme.id === CUSTOM_THEME ? validColor(colors[role as ThemeRole]) : undefined;
+        for (const property of properties)
+        {
+            if (color) root.style.setProperty(`--${property}`, color);
+            else root.style.removeProperty(`--${property}`);
+        }
+    }
+
+    try { localStorage.setItem(CUSTOM_CACHE, JSON.stringify(colors)); } catch { /* No storage. */ }
 
     try { localStorage.setItem(CACHE, theme.id); } catch { /* NO STORAGE */ }
 }

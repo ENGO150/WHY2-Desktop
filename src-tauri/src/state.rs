@@ -154,7 +154,14 @@ pub(crate) fn reset_session()
     options::set_server_username("");
 
     //A HALF-FINISHED UPLOAD BELONGS TO THE SOCKET THAT IS GONE
-    client::ACTIVE_UPLOADS.lock().unwrap().clear();
+    for (_, path) in std::mem::take(&mut *client::ACTIVE_UPLOADS.lock().unwrap())
+    {
+        why2_chat::misc::drop_upload_temp(&path);
+    }
+    for (_, (_, path, _)) in std::mem::take(&mut *client::CHAT_UPLOADS.lock().unwrap())
+    {
+        why2_chat::misc::drop_upload_temp(&path);
+    }
 
     //AND SO DOES THE CALL: THE VOICE CLIENT FOLLOWS THIS FLAG, SO A LOST SESSION TAKES ITS STREAMS WITH IT
     #[cfg(voice)]

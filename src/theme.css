@@ -122,6 +122,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
     --color-arg-required: var(--arg-required);
     --color-arg-optional: var(--arg-optional);
+    --color-arg-active: var(--arg-active, var(--accent));
 
     --color-code-bg: var(--code-bg);
     --color-code-inline: var(--code-inline);
@@ -160,7 +161,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
     ::selection
     {
-        background: color-mix(in oklab, var(--accent) 35%, transparent);
+        background: var(--selection-bg, color-mix(in oklab, var(--accent) 35%, transparent));
     }
 
     :focus-visible

@@ -277,3 +277,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
     --code-bg: #f3f0f8;
 }
+
+:root[data-theme="custom"]
+{
+    --sidebar: color-mix(in srgb, var(--chat) 94%, var(--text));
+    --raised: color-mix(in srgb, var(--chat) 90%, var(--text));
+    --overlay: color-mix(in srgb, var(--chat) 88%, var(--text));
+    --hover: color-mix(in srgb, var(--text) 5%, transparent);
+    --selected: color-mix(in srgb, var(--text) 10%, transparent);
+    --active: color-mix(in srgb, var(--text) 14%, transparent);
+    --border: color-mix(in srgb, var(--text) 10%, transparent);
+    --border-strong: color-mix(in srgb, var(--text) 18%, transparent);
+}
+
+:root[data-theme="custom"][data-tone="light"]
+{
+    --text: #252525;
+    --muted: #686868;
+    --faint: #767676;
+    --brand: #252525;
+    --code-bg: #eaeaea;
+    --code-text: var(--text);
+}

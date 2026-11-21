@@ -26,17 +26,21 @@ deliberately kept in step about *behaviour*.
 
 ### Communication
 - **Text chat** with per-channel history kept locally, grouped by speaker
-- **Direct messages** as real conversations with panes of their own, not lines in whatever channel was open
+- **Direct messages** with separate conversations and input history, replies, reactions, voice notes,
+  and file attachments. With server persistence enabled, conversations and unread counts survive
+  reconnects and messages can reach offline accounts.
 - **Channels**, which exist for exactly as long as somebody is standing in one
 - **Voice calls** — Opus, noise suppression, voice activity, input and output volume, per-user mute —
   with the channel's whole voice roster shown whether or not you are in the call
 - **Screen sharing**, both directions: share a monitor, or watch somebody else's full-window
 - **File transfer**, with a drawer that lists what everybody on the server is offering
-- **Persistent attachments** with WHY2 Chat 2.5.0: the file button asks whether to post a persistent
+- **Persistent attachments** in the lobby and direct messages: the file button asks whether to post a persistent
   attachment or share a temporary file. Closing the prompt cancels. `/upload <path> [true|false]`
-  defaults to persistent; retention in lobby history depends on the server's history settings
+  defaults to persistent. The server controls retention and upload limits.
 - **Audio and video attachments** with custom play/pause, volume, download and fullscreen controls, a seekable timeline,
-  automatic previews, and a right-click delete action for permitted messages. Playback uses the platform webview's codecs; unsupported media can be downloaded
+  automatic previews, and a right-click delete action for permitted messages. The player slider updates
+  the saved Media volume setting shared by attachments and voice notes. Media volume is capped by
+  Output volume. The Audio settings also include loudness normalisation.
 - **Offline presence** in the profile editor: turn off “Show me as online” to appear offline while
   remaining connected. Offline accounts use stable IDs, including for profile and moderation requests
 - **Pinned messages** — moderators pin a stored line, every client marks it, and the pin button (or
@@ -44,6 +48,7 @@ deliberately kept in step about *behaviour*.
 - **Server list**: the addresses and identities you use, remembered, so the window stops asking
 
 ### The window
+- **Custom themes** with a color picker and hex entry for each role. Clear a field to restore its default.
 - **Our own title bar** on Linux and Windows, the system's traffic lights on macOS
 - **A phone layout** under 820px — sidebars become swipeable drawers, the back gesture closes what is in
   front, dialogs take the whole screen

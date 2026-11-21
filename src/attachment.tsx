@@ -24,24 +24,71 @@ import { useTouch } from "./narrow";
 import { Icon } from "./icons";
 import { MenuBox, MENU_ITEM } from "./components";
 import { t } from "./i18n";
+import { formatMessageId } from "./format";
+import processorUrl from "./media-normalisation.js?url&no-inline";
 
-const mediaType = (name: string) => {
-    const ext = name.split(".").pop()?.toLowerCase() ?? "";
-    return ({ mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", ogv: "video/ogg", mov: "video/quicktime", mkv: "video/x-matroska", avi: "video/x-msvideo", mp3: "audio/mpeg", m4a: "audio/mp4", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", flac: "audio/flac", aac: "audio/aac" } as Record<string, string>)[ext];
+export interface MediaSettings
+{
+    volume: number;
+    max: number;
+    outputVolume: number;
+    normalise: boolean;
+    setVolume: (volume: number) => void;
+}
+
+let audio: AudioContext | undefined;
+let normaliser: Promise<boolean> | undefined;
+
+function prepareAudio()
+{
+    try
+    {
+        audio ??= new AudioContext();
+        void audio.resume().catch(() => {});
+        normaliser ??= audio.audioWorklet?.addModule(processorUrl).then(() => true, () => false) ?? Promise.resolve(false);
+    }
+    catch { /* The player can use the webview's native volume control. */ }
+}
+
+interface AudioGraph
+{
+    source: MediaElementAudioSourceNode;
+    gain: GainNode;
+    processor?: AudioWorkletNode;
+    analyser?: AnalyserNode;
+}
+
+
+const MEDIA_TYPES: Record<string, string> = {
+    mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", ogv: "video/ogg", mov: "video/quicktime",
+    mkv: "video/x-matroska", avi: "video/x-msvideo", mp3: "audio/mpeg", m4a: "audio/mp4",
+    ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", flac: "audio/flac", aac: "audio/aac",
 };
 
-export function Attachment({ image, message, auto, remove, like }: {
-    image: MessageImage; message: ChatMessage; auto: boolean; remove: (() => void) | null; like: (() => void) | null;
+export const MEDIA_EXTENSIONS = Object.keys(MEDIA_TYPES);
+
+function mediaType(name: string): string | undefined
+{
+    const extension = name.split(".").pop()?.toLowerCase() ?? "";
+    return Object.prototype.hasOwnProperty.call(MEDIA_TYPES, extension) ? MEDIA_TYPES[extension] : undefined;
+}
+
+export function Attachment({ image, message, auto, media, remove, like }: {
+    image: MessageImage; message: ChatMessage; auto: boolean; media: MediaSettings; remove: (() => void) | null; like: (() => void) | null;
 })
 {
     const [source, setSource] = useState<string | null>(null);
+    const [playbackUrl, setPlaybackUrl] = useState<string>();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [playing, setPlaying] = useState(false);
     const [pausedFrame, setPausedFrame] = useState<string | null>(null);
     const [position, setPosition] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [volume, setVolume] = useState(1);
+    const volume = media.volume;
+    const graph = useRef<AudioGraph | null>(null);
+    const [audioReady, setAudioReady] = useState(0);
+    const volumeGain = Math.min(media.volume, media.outputVolume) / 100;
     const [volumeOpen, setVolumeOpen] = useState(false);
     const [opened, setOpened] = useState(false);
     const [expanded, setExpanded] = useState(false);
@@ -56,16 +103,110 @@ export function Attachment({ image, message, auto, remove, like }: {
     const frameChanged = useRef(false);
     const room = useRef<HTMLDivElement>(null);
     const alive = useRef(true);
-    const mime = mediaType(image.filename);
+    const mime = image.hash ? mediaType(image.filename) : undefined;
     const [autoplay, setAutoplay] = useState(false);
+    const shown = Boolean(mime && (auto || opened || source));
     useEffect(() => {
         alive.current = true;
         return () => {
             alive.current = false;
             if (clickTimer.current !== null) clearTimeout(clickTimer.current);
+            graph.current?.source.disconnect();
+            graph.current?.gain.disconnect();
+            graph.current?.processor?.disconnect();
+            graph.current?.analyser?.disconnect();
+            graph.current = null;
         };
     }, []);
-    useEffect(() => { if (player.current) player.current.volume = volume; }, [volume, source]);
+    useEffect(() =>
+    {
+        const element = player.current;
+        if (!element) return;
+        const nodes = graph.current;
+        if (!nodes)
+        {
+            element.volume = Math.min(volumeGain, 1);
+            return;
+        }
+
+        element.volume = 1;
+        const processor = nodes.processor;
+        nodes.gain.gain.value = processor ? 1 : volumeGain;
+        if (processor)
+        {
+            processor.parameters.get("volume")!.value = volumeGain;
+            processor.parameters.get("normalise")!.value = Number(media.normalise);
+        }
+    }, [volumeGain, media.normalise, playbackUrl, shown, audioReady]);
+
+    // Some webviews expose Web Audio but cannot load worklets on the app origin.
+    useEffect(() =>
+    {
+        const nodes = graph.current;
+        const analyser = nodes?.analyser;
+        if (!playing || !media.normalise || !nodes || !analyser) return;
+
+        const samples = new Float32Array(analyser.fftSize);
+        let power = 0.2 ** 2;
+        const sampleLoudness = () =>
+        {
+            analyser.getFloatTimeDomainData(samples);
+            let sum = 0;
+            for (const sample of samples) sum += sample * sample;
+            const average = sum / samples.length;
+            if (average > 0.001 ** 2) power += (1 - Math.exp(-0.05 / 0.3)) * (average - power);
+
+            const gain = volumeGain * Math.min(4, Math.max(0.1, 0.2 / Math.sqrt(power)));
+            nodes.gain.gain.setTargetAtTime(gain, analyser.context.currentTime, 0.02);
+        };
+        const timer = window.setInterval(sampleLoudness, 50);
+        return () =>
+        {
+            window.clearInterval(timer);
+            nodes.gain.gain.cancelScheduledValues(analyser.context.currentTime);
+        };
+    }, [audioReady, media.normalise, playing, volumeGain]);
+
+    function connectAudio()
+    {
+        if (graph.current) return;
+        prepareAudio();
+        const context = audio;
+        const element = player.current;
+        if (!context || !element) return;
+
+        void context.resume().then(() =>
+        {
+            if (!alive.current || player.current !== element || graph.current || context.state !== "running") return;
+            const gain = context.createGain();
+            const source = context.createMediaElementSource(element);
+            source.connect(gain);
+            gain.connect(context.destination);
+            graph.current = { source, gain };
+            setAudioReady((ready) => ready + 1);
+
+            void normaliser?.then((available) =>
+            {
+                const nodes = graph.current;
+                if (nodes?.source !== source) return;
+
+                if (available)
+                {
+                    const processor = new AudioWorkletNode(context, "why2-media-normalisation");
+                    source.connect(processor).connect(gain);
+                    nodes.processor = processor;
+                }
+                else
+                {
+                    const analyser = context.createAnalyser();
+                    source.connect(analyser).connect(gain);
+                    nodes.analyser = analyser;
+                }
+                source.disconnect(gain);
+                setAudioReady((ready) => ready + 1);
+            }).catch(() => {});
+        }).catch(() => {});
+    }
     useEffect(() => {
         if (!menu && !volumeOpen) return;
         const dismiss = (event: PointerEvent) => {
@@ -78,6 +219,24 @@ export function Attachment({ image, message, auto, remove, like }: {
         return () => { window.removeEventListener("pointerdown", dismiss); window.removeEventListener("keydown", escape); };
     }, [menu, volumeOpen]);
     useEffect(() => { if (auto && mime) void load(); }, [auto]);
+    useEffect(() =>
+    {
+        if (!source || !mime) return;
+        let url: string | undefined;
+        let current = true;
+        fetch(source).then((response) => response.blob()).then((blob) =>
+        {
+            if (!current) return;
+            url = URL.createObjectURL(blob);
+            setPlaybackUrl(url);
+        }).catch(() => { if (current) setPlaybackUrl(source); });
+
+        return () =>
+        {
+            current = false;
+            if (url) URL.revokeObjectURL(url);
+        };
+    }, [source, mime]);
 
     useEffect(() => {
         if (!expanded) return;
@@ -122,11 +281,11 @@ export function Attachment({ image, message, auto, remove, like }: {
         return () => { window.removeEventListener("why2-play-media", play); window.removeEventListener("why2-stop-media", stop); };
     }, [message.message_id, source]);
     useEffect(() => {
-        if (autoplay && source && player.current) {
+        if (autoplay && playbackUrl && player.current) {
             void player.current.play().catch((reason) => setError(String(reason)));
             setAutoplay(false);
         }
-    }, [autoplay, source]);
+    }, [autoplay, playbackUrl]);
 
     function load(): Promise<string | null>
     {
@@ -161,6 +320,12 @@ export function Attachment({ image, message, auto, remove, like }: {
 
     async function download()
     {
+        if (!image.hash && message.message_id !== null)
+        {
+            await invoke("send_input", { input: `/download ${formatMessageId(message.message_id)}` });
+            return;
+        }
+
         const actions = await invoke<{ ask: boolean }>("picture_actions");
         const path = actions.ask ? await save({ defaultPath: image.filename }) : null;
         if (actions.ask && !path) return;
@@ -172,6 +337,7 @@ export function Attachment({ image, message, auto, remove, like }: {
 
     function togglePlayback()
     {
+        prepareAudio();
         if (playing) {
             player.current?.pause();
             setAutoplay(false);
@@ -243,7 +409,6 @@ export function Attachment({ image, message, auto, remove, like }: {
         }
     }
 
-    const shown = Boolean(mime && (auto || opened || source));
     const control = "attachment-control flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40";
     const button = (icon: string, label: string, action: () => void, disabled = false) => (
         <button type="button" title={label} aria-label={label} disabled={disabled} onClick={action} className={control}>
@@ -330,9 +495,9 @@ export function Attachment({ image, message, auto, remove, like }: {
                 }
             }}>
 
-            <video ref={player} src={source ?? undefined} poster={image.source ?? undefined} playsInline preload="auto"
+            <video ref={player} src={playbackUrl} poster={image.source ?? undefined} playsInline preload="auto"
                 className="h-full max-h-[65vh] w-full object-contain" aria-label={image.filename}
-                onPlay={() => { frameChanged.current = true; setPlaying(true); }}
+                onPlay={() => { frameChanged.current = true; setPlaying(true); connectAudio(); }}
                 onPause={() => { setPlaying(false); capturePausedFrame(); }}
                 onEnded={() => { setPlaying(false); capturePausedFrame(); }}
                 onLoadedMetadata={syncTime} onDurationChange={syncTime} onTimeUpdate={syncTime} onSeeked={() => { syncTime(); capturePausedFrame(); }}
@@ -361,8 +526,8 @@ export function Attachment({ image, message, auto, remove, like }: {
                     <Icon name={volume === 0 ? "speaker_off" : "speaker"} className="h-[18px] w-[18px]" />
                 </button>
                 {volumeOpen && <div className="absolute bottom-12 right-0 rounded-lg border border-border-strong bg-overlay px-3 py-2 shadow-lg">
-                    <input autoFocus type="range" min="0" max="1" step="0.01" value={volume} aria-label={t("attachment.volume")}
-                        onChange={(event) => setVolume(Number(event.currentTarget.value))} style={{ touchAction: "pan-x" }} className="block h-8 w-28 accent-current" />
+                    <input autoFocus type="range" min="0" max={media.max} step="1" value={volume} aria-label={t("settings.row.media_volume")} aria-valuetext={`${volume}%`}
+                        onChange={(event) => media.setVolume(Number(event.currentTarget.value))} style={{ touchAction: "pan-x" }} className="block h-8 w-28 accent-current" />
                 </div>}
             </div>}
             {button("download", t("attachment.download"), () => void download().catch((reason) => setError(String(reason))), loading)}
