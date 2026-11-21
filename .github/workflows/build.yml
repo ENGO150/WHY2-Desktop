@@ -55,7 +55,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libgdk-pixbuf2.0-bin patchelf file \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev librsvg2-common \
+            libgdk-pixbuf2.0-bin shared-mime-info patchelf file \
             libayatana-appindicator3-dev libxdo-dev libssl-dev \
             pkg-config libasound2-dev libopus-dev libpipewire-0.3-dev libegl-dev \
             clang libclang-dev libgbm-dev nasm \
@@ -132,21 +133,22 @@ jobs:
           done
           rm -f squashfs-root/usr/lib/libwayland-*.so.*
           rm -f squashfs-root/usr/lib/libpipewire-*.so.*
-          # Exercise the bundled loaders without using loader configuration from the runner.
+          # Use the AppImage loader cache and keep the system MIME database, as AppRun does.
           appdir="$PWD/squashfs-root"
           test -f "$appdir/usr/lib/libgdk_pixbuf-2.0.so.0"
-          thumbnail_dir=$(mktemp -d)
-          trap 'rm -rf "$thumbnail_dir"' EXIT
-          printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>' > "$thumbnail_dir/icon.svg"
-          export LD_LIBRARY_PATH="$appdir/usr/lib"
-          export GDK_PIXBUF_MODULE_FILE="$appdir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-          export XDG_DATA_DIRS="$appdir/usr/share"
-          export XDG_DATA_HOME="$thumbnail_dir"
-          gdk-pixbuf-thumbnailer -s 32 "$thumbnail_dir/icon.svg" "$thumbnail_dir/icon.png"
-          test -s "$thumbnail_dir/icon.png"
-          gdk-pixbuf-thumbnailer -s 16 "$thumbnail_dir/icon.png" "$thumbnail_dir/resized.png"
-          test -s "$thumbnail_dir/resized.png"
-          unset LD_LIBRARY_PATH GDK_PIXBUF_MODULE_FILE XDG_DATA_DIRS XDG_DATA_HOME
+          (
+            thumbnail_dir=$(mktemp -d)
+            trap 'rm -rf "$thumbnail_dir"' EXIT
+            printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>' > "$thumbnail_dir/icon.svg"
+            export LD_LIBRARY_PATH="$appdir/usr/lib"
+            export GDK_PIXBUF_MODULE_FILE="$appdir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+            export XDG_DATA_DIRS="$appdir/usr/share:/usr/share"
+            export XDG_DATA_HOME="$thumbnail_dir"
+            gdk-pixbuf-thumbnailer -s 32 "$thumbnail_dir/icon.svg" "$thumbnail_dir/icon.png"
+            test -s "$thumbnail_dir/icon.png"
+            gdk-pixbuf-thumbnailer -s 16 "$thumbnail_dir/icon.png" "$thumbnail_dir/resized.png"
+            test -s "$thumbnail_dir/resized.png"
+          )
           rm -f "$appimage"
           # EXTRACTION WRITES EVERY DIRECTORY 0700; appimagetool REFUSES AN APPDIR OTHERS CANNOT READ
           chmod -R a+rX squashfs-root
