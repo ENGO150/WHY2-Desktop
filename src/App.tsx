@@ -226,6 +226,8 @@ function localLine(kind: MessageKind, text: string): ChatMessage
 
 const DIRECT_PANE_PREFIX = "\0";
 const directPane = (username: string) => `${DIRECT_PANE_PREFIX}${username}`;
+type UploadDestination = { kind: "channel" } | { kind: "private"; username: string };
+
 const newHistory = (): History => ({ entries: [], pos: 0, stash: null, prefix: null });
 
 interface PrivateUnread
@@ -269,7 +271,7 @@ function App()
 
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
-    const [uploadChoice, setUploadChoice] = useState<{ path: string; peer: string | null } | null>(null);
+    const [uploadChoice, setUploadChoice] = useState<{ path: string; destination: UploadDestination } | null>(null);
     const uploadChoiceRef = useRef<HTMLDivElement>(null);
     const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
@@ -423,6 +425,7 @@ function App()
     const [typingUsers, setTypingUsers] = useState<Record<string, number>>({});
 
     //FILES ON THEIR WAY, BY UID
+    const attachmentTransfers = useRef(new Set<string>());
     const [transfers, setTransfers] = useState<Record<string, TransferInfo>>({});
 
     //NAMES ALREADY ASKED ABOUT, AND THE AVATAR HASHES WORTH KEEPING
@@ -605,11 +608,6 @@ function App()
     {
         if (drawer !== null && document.activeElement === chatInputRef.current) chatInputRef.current?.blur();
     }, [drawer]);
-
-    useEffect(() =>
-    {
-        openDmRef.current = openDm;
-    }, [openDm]);
 
     useEffect(() =>
     {
@@ -1156,6 +1154,7 @@ function App()
         setUploadingIcon(false);
         setOwnColors({ name: null, message: null });
         setTypingUsers({});
+        attachmentTransfers.current.clear();
         setTransfers({});
 
         askedRef.current = new Set();
@@ -1664,7 +1663,19 @@ function App()
                     const transfer: TransferInfo = { ...payload.data.transfer, done: 0, outcome: null };
 
                     setTransfers((previous) => ({ ...previous, [transfer.uid]: transfer }));
-                    push({ entry: "transfer", uid: transfer.uid });
+                    const entry: PaneEntry = { entry: "transfer", uid: transfer.uid };
+                    if (transfer.upload && transfer.image && !transfer.avatar && !transfer.icon)
+                    {
+                        attachmentTransfers.current.add(transfer.uid);
+                        const peer = openDmRef.current;
+                        if (peer !== null)
+                        {
+                            const key = directPane(peer);
+                            setPaneByChannel((previous) => ({ ...previous, [key]: [...(previous[key] ?? []), entry] }));
+                            break;
+                        }
+                    }
+                    push(entry);
                     break;
                 }
 
@@ -1681,6 +1692,26 @@ function App()
                 case "transfer_done":
                 {
                     const { uid, ok } = payload.data;
+                    if (attachmentTransfers.current.delete(uid) && ok)
+                    {
+                        // The attachment message takes over from the completed transfer.
+                        setPaneByChannel((previous) =>
+                        {
+                            for (const [key, pane] of Object.entries(previous))
+                            {
+                                const kept = pane.filter((entry) => entry.entry !== "transfer" || entry.uid !== uid);
+                                if (kept.length !== pane.length) return { ...previous, [key]: kept };
+                            }
+                            return previous;
+                        });
+                        setTransfers((previous) =>
+                        {
+                            const next = { ...previous };
+                            delete next[uid];
+                            return next;
+                        });
+                        break;
+                    }
 
                     setTransfers((previous) =>
                     {
@@ -2692,9 +2723,9 @@ function App()
     };
 
     //Pictures are persistent; the general file picker asks which lifetime to use.
-    const uploadFile = async (image: boolean) =>
+    const uploadFile = async (image: boolean, peer: string | null) =>
     {
-        const peer = openDmRef.current;
+        const destination: UploadDestination = peer === null ? { kind: "channel" } : { kind: "private", username: peer };
         const session = chatSession.current;
         const selected = await open(image
             ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
@@ -2702,8 +2733,8 @@ function App()
 
         if (typeof selected !== "string" || session !== chatSession.current) return;
 
-        if (!image) { setUploadChoice({ path: selected, peer }); return; }
-        invoke("upload_file_from_path", { path: selected, persistent: true, peer }).catch((error: unknown) => setPopupMessage(String(error)));
+        if (!image) { setUploadChoice({ path: selected, destination }); return; }
+        invoke("upload_file_from_path", { path: selected, persistent: true, destination }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -5318,8 +5349,8 @@ function App()
                                             ? <IconButton icon="trash" label={t("chat.discard")} onClick={discardRecording} />
                                             : (
                                                 <>
-                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
-                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true)} />
+                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false, openDm)} />
+                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true, openDm)} />
                                                 </>
                                             )}
 
@@ -5402,9 +5433,9 @@ function App()
                     <p className="mb-5 text-sm text-muted">{t("upload.persistence_prompt")}</p>
                     <div className="flex gap-3">
                         {[true, false].map((persistent) => <button key={String(persistent)} type="button" autoFocus={persistent} className="btn btn-accent flex-1" onClick={() => {
-                            const { path, peer } = uploadChoice;
+                            const { path, destination } = uploadChoice;
                             setUploadChoice(null);
-                            invoke("upload_file_from_path", { path, persistent, peer }).catch((error: unknown) => setPopupMessage(String(error)));
+                            invoke("upload_file_from_path", { path, persistent, destination }).catch((error: unknown) => setPopupMessage(String(error)));
                         }}>{t(persistent ? "upload.persistent" : "upload.temporary")}</button>)}
                     </div>
                 </div>

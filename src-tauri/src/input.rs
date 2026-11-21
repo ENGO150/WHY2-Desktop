@@ -406,14 +406,24 @@ pub(crate) fn private_recipient(state: &AppState, peer: Option<&str>) -> Result<
         .ok_or_else(|| tr!("pm.recipient_unavailable"))).transpose()
 }
 
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum UploadDestination
+{
+    Channel,
+    Private { username: String },
+}
+
 #[tauri::command]
-pub(crate) async fn upload_file_from_path(path: String, persistent: bool, peer: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn upload_file_from_path(path: String, persistent: bool, destination: UploadDestination, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
-
-    let recipient = private_recipient(&state, peer.as_deref())?;
+    let recipient = match destination
+    {
+        UploadDestination::Channel => None,
+        UploadDestination::Private { username } => private_recipient(&state, Some(&username))?,
+    };
     upload_file(&app, &state, &write_stream, &path, persistent, recipient).await;
-
     Ok(())
 }
 
@@ -672,4 +682,21 @@ pub(crate) async fn attachment_source(hash: String) -> Result<Option<String>, St
             .await.map_err(|error| error.to_string());
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod upload_destination_tests
+{
+    use super::UploadDestination;
+
+    #[test]
+    fn private_upload_cannot_deserialize_without_its_recipient()
+    {
+        assert!(toml::from_str::<UploadDestination>("kind = 'private'").is_err());
+        assert!(toml::from_str::<UploadDestination>("username = 'recipient'").is_err());
+        assert!(matches!(
+            toml::from_str("kind = 'private'\nusername = 'recipient'"),
+            Ok(UploadDestination::Private { username }) if username == "recipient"
+        ));
+    }
 }
