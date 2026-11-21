@@ -699,7 +699,7 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             say(app, ChatMessage::plain(tr!("event.uploaded", username, filename)).from_server());
         },
 
-        ClientEvent::Muted => popup(app, tr!("event.muted")),
+        ClientEvent::Muted => say(app, ChatMessage::notice(tr!("event.muted"))),
 
         ClientEvent::Deleted { message_id } => emit(app, UiEvent::Deleted { message_id: ui_message_id(message_id) }),
 
@@ -925,20 +925,19 @@ pub(crate) async fn handle_event(app: &AppHandle, event: ClientEvent)
             //A QUIET PROFILE ASK WAS REFUSED BEFORE ANY CAME BACK - THE SERVER KEEPS NONE
             let quiet = !state.profile_quiet.lock().unwrap().is_empty() && !state.profiles_seen.load(Ordering::Relaxed);
 
-            if quiet
+            match quiet
             {
-                state.profiles_off.store(true, Ordering::Relaxed);
-                state.profile_quiet.lock().unwrap().clear();
-                state.profile_queue.lock().unwrap().clear();
+                true =>
+                {
+                    state.profiles_off.store(true, Ordering::Relaxed);
+                    state.profile_quiet.lock().unwrap().clear();
+                    state.profile_queue.lock().unwrap().clear();
 
-                emit(app, UiEvent::ProfilesDisabled);
+                    emit(app, UiEvent::ProfilesDisabled);
+                },
+
+                false => popup(app, tr!("event.disabled_feature")),
             }
-
-            // DisabledFeature has no request ID. A quiet profile fetch must not hide a
-            // rejection during the chat upload approval window.
-            let upload_recent = state.last_chat_upload.lock().unwrap()
-                .is_some_and(|sent| sent.elapsed() < UPLOAD_APPROVAL_TIMEOUT);
-            if !quiet || upload_recent { popup(app, tr!("event.disabled_feature")); }
         },
 
         //THE SERVER IS ABOUT TO DROP US OVER THIS, AND THE PANE GOES WITH THE SESSION - SO IT IS KEPT

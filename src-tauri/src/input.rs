@@ -19,9 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 use std::
 {
     fs::File,
-    time::{ Duration, Instant },
+    time::Instant,
     io::{ Read, Seek },
-    path::PathBuf,
+    path::{ Path, PathBuf },
     sync::{ Arc, atomic::Ordering },
 };
 
@@ -41,7 +41,7 @@ use why2_chat::
     command::{ self, Command, Subcommand },
     network::
     {
-        self, client, EncryptionMode, Packet,
+        client,
         codes::{ PacketCode, Device, ChatUpload },
     },
 };
@@ -153,15 +153,6 @@ fn percent_decode(text: &str) -> String
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-fn local_upload_path(path: &str) -> Option<PathBuf>
-{
-    if path.starts_with("file://")
-    {
-        return tauri::Url::parse(path).ok()?.to_file_path().ok();
-    }
-    Some(PathBuf::from(path))
-}
-
 //OPEN A FILE AND REFUSE WHAT THE SERVER WOULD (tui/../client/mod.rs::check_upload)
 pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Result<(File, PathBuf), String>
 {
@@ -170,7 +161,7 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
     let staged =
     {
         let app_handle = app.clone();
-        let picked = path.to_owned();
+        let picked = path.trim().to_owned();
 
         match task::spawn_blocking(move || stage_content_uri(&app_handle, &picked)).await
         {
@@ -186,9 +177,9 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
     #[cfg(not(target_os = "android"))]
     let _ = app;
 
-    let path = local_upload_path(path).ok_or_else(|| tr!("upload.not_found"))?;
+    let path = Path::new(path.trim());
 
-    let Ok(mut file) = File::open(&path) else { return Err(tr!("upload.not_found")) };
+    let Ok(mut file) = File::open(path) else { return Err(tr!("upload.not_found")) };
 
     if !path.is_file() || path.file_name().and_then(|name| name.to_str()).is_none()
     {
@@ -224,16 +215,19 @@ pub(crate) async fn open_upload(app: &AppHandle, path: &str, image: bool) -> Res
 
 //Persistent attachments and temporary file shares use the same upload handshake.
 pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream: &Arc<MutexAsync<OwnedWriteHalf>>,
-    path: &str, persistent: bool, recipient: Option<usize>) -> Result<(), String>
+    path: &str, persistent: bool, recipient: Option<usize>)
 {
-    let (mut file, path) = open_upload(app, path, false).await?;
+    let (mut file, path) = match open_upload(app, path, false).await
+    {
+        Ok(opened) => opened,
+        Err(error) => return popup(app, error),
+    };
 
     let limits = options::upload_limits();
     let limit = if persistent || recipient.is_some() { limits.file.min(limits.attachment) } else { limits.file };
-    let size = file.metadata().map_err(|_| tr!("upload.read_failed"))?.len();
-    if size > limit
+    if file.metadata().map(|meta| meta.len()).unwrap_or(u64::MAX) > limit
     {
-        return Err(tr!("upload.file_too_large", limit = limit / consts::MEGABYTE as u64));
+        return popup(app, tr!("upload.file_too_large", limit = limit / consts::MEGABYTE as u64));
     }
 
     //THE NAME EVERYBODY ELSE WILL SEE. A FILESHARE'S OWN METADATA CARRIES IT, BUT AN IMAGE IS NAMED IN
@@ -257,45 +251,11 @@ pub(crate) async fn upload_file(app: &AppHandle, state: &AppState, write_stream:
         }
     }).await.unwrap_or(None);
 
-    let hash = hash.ok_or_else(|| tr!("upload.read_failed"))?;
+    let Some(hash) = hash else { return popup(app, tr!("upload.read_failed")) };
 
-    let active = state.write_stream.lock().await;
-    if active.as_ref().is_none_or(|active| !Arc::ptr_eq(active, write_stream))
-    {
-        return Err(tr!("bridge.not_connected"));
-    }
+    let request = client::request_chat_upload(path, hash, recipient, ChatUpload::File { filename, persistent });
 
-    let keys = options::get_keys().ok_or_else(|| tr!("bridge.not_connected"))?;
-    let code = client::request_chat_upload(path, hash, recipient, ChatUpload::File { filename: filename.clone(), persistent });
-    let PacketCode::ChatUploadRequest { request, .. } = code else { unreachable!() };
-
-    *state.last_chat_upload.lock().unwrap() = Some(Instant::now());
-    let sent = network::send_tcp(&mut *write_stream.lock().await, Packet { code, seq: 0 },
-        EncryptionMode::OneShot(Some(&keys)), None).await;
-    drop(active);
-
-    if sent.is_err()
-    {
-        client::CHAT_UPLOADS.lock().unwrap().remove(&request);
-        return Err(tr!("bridge.send_failed"));
-    }
-    *state.last_sent.lock().unwrap() = Instant::now();
-
-    // The crate consumes the approval internally. A request left in its registry has no reply.
-    let deadline = tokio::time::Instant::now() + UPLOAD_APPROVAL_TIMEOUT;
-    loop
-    {
-        if !client::CHAT_UPLOADS.lock().unwrap().contains_key(&request) { return Ok(()); }
-        if tokio::time::Instant::now() >= deadline
-        {
-            if client::CHAT_UPLOADS.lock().unwrap().remove(&request).is_some()
-            {
-                return Err(tr!("transfer.failed_file", filename));
-            }
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    send_packet(state, write_stream, request).await;
 }
 
 //A COMMAND'S SHAPE, ITS PARAMETER TRANSLATED
@@ -446,33 +406,15 @@ pub(crate) fn private_recipient(state: &AppState, peer: Option<&str>) -> Result<
         .ok_or_else(|| tr!("pm.recipient_unavailable"))).transpose()
 }
 
-#[derive(serde::Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum UploadDestination
-{
-    Channel,
-    Private { username: String },
-}
-
-impl UploadDestination
-{
-    fn peer(&self) -> Option<&str>
-    {
-        match self
-        {
-            Self::Channel => None,
-            Self::Private { username } => Some(username),
-        }
-    }
-}
-
 #[tauri::command]
-pub(crate) async fn upload_file_from_path(path: String, persistent: bool, destination: UploadDestination, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
+pub(crate) async fn upload_file_from_path(path: String, persistent: bool, peer: Option<String>, app: AppHandle, state: State<'_, AppState>) -> Result<(), String>
 {
     let Some(write_stream) = state.write_stream.lock().await.clone() else { return Err(tr!("bridge.not_connected")) };
 
-    let recipient = private_recipient(&state, destination.peer())?;
-    upload_file(&app, &state, &write_stream, &path, persistent, recipient).await
+    let recipient = private_recipient(&state, peer.as_deref())?;
+    upload_file(&app, &state, &write_stream, &path, persistent, recipient).await;
+
+    Ok(())
 }
 
 //A CAPTION ASKED TO BE SEEN - ONE THE HISTORY REPLAYED, OR ONE A SERVER OFFERED RATHER THAN PUSHED. IT
@@ -591,8 +533,7 @@ pub(crate) async fn send_input(input: String, peer: Option<String>, app: AppHand
                         {
                             let (path, persistent) = command::upload_parameters(&parameters);
                             let recipient = private_recipient(&state, peer.as_deref())?;
-                            let path = crate::palette::expand_home(path);
-                            upload_file(&app, &state, &write_stream, &path.to_string_lossy(), persistent, recipient).await?;
+                            upload_file(&app, &state, &write_stream, path, persistent, recipient).await;
                         },
                         None => popup(&app, usage("/upload", "arg.path")),
                     },
@@ -731,31 +672,4 @@ pub(crate) async fn attachment_source(hash: String) -> Result<Option<String>, St
             .await.map_err(|error| error.to_string());
     }
     Ok(None)
-}
-
-#[cfg(test)]
-mod tests
-{
-    use super::{ local_upload_path, UploadDestination };
-
-    #[test]
-    fn preserves_native_paths_and_decodes_file_urls()
-    {
-        let path = std::env::temp_dir().join("picked image #1.png");
-        let uri = tauri::Url::from_file_path(&path).unwrap();
-
-        assert_eq!(local_upload_path(uri.as_str()), Some(path));
-        assert_eq!(local_upload_path(" trailing space ").unwrap().to_str(), Some(" trailing space "));
-    }
-
-    #[test]
-    fn picker_private_destination_requires_a_username()
-    {
-        let destination: UploadDestination = toml::from_str("kind = 'private'\nusername = 'recipient'").unwrap();
-
-        assert_eq!(destination.peer(), Some("recipient"));
-        assert!(toml::from_str::<UploadDestination>("kind = 'private'").is_err());
-        assert!(toml::from_str::<UploadDestination>("username = 'recipient'").is_err());
-        assert_eq!(UploadDestination::Channel.peer(), None);
-    }
 }

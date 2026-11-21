@@ -187,7 +187,6 @@ pub fn run()
             server_icon: Mutex::new(None),
             icon_cut: Mutex::new(None),
             typing_sent: Mutex::new(None),
-            last_chat_upload: Mutex::new(None),
             transfers: Mutex::new(HashMap::new()),
         })
         //THE FRAMES OF A WATCHED SHARE ARE PULLED OUT OF THE CRATE ONCE, FOR THE LIFE OF THE PROCESS: THE

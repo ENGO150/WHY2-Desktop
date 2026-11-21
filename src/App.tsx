@@ -186,12 +186,6 @@ const IMAGE_EXTENSIONS =
 ];
 
 
-// Attachment transfer events carry a local UID but no conversation.
-function isChatAttachmentUpload(transfer: TransferInfo): boolean
-{
-    return transfer.upload && transfer.image && !transfer.avatar && !transfer.icon;
-}
-
 //ONE MESSAGE OF A PANE, BY ITS SERVER ID
 function findMessage(pane: PaneEntry[], message_id: number): ChatMessage | null
 {
@@ -232,8 +226,6 @@ function localLine(kind: MessageKind, text: string): ChatMessage
 
 const DIRECT_PANE_PREFIX = "\0";
 const directPane = (username: string) => `${DIRECT_PANE_PREFIX}${username}`;
-type UploadDestination = { kind: "channel" } | { kind: "private"; username: string };
-
 const newHistory = (): History => ({ entries: [], pos: 0, stash: null, prefix: null });
 
 interface PrivateUnread
@@ -277,8 +269,7 @@ function App()
 
     //THE REGISTERED USERS NOBODY IS CONNECTED AS, WHERE THE SERVER SENDS THEM AT ALL. null IS NOT AN
     //EMPTY LIST: IT IS A SERVER THAT KEEPS THEM TO ITSELF, AND THE COLUMN THEN HAS NO SUCH SECTION
-    const [uploadChoice, setUploadChoice] = useState<{ path: string; destination: UploadDestination; session: number } | null>(null);
-    const [uploadsPreparing, setUploadsPreparing] = useState(0);
+    const [uploadChoice, setUploadChoice] = useState<{ path: string; peer: string | null } | null>(null);
     const uploadChoiceRef = useRef<HTMLDivElement>(null);
     const bannedUsers = useRef(new Set<string>());
     const [offline, setOffline] = useState<OfflineUser[] | null>(null);
@@ -614,6 +605,11 @@ function App()
     {
         if (drawer !== null && document.activeElement === chatInputRef.current) chatInputRef.current?.blur();
     }, [drawer]);
+
+    useEffect(() =>
+    {
+        openDmRef.current = openDm;
+    }, [openDm]);
 
     useEffect(() =>
     {
@@ -1114,7 +1110,6 @@ function App()
         setOffline(null);
         bannedUsers.current.clear();
         setUploadChoice(null);
-        setUploadsPreparing(0);
         setActiveChannels([]);
         setCurrentChannel(LOBBY);
         setDms([]);
@@ -1669,7 +1664,7 @@ function App()
                     const transfer: TransferInfo = { ...payload.data.transfer, done: 0, outcome: null };
 
                     setTransfers((previous) => ({ ...previous, [transfer.uid]: transfer }));
-                    if (!isChatAttachmentUpload(transfer)) push({ entry: "transfer", uid: transfer.uid });
+                    push({ entry: "transfer", uid: transfer.uid });
                     break;
                 }
 
@@ -1692,13 +1687,6 @@ function App()
                         const transfer = previous[uid];
 
                         if (!transfer) return previous;
-
-                        if (isChatAttachmentUpload(transfer))
-                        {
-                            const next = { ...previous };
-                            delete next[uid];
-                            return next;
-                        }
 
                         return { ...previous, [uid]: { ...transfer, done: ok ? transfer.total : transfer.done, outcome: ok } };
                     });
@@ -2703,40 +2691,19 @@ function App()
         }
     };
 
-    // The file picker and private media picker offer both retention modes.
-    const submitUpload = (path: string, persistent: boolean, destination: UploadDestination, session: number) =>
+    //Pictures are persistent; the general file picker asks which lifetime to use.
+    const uploadFile = async (image: boolean) =>
     {
-        if (session !== chatSession.current) return;
-        setUploadsPreparing((count) => count + 1);
-        invoke("upload_file_from_path", { path, persistent, destination })
-            .catch((error: unknown) => { if (session === chatSession.current) setPopupMessage(String(error)); })
-            .finally(() => { if (session === chatSession.current) setUploadsPreparing((count) => count - 1); });
-    };
-
-    const uploadFile = async (image: boolean, peer: string | null) =>
-    {
-        const destination: UploadDestination = peer === null ? { kind: "channel" } : { kind: "private", username: peer };
+        const peer = openDmRef.current;
         const session = chatSession.current;
-        try
-        {
-            const selected = await open(image
-                ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
-                : { multiple: false });
+        const selected = await open(image
+            ? { multiple: false, filters: [{ name: t("chat.media"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] }] }
+            : { multiple: false });
 
-            if (selected === null || session !== chatSession.current) return;
-            if (typeof selected !== "string") throw new Error(t("upload.not_found"));
+        if (typeof selected !== "string" || session !== chatSession.current) return;
 
-            if (!image || destination.kind === "private")
-            {
-                setUploadChoice({ path: selected, destination, session });
-                return;
-            }
-            submitUpload(selected, true, destination, session);
-        }
-        catch (error)
-        {
-            setPopupMessage(error instanceof Error ? error.message : String(error));
-        }
+        if (!image) { setUploadChoice({ path: selected, peer }); return; }
+        invoke("upload_file_from_path", { path: selected, persistent: true, peer }).catch((error: unknown) => setPopupMessage(String(error)));
     };
 
     //A CAPTION THE HISTORY REPLAYED, ASKED TO BE SEEN. THE PICTURES ARE NOT IN THE HISTORY - IT CARRIES
@@ -5294,14 +5261,6 @@ function App()
                             onMouseDown={(event) => event.stopPropagation()}
                         >
                             <div className={`relative mx-auto max-w-[820px] ${narrow ? "" : "px-3"}`}>
-                                {uploadsPreparing > 0 && <p role="status" className="mb-1 text-xs text-muted">{t("card.uploading")}</p>}
-
-                                {Object.values(transfers).filter(isChatAttachmentUpload).map(({ uid, done, total }) => (
-                                    <progress key={uid} max={Math.max(total, 1)} value={done}
-                                        aria-label={t("card.uploading")}
-                                        className="mb-1 block h-1 w-full accent-accent" />
-                                ))}
-
                                 {/* PREVIEW AND PALETTE NEVER WANT THE SPACE AT ONCE */}
                                 {palette.mode === "hidden" && previewing && (
                                     <MarkupPreview text={chatInput} config={config} />
@@ -5359,8 +5318,8 @@ function App()
                                             ? <IconButton icon="trash" label={t("chat.discard")} onClick={discardRecording} />
                                             : (
                                                 <>
-                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false, openDm)} />
-                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true, openDm)} />
+                                                    <IconButton icon="paperclip" label={t("chat.attach")} onClick={() => uploadFile(false)} />
+                                                    <IconButton icon="image" label={t("chat.send_media")} onClick={() => uploadFile(true)} />
                                                 </>
                                             )}
 
@@ -5443,9 +5402,9 @@ function App()
                     <p className="mb-5 text-sm text-muted">{t("upload.persistence_prompt")}</p>
                     <div className="flex gap-3">
                         {[true, false].map((persistent) => <button key={String(persistent)} type="button" autoFocus={persistent} className="btn btn-accent flex-1" onClick={() => {
-                            const { path, destination, session } = uploadChoice;
+                            const { path, peer } = uploadChoice;
                             setUploadChoice(null);
-                            submitUpload(path, persistent, destination, session);
+                            invoke("upload_file_from_path", { path, persistent, peer }).catch((error: unknown) => setPopupMessage(String(error)));
                         }}>{t(persistent ? "upload.persistent" : "upload.temporary")}</button>)}
                     </div>
                 </div>

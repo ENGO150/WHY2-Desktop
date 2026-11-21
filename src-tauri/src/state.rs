@@ -62,8 +62,6 @@ pub(crate) const EVENT: &str = "why2-event"; //THE ONE EVENT THE WEBVIEW LISTENS
 
 //THE SERVER'S DEFAULT min_message_delay. IT COUNTS EVERY PACKET, NOT ONLY THE ONES THE USER TYPED, AND
 //IT IS NEVER SENT TO US - SO THE ONLY THING A CLIENT CAN DO IS KEEP ITS OWN CHATTER THIS FAR APART
-pub(crate) const UPLOAD_APPROVAL_TIMEOUT: Duration = Duration::from_secs(20);
-
 pub(crate) const ROSTER_GAP: Duration = Duration::from_millis(750);
 
 //WHAT A DECODED FRAME IS RE-ENCODED AT WHEN THE WEBVIEW HAS NO DECODER OF ITS OWN. IT IS A SCREEN, NOT A
@@ -119,7 +117,6 @@ pub(crate) struct AppState
     pub(crate) icon_cut: Mutex<Option<String>>,      //OUR ICON UPLOAD'S FILE NAME
 
     pub(crate) typing_sent: Mutex<Option<Instant>>, //LAST TypingRequest
-    pub(crate) last_chat_upload: Mutex<Option<Instant>>,
     pub(crate) transfers: Mutex<HashMap<u64, (u64, u64)>>, //UID -> TOTAL, LAST PERCENT
 }
 
@@ -139,7 +136,6 @@ impl AppState
         *self.server_icon.lock().unwrap() = None;
         *self.icon_cut.lock().unwrap() = None;
         *self.typing_sent.lock().unwrap() = None;
-        self.last_chat_upload.lock().unwrap().take();
         self.transfers.lock().unwrap().clear();
     }
 }
